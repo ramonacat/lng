@@ -45,7 +45,7 @@ pub fn type_check(program: &Program) -> Result<(), TypeCheckError> {
                         }
 
                         for (idx, argument) in arguments.iter().enumerate() {
-                            let type_ = determine_expression_type(&declared_functions, argument);
+                            let type_ = determine_expression_type(&declared_functions, argument)?;
                             let expected_type = &called_function.arguments.get(idx).unwrap().type_;
 
                             if &type_ != expected_type {
@@ -68,13 +68,13 @@ pub fn type_check(program: &Program) -> Result<(), TypeCheckError> {
 fn determine_expression_type(
     declared_functions: &HashMap<String, Function>,
     expression: &Expression,
-) -> Type {
+) -> Result<Type, TypeCheckError> {
     match expression {
         Expression::FunctionCall { name, .. } => {
-            declared_functions.get(name).unwrap().return_type.clone()
+            Ok(declared_functions.get(name).map(|x| Ok(x)).unwrap_or_else(|| Err(TypeCheckError::CallingUndeclaredFunction(name.clone())))?.return_type.clone())
         }
         Expression::Literal(literal) => match literal {
-            crate::ast::Literal::String(_) => Type::Named("string".to_string()),
+            crate::ast::Literal::String(_) => Ok(Type::Named("string".to_string())),
         },
     }
 }
