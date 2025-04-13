@@ -8,7 +8,9 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
+    types::BasicType,
     values::{AnyValue, BasicMetadataValueEnum, BasicValue},
+    AddressSpace,
 };
 
 use crate::{
@@ -34,8 +36,17 @@ pub fn compile(program: &Program) {
         declared_modules.insert(module_name, module.clone());
 
         for declared_function in &file.functions {
-            // FIXME: actually declare the arguments to match the declaration in the AST
-            let function_type = context.void_type().fn_type(&[], false);
+            let arguments = declared_function
+                .arguments
+                .iter()
+                .map(|arg| {
+                    type_to_llvm(&arg.type_, &context)
+                        .as_basic_type_enum()
+                        .into()
+                })
+                .collect::<Vec<_>>();
+
+            let function_type = context.void_type().fn_type(&arguments[..], false);
             module.add_function(&declared_function.name, function_type, None);
         }
     }
@@ -67,6 +78,7 @@ pub fn compile(program: &Program) {
     }
 
     let module = declared_modules.get("mod0").unwrap();
+    module.verify().unwrap();
 
     let execution_engine = module
         .create_jit_execution_engine(inkwell::OptimizationLevel::Default)
@@ -82,6 +94,19 @@ pub fn compile(program: &Program) {
             .get_function::<unsafe extern "C" fn()>("main")
             .unwrap();
         main.call();
+    }
+}
+
+fn type_to_llvm<'a>(type_: &crate::ast::Type, context: &'a Context) -> Box<dyn BasicType<'a> + 'a> {
+    match type_ {
+        crate::ast::Type::Void => panic!("Cannot pass void arguments!"),
+        // todo arrays should be structs that have bounds, not just ptrs
+        crate::ast::Type::Array(_) => Box::new(context.ptr_type(AddressSpace::default())),
+        crate::ast::Type::Named(n) => match n.as_str() {
+            // todo string should be some form of a struct
+            "string" => Box::new(context.ptr_type(AddressSpace::default())),
+            _ => todo!(),
+        },
     }
 }
 
@@ -112,13 +137,13 @@ fn compile_expression<'a>(
                     let mut string_bytes = s.as_bytes().to_vec();
                     string_bytes.push(0);
 
-                    let string_type = context.i8_type().array_type(string_bytes.len() as u32);
+                    let string_type = context.i8_type().array_type(string_bytes.len() as u32 + 1);
 
                     // FIXME use a globally unique name for the global
                     let global = module.add_global(string_type, None, "str0");
                     global.set_initializer(&context.const_string(&string_bytes[..], true));
 
-                    (global).as_basic_value_enum().into()
+                    (global).as_pointer_value().as_basic_value_enum().into()
                 }
             }
         }

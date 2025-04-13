@@ -81,7 +81,7 @@ fn determine_expression_type(
     match expression {
         Expression::FunctionCall { name, .. } => Ok(declared_functions
             .get(name)
-            .map(|x| Ok(x))
+            .map(Ok)
             .unwrap_or_else(|| Err(TypeCheckError::CallingUndeclaredFunction(name.clone())))?
             .return_type
             .clone()),
