@@ -1,0 +1,41 @@
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+
+identifier = @{
+    LETTER ~ (LETTER | NUMBER | "_")*
+}
+
+type_ = {
+    (identifier ~ ("[]")?)
+}
+
+keyword_extern = @{"extern"}
+
+expression_literal_string = @{"\"" ~ (!"\"" ~ ANY)* ~ "\""}
+
+expression_literal = {
+    expression_literal_string
+}
+
+expression_function_call = {
+    identifier ~ "(" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ ")"
+}
+
+expression = {
+    expression_function_call 
+    | expression_literal
+}
+
+statement = { expression ~ ";" }
+
+argument = { identifier ~ ":" ~ type_ }
+argument_list = _{ argument ~ ("," ~ argument_list)? ~ ","? }
+
+function_body = { ("{" ~ statement* ~ "}") | keyword_extern ~ ";" }
+
+function_definition = {
+    "fn" ~ identifier ~ "(" ~ argument_list? ~ ")" ~ ":" ~ type_ ~ function_body
+}
+
+source_file = {
+   SOI ~ function_definition* ~ EOI
+}
