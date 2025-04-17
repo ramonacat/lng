@@ -20,8 +20,8 @@ use crate::{
 
 #[no_mangle]
 pub extern "C" fn lng_println(arg: *const c_char) {
-    let arg = unsafe { CStr::from_ptr(arg) };
-    println!("PRINTLN CALLED: {arg:?}");
+    let arg = unsafe { CStr::from_ptr(arg) }.to_str().unwrap();
+    println!("{}", arg);
 }
 
 pub fn compile(program: &Program) {
