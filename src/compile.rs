@@ -79,6 +79,7 @@ pub fn compile(program: &Program) {
 
     let module = declared_modules.get("mod0").unwrap();
     module.verify().unwrap();
+    println!("{}", module.print_to_string().to_string().replace("\\n", "\n"));
 
     let execution_engine = module
         .create_jit_execution_engine(inkwell::OptimizationLevel::Default)
@@ -134,8 +135,7 @@ fn compile_expression<'a>(
         crate::ast::Expression::Literal(literal) => {
             match literal {
                 crate::ast::Literal::String(s) => {
-                    let mut string_bytes = s.as_bytes().to_vec();
-                    string_bytes.push(0);
+                    let string_bytes = s.as_bytes().to_vec();
 
                     let string_type = context.i8_type().array_type(string_bytes.len() as u32 + 1);
 
