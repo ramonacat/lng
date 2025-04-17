@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    ffi::{c_char, CStr},
     rc::Rc,
 };
 
@@ -14,15 +13,8 @@ use inkwell::{
 };
 
 use crate::{
-    ast::{Expression, FunctionBody, Statement},
-    type_check::Program,
+    ast::{Expression, FunctionBody, Statement}, stdlib::register_mappings, type_check::Program
 };
-
-#[no_mangle]
-pub extern "C" fn lng_println(arg: *const c_char) {
-    let arg = unsafe { CStr::from_ptr(arg) }.to_str().unwrap();
-    println!("{}", arg);
-}
 
 pub fn compile(program: &Program) {
     let context = Context::create();
@@ -86,11 +78,10 @@ pub fn compile(program: &Program) {
     let execution_engine = module
         .create_jit_execution_engine(inkwell::OptimizationLevel::Default)
         .unwrap();
-
-    execution_engine.add_global_mapping(
-        &module.get_function("lng_println").unwrap(),
-        (lng_println as *const extern "C" fn()) as usize,
-    );
+    
+    for (_, module) in &declared_modules {
+        register_mappings(&execution_engine, module);
+    }
 
     unsafe {
         let main = execution_engine

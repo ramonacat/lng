@@ -1,6 +1,7 @@
 mod ast;
 mod compile;
 mod type_check;
+mod stdlib;
 
 use ast::{Argument, Expression, Function, FunctionBody, Literal, SourceFile, Statement, Type};
 use compile::compile;
@@ -14,10 +15,10 @@ pub struct LNGParser;
 
 fn main() {
     let program = "
-        fn lng_println(value: string): void extern  ;
+        fn println(value: string): void extern  ;
 
         fn main(args:string[]): void {
-            lng_println(\"hello world\");
+            println(\"hello world\");
         }
     ";
 
