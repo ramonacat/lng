@@ -144,6 +144,8 @@ fn compile_expression<'a>(
                     // FIXME use a globally unique name for the global
                     let global = module.add_global(string_type, None, "str0");
                     global.set_initializer(&context.const_string(&string_bytes[..], true));
+                    global.set_constant(true);
+                    global.set_visibility(inkwell::GlobalVisibility::Hidden);
 
                     global.as_pointer_value().as_basic_value_enum().into()
                 }
