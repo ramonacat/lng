@@ -47,5 +47,6 @@ pub struct Function {
 
 #[derive(Debug)]
 pub struct SourceFile {
+    pub name: String,
     pub functions: Vec<Function>,
 }

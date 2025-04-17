@@ -32,7 +32,10 @@ fn main() {
         functions.push(parse_function(function));
     }
 
-    let ast = SourceFile { functions };
+    let ast = SourceFile {
+        functions,
+        name: "main".to_string(),
+    };
 
     println!("{ast:?}");
 

@@ -30,10 +30,9 @@ pub fn compile(program: &Program) {
 
     let mut declared_modules: HashMap<String, Rc<Module>> = HashMap::new();
 
-    for (i, file) in program.0.iter().enumerate() {
-        let module_name = format!("mod{i}");
-        let module = Rc::new(context.create_module(&module_name)); // todo use the filename or smth
-        declared_modules.insert(module_name, module.clone());
+    for file in &program.0 {
+        let module = Rc::new(context.create_module(&file.name));
+        declared_modules.insert(file.name.clone(), module.clone());
 
         for declared_function in &file.functions {
             let arguments = declared_function
@@ -51,9 +50,8 @@ pub fn compile(program: &Program) {
         }
     }
 
-    for (i, file) in program.0.iter().enumerate() {
-        let module_name = format!("mod{i}");
-        let module = declared_modules.get(&module_name).unwrap();
+    for file in &program.0 {
+        let module = declared_modules.get(&file.name).unwrap();
 
         for declared_function in &file.functions {
             let FunctionBody::Statements(statements) = &declared_function.body else {
@@ -77,9 +75,13 @@ pub fn compile(program: &Program) {
         }
     }
 
-    let module = declared_modules.get("mod0").unwrap();
+    // TODO actually look for the module that contains the main function
+    let module = declared_modules.get("main").unwrap();
     module.verify().unwrap();
-    println!("{}", module.print_to_string().to_string().replace("\\n", "\n"));
+    println!(
+        "{}",
+        module.print_to_string().to_string().replace("\\n", "\n")
+    );
 
     let execution_engine = module
         .create_jit_execution_engine(inkwell::OptimizationLevel::Default)
@@ -127,7 +129,7 @@ fn compile_expression<'a>(
                 .collect::<Vec<_>>();
             let call_result = builder.build_call(function, &call_arguments, name).unwrap();
 
-            (call_result)
+            call_result
                 .as_any_value_enum()
                 .try_into()
                 .unwrap_or(context.i8_type().const_zero().as_basic_value_enum().into())
@@ -143,7 +145,7 @@ fn compile_expression<'a>(
                     let global = module.add_global(string_type, None, "str0");
                     global.set_initializer(&context.const_string(&string_bytes[..], true));
 
-                    (global).as_pointer_value().as_basic_value_enum().into()
+                    global.as_pointer_value().as_basic_value_enum().into()
                 }
             }
         }
