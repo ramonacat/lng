@@ -72,13 +72,17 @@ impl<'ctx> Compiler<'ctx> {
             let module = self.context.create_module(&file.name);
             function_declarations.insert(file.name.clone(), HashMap::new());
 
-            for function_declaration in &file.functions {
-                function_declarations.get_mut(&file.name).unwrap().insert(
-                    function_declaration.name.clone(),
-                    function_declaration.clone(),
-                );
+            for declaration in &file.declarations {
+                match declaration {
+                    crate::ast::Declaration::Function(function) => {
+                        function_declarations
+                            .get_mut(&file.name)
+                            .unwrap()
+                            .insert(function.name.clone(), function.clone());
 
-                self.declare_function(function_declaration, &module);
+                        self.declare_function(function, &module);
+                    }
+                };
             }
 
             // FIXME import pass should be separate from the one that creates the function
@@ -104,25 +108,29 @@ impl<'ctx> Compiler<'ctx> {
         for file in &program.0 {
             let module = self.declared_modules.get(&file.name).unwrap();
 
-            for declared_function in &file.functions {
-                let FunctionBody::Statements(statements) = &declared_function.body else {
-                    continue;
-                };
+            for declaration in &file.declarations {
+                match declaration {
+                    crate::ast::Declaration::Function(function) => {
+                        let FunctionBody::Statements(statements) = &function.body else {
+                            continue;
+                        };
 
-                let function = module.get_function(&declared_function.name).unwrap();
-                let function_block = self.context.append_basic_block(function, "entry");
+                        let function = module.get_function(&function.name).unwrap();
+                        let function_block = self.context.append_basic_block(function, "entry");
 
-                self.builder.position_at_end(function_block);
+                        self.builder.position_at_end(function_block);
 
-                for statement in statements {
-                    match statement {
-                        Statement::Expression(expression) => {
-                            self.compile_expression(expression, module);
+                        for statement in statements {
+                            match statement {
+                                Statement::Expression(expression) => {
+                                    self.compile_expression(expression, module);
+                                }
+                            }
                         }
+
+                        self.builder.build_return(None).unwrap();
                     }
                 }
-
-                self.builder.build_return(None).unwrap();
             }
         }
 

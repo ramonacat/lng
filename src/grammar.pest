@@ -37,8 +37,12 @@ function_declaration = {
     (keyword_export)? ~ "fn" ~ identifier ~ "(" ~ argument_list? ~ ")" ~ ":" ~ type_ ~ function_body
 }
 
+declaration = {
+    function_declaration
+}
+
 import = {"import" ~ identifier ~ ("::" ~ identifier)* ~ ";"}
 
 source_file = {
-   SOI ~ import* ~ function_declaration* ~ EOI
+   SOI ~ import* ~ declaration* ~ EOI
 }

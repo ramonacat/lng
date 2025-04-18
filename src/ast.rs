@@ -46,6 +46,11 @@ pub struct Function {
     pub export: bool,
 }
 
+#[derive(Debug, Clone)]
+pub enum Declaration {
+    Function(Function),
+}
+
 #[derive(Debug)]
 pub struct Import {
     pub path: Vec<String>,
@@ -54,6 +59,6 @@ pub struct Import {
 #[derive(Debug)]
 pub struct SourceFile {
     pub name: String,
-    pub functions: Vec<Function>,
+    pub declarations: Vec<Declaration>,
     pub imports: Vec<Import>,
 }

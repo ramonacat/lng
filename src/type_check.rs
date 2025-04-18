@@ -20,8 +20,12 @@ pub fn type_check(program: &Program) -> Result<(), TypeCheckError> {
     let mut declared_functions = HashMap::new();
 
     for file in &program.0 {
-        for function in &file.functions {
-            declared_functions.insert(function.name.to_string(), function.clone());
+        for declaration in &file.declarations {
+            match declaration {
+                crate::ast::Declaration::Function(function) => {
+                    declared_functions.insert(function.name.to_string(), function.clone())
+                }
+            };
         }
     }
 

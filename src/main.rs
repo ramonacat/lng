@@ -4,7 +4,8 @@ mod stdlib;
 mod type_check;
 
 use ast::{
-    Argument, Expression, Function, FunctionBody, Import, Literal, SourceFile, Statement, Type,
+    Argument, Declaration, Expression, Function, FunctionBody, Import, Literal, SourceFile,
+    Statement, Type,
 };
 use compile::compile;
 use pest::{iterators::Pair, Parser};
@@ -44,12 +45,14 @@ fn parse_file(name: &str, source: &str) -> SourceFile {
         .unwrap()
         .into_inner();
 
-    let mut functions = vec![];
+    let mut declarations = vec![];
     let mut imports = vec![];
 
     for item in parsed_file {
         match item.as_rule() {
-            Rule::function_declaration => functions.push(parse_function(item)),
+            Rule::declaration => {
+                declarations.push(parse_declaration(item.into_inner().next().unwrap()))
+            }
             Rule::import => imports.push(parse_import(item)),
             Rule::EOI => {}
             _ => panic!("Unexpected rule: {item:?}"),
@@ -57,9 +60,16 @@ fn parse_file(name: &str, source: &str) -> SourceFile {
     }
 
     SourceFile {
-        functions,
+        declarations,
         imports,
         name: name.to_string(),
+    }
+}
+
+fn parse_declaration(item: Pair<Rule>) -> Declaration {
+    match item.as_rule() {
+        Rule::function_declaration => Declaration::Function(parse_function(item)),
+        _ => panic!("Unexpected rule: {item:?}"),
     }
 }
 
