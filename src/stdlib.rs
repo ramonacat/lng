@@ -10,6 +10,7 @@ pub extern "C" fn println(arg: *const c_char) {
 
 pub fn register_mappings(execution_engine: &ExecutionEngine, module: &Module) {
     if let Some(println_handle) = module.get_function("println") {
-        execution_engine.add_global_mapping(&println_handle, unsafe { std::mem::transmute(println as *const extern "C" fn()) });
+        execution_engine
+            .add_global_mapping(&println_handle, println as *const extern "C" fn() as usize);
     }
 }

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::ast::{Expression, Function, FunctionBody, SourceFile, Statement, Type};
 use thiserror::Error;
 
+#[derive(Debug)]
 pub struct Program(pub Vec<SourceFile>);
 
 #[derive(Debug, Error)]

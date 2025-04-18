@@ -9,6 +9,7 @@ type_ = {
 }
 
 keyword_extern = @{"extern"}
+keyword_export = @{"export"}
 
 expression_literal_string = @{"\"" ~ (!"\"" ~ ANY)* ~ "\""}
 
@@ -33,9 +34,11 @@ argument_list = _{ argument ~ ("," ~ argument_list)? ~ ","? }
 function_body = { ("{" ~ statement* ~ "}") | keyword_extern ~ ";" }
 
 function_definition = {
-    "fn" ~ identifier ~ "(" ~ argument_list? ~ ")" ~ ":" ~ type_ ~ function_body
+    (keyword_export)? ~ "fn" ~ identifier ~ "(" ~ argument_list? ~ ")" ~ ":" ~ type_ ~ function_body
 }
 
+import = {"import" ~ identifier ~ ("::" ~ identifier)* ~ ";"}
+
 source_file = {
-   SOI ~ function_definition* ~ EOI
+   SOI ~ import* ~ function_definition* ~ EOI
 }

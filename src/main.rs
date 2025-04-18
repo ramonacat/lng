@@ -1,9 +1,11 @@
 mod ast;
 mod compile;
-mod type_check;
 mod stdlib;
+mod type_check;
 
-use ast::{Argument, Expression, Function, FunctionBody, Literal, SourceFile, Statement, Type};
+use ast::{
+    Argument, Expression, Function, FunctionBody, Import, Literal, SourceFile, Statement, Type,
+};
 use compile::compile;
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
@@ -14,33 +16,22 @@ use type_check::{type_check, Program};
 pub struct LNGParser;
 
 fn main() {
+    let stdlib = "
+        export fn println(value: string): void extern;
+    ";
+
     let program = "
-        fn println(value: string): void extern  ;
+        import std::println;
 
         fn main(args:string[]): void {
             println(\"hello world\");
         }
     ";
 
-    let parsed_program = LNGParser::parse(Rule::source_file, program)
-        .expect("failed to parse")
-        .next()
-        .unwrap()
-        .into_inner();
+    let program_ast = parse_file("main", program);
+    let stdlib_ast = parse_file("std", stdlib);
 
-    let mut functions = vec![];
-    for function in parsed_program {
-        functions.push(parse_function(function));
-    }
-
-    let ast = SourceFile {
-        functions,
-        name: "main".to_string(),
-    };
-
-    println!("{ast:?}");
-
-    let program = Program(vec![ast]);
+    let program = Program(vec![stdlib_ast, program_ast]);
     let type_check_result = type_check(&program);
 
     println!("{type_check_result:?}");
@@ -48,11 +39,53 @@ fn main() {
     compile(&program);
 }
 
+fn parse_file(name: &str, source: &str) -> SourceFile {
+    let parsed_file = LNGParser::parse(Rule::source_file, source)
+        .expect("failed to parse")
+        .next()
+        .unwrap()
+        .into_inner();
+
+    let mut functions = vec![];
+    let mut imports = vec![];
+
+    for item in parsed_file {
+        match item.as_rule() {
+            Rule::function_definition => functions.push(parse_function(item)),
+            Rule::import => imports.push(parse_import(item)),
+            Rule::EOI => {}
+            _ => panic!("Unexpected rule: {item:?}"),
+        }
+    }
+
+    SourceFile {
+        functions,
+        imports,
+        name: name.to_string(),
+    }
+}
+
+fn parse_import(item: Pair<Rule>) -> Import {
+    let mut path = vec![];
+
+    for element in item.into_inner() {
+        match element.as_rule() {
+            Rule::identifier => {
+                path.push(element.as_str().to_string());
+            }
+            _ => panic!("Unexpected rule {element:?}"),
+        }
+    }
+
+    Import { path }
+}
+
 fn parse_function(function: Pair<Rule>) -> Function {
     let mut name = String::new();
     let mut type_ = String::new();
     let mut arguments = vec![];
-    let mut body: FunctionBody = FunctionBody::Intrinsic;
+    let mut body = FunctionBody::Intrinsic;
+    let mut export = false;
 
     for element in function.into_inner() {
         match element.as_rule() {
@@ -91,6 +124,9 @@ fn parse_function(function: Pair<Rule>) -> Function {
 
                 body = FunctionBody::Statements(statements);
             }
+            Rule::keyword_export => {
+                export = true;
+            }
             _ => panic!("Unexpected rule {element:?}"),
         }
     }
@@ -100,6 +136,7 @@ fn parse_function(function: Pair<Rule>) -> Function {
         arguments,
         return_type: parse_type(type_.as_str()),
         body,
+        export,
     }
 }
 

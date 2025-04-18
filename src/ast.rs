@@ -43,10 +43,17 @@ pub struct Function {
     pub arguments: Vec<Argument>,
     pub return_type: Type,
     pub body: FunctionBody,
+    pub export: bool,
+}
+
+#[derive(Debug)]
+pub struct Import {
+    pub path: Vec<String>,
 }
 
 #[derive(Debug)]
 pub struct SourceFile {
     pub name: String,
     pub functions: Vec<Function>,
+    pub imports: Vec<Import>,
 }
