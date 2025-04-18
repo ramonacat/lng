@@ -1,20 +1,14 @@
 use std::{collections::HashMap, error::Error, fmt::Display};
 
-use crate::{
-    ast::{
-        self, Expression, Function, FunctionBody, SourceFile, SourceRange, Statement,
-        TypeDescription,
-    },
-    types,
-};
+use crate::{ast, types};
 
 #[derive(Debug)]
-pub struct Program(pub Vec<SourceFile>);
+pub struct Program(pub Vec<ast::SourceFile>);
 
 #[derive(Debug)]
 pub struct TypeCheckError {
     description: TypeCheckErrorDescription,
-    position: SourceRange,
+    position: ast::SourceRange,
 }
 
 impl Error for TypeCheckError {}
@@ -39,7 +33,7 @@ pub enum TypeCheckErrorDescription {
 }
 
 impl TypeCheckErrorDescription {
-    fn at(self, position: SourceRange) -> TypeCheckError {
+    fn at(self, position: ast::SourceRange) -> TypeCheckError {
         TypeCheckError {
             description: self,
             position,
@@ -58,13 +52,13 @@ impl Display for TypeCheckErrorDescription {
     }
 }
 
-fn check_type(type_: &ast::TypeDescription) -> Result<types::Type, TypeCheckError> {
+fn convert_type(type_: &ast::TypeDescription) -> types::Type {
     match type_ {
-        TypeDescription::Array(type_description) => {
-            Ok(types::Type::Array(Box::new(check_type(type_description)?)))
+        ast::TypeDescription::Array(type_description) => {
+            types::Type::Array(Box::new(convert_type(type_description)))
         }
-        TypeDescription::Named(name) if name == "void" => Ok(types::Type::Void),
-        TypeDescription::Named(name) => Ok(types::Type::Object(name.clone())),
+        ast::TypeDescription::Named(name) if name == "void" => types::Type::Void,
+        ast::TypeDescription::Named(name) => types::Type::Object(name.clone()),
     }
 }
 
@@ -92,7 +86,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
 
                         arguments.push(types::Argument {
                             name: types::Identifier(arg.name.clone()),
-                            type_: check_type(&arg.type_)?,
+                            type_: convert_type(&arg.type_),
                         });
                     }
 
@@ -126,13 +120,13 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
     }
 
     for (_, declared_function) in declared_functions.iter() {
-        let FunctionBody::Statements(body_statements, _) = &declared_function.body else {
+        let ast::FunctionBody::Statements(body_statements, _) = &declared_function.body else {
             continue;
         };
         for statement in body_statements.iter() {
             match statement {
-                Statement::Expression(expression, _) => {
-                    type_check_expression(expression, &declared_functions)?
+                ast::Statement::Expression(expression, _) => {
+                    type_check_expression(expression, &declared_functions)?;
                 }
             }
         }
@@ -142,11 +136,11 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
 }
 
 fn type_check_expression(
-    expression: &Expression,
-    declared_functions: &HashMap<String, Function>,
-) -> Result<(), TypeCheckError> {
+    expression: &ast::Expression,
+    declared_functions: &HashMap<String, ast::Function>,
+) -> Result<types::Type, TypeCheckError> {
     match expression {
-        Expression::FunctionCall {
+        ast::Expression::FunctionCall {
             name,
             arguments,
             position,
@@ -168,10 +162,10 @@ fn type_check_expression(
             for (argument, called_function_argument) in
                 arguments.iter().zip(&called_function.arguments)
             {
-                let type_ = determine_expression_type(declared_functions, argument)?;
-                let expected_type = &called_function_argument.type_;
+                let type_ = type_check_expression(argument, declared_functions)?;
+                let expected_type = convert_type(&called_function_argument.type_);
 
-                if &type_ != expected_type {
+                if type_ != expected_type {
                     return Err(
                         TypeCheckErrorDescription::UnexpectedArgumentTypeInFunctionCall {
                             function_name: name.to_string(),
@@ -181,32 +175,11 @@ fn type_check_expression(
                     );
                 }
             }
+
+            Ok(convert_type(&called_function.return_type))
         }
-        Expression::Literal(_, _) => {}
-    }
-
-    Ok(())
-}
-
-// TODO this type should not be an AST Type probably, but some type-system internal representation
-fn determine_expression_type(
-    declared_functions: &HashMap<String, Function>,
-    expression: &Expression,
-) -> Result<TypeDescription, TypeCheckError> {
-    match expression {
-        Expression::FunctionCall { name, position, .. } => Ok(declared_functions
-            .get(name)
-            .map(Ok)
-            .unwrap_or_else(|| {
-                Err(
-                    TypeCheckErrorDescription::CallingUndeclaredFunction(name.clone())
-                        .at(*position),
-                )
-            })?
-            .return_type
-            .clone()),
-        Expression::Literal(literal, _) => match literal {
-            crate::ast::Literal::String(_, _) => Ok(TypeDescription::Named("string".to_string())),
+        ast::Expression::Literal(literal, _) => match literal {
+            ast::Literal::String(_, _) => Ok(types::Type::Object("string".to_string())),
         },
     }
 }

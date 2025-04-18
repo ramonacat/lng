@@ -34,11 +34,10 @@ impl Display for ModulePath {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Type {
     Void,
     Object(String),
-    #[allow(unused)]
     Array(Box<Type>),
 }
 
