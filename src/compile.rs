@@ -102,7 +102,7 @@ impl<'ctx> Compiler<'ctx> {
                         .unwrap()
                         .get(&import_function)
                         .unwrap(),
-                    &module,
+                    module,
                 );
             }
 
