@@ -187,7 +187,7 @@ impl<'ctx> Compiler<'ctx> {
             let module = self.context.create_module(path.as_str());
             let mut function_declarations_for_module = HashMap::new();
 
-            for declaration in &program_module.items {
+            for declaration in program_module.items.values() {
                 match declaration {
                     types::Item::Function(function) => {
                         function_declarations_for_module
@@ -195,7 +195,7 @@ impl<'ctx> Compiler<'ctx> {
 
                         self.declare_function(function, &module);
                     }
-                    types::Item::Import(_) => {}
+                    types::Item::ImportFunction(_) => {}
                 };
             }
 
@@ -210,8 +210,8 @@ impl<'ctx> Compiler<'ctx> {
                 );
             };
 
-            for item in &file.items {
-                let types::Item::Import(import) = item else {
+            for item in file.items.values() {
+                let types::Item::ImportFunction(import) = item else {
                     continue;
                 };
 
@@ -234,7 +234,7 @@ impl<'ctx> Compiler<'ctx> {
                 );
             }
 
-            for item in &file.items {
+            for item in file.items.values() {
                 match item {
                     types::Item::Function(function) => {
                         let FunctionBody::Statements(statements, _) = &function.body else {
@@ -265,7 +265,7 @@ impl<'ctx> Compiler<'ctx> {
                             .build_return(None)
                             .map_err(|e| e.into_compile_error_at(function.location))?;
                     }
-                    types::Item::Import(_) => {}
+                    types::Item::ImportFunction(_) => {}
                 }
             }
         }

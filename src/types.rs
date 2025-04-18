@@ -58,7 +58,7 @@ pub struct Function {
 }
 
 #[derive(Debug)]
-pub struct Import {
+pub struct ImportFunction {
     pub path: ModulePath,
     pub item: Identifier,
     pub location: ast::SourceRange,
@@ -67,12 +67,12 @@ pub struct Import {
 #[derive(Debug)]
 pub enum Item {
     Function(Function),
-    Import(Import),
+    ImportFunction(ImportFunction),
 }
 
 #[derive(Debug)]
 pub struct Module {
-    pub items: Vec<Item>,
+    pub items: HashMap<Identifier, Item>,
 }
 
 #[derive(Debug)]

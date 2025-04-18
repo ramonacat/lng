@@ -30,6 +30,9 @@ pub enum TypeCheckErrorDescription {
         function_name: String,
         argument_name: String,
     },
+    ModuleDoesNotExist(types::ModulePath),
+    ItemDoesNotExist(types::ModulePath, types::Identifier),
+    ItemNotExported(types::ModulePath, types::Identifier),
 }
 
 impl TypeCheckErrorDescription {
@@ -48,6 +51,9 @@ impl Display for TypeCheckErrorDescription {
             TypeCheckErrorDescription::UnexpectedArgumentTypeInFunctionCall { function_name, argument_name } => write!(f, "Incorrect argument type for argument {argument_name} in a call to {function_name}"),
             TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(name) => write!(f, "Incorrect number of arguments passed to {name}"),
             TypeCheckErrorDescription::FunctionArgumentCannotBeVoid { function_name, argument_name } => write!(f, "Argument {argument_name} in the declaration of {function_name} cannot be of type void"),
+            TypeCheckErrorDescription::ModuleDoesNotExist(module_path) => write!(f, "Module {module_path} does not exist"),
+            TypeCheckErrorDescription::ItemDoesNotExist(module_path, identifier) => write!(f, "Item {identifier} does not exist in module {module_path}"),
+            TypeCheckErrorDescription::ItemNotExported(module_path, identifier) => write!(f, "Item {identifier} exists in module {module_path}, but is not exported"),
         }
     }
 }
@@ -64,10 +70,10 @@ fn convert_type(type_: &ast::TypeDescription) -> types::Type {
 
 pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
     let mut modules = HashMap::new();
-    let mut declared_functions = HashMap::new();
+    let mut declared_items = HashMap::new();
 
     for file in &program.0 {
-        let mut items = vec![];
+        let mut items = HashMap::new();
 
         for declaration in &file.declarations {
             match declaration {
@@ -75,8 +81,9 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                     let mut arguments = vec![];
 
                     for arg in &function.arguments {
-                        if matches!(arg.type_, ast::TypeDescription::Named(ref name) if name == "void")
-                        {
+                        let type_ = convert_type(&arg.type_);
+
+                        if type_ == types::Type::Void {
                             return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
                                 function_name: function.name.to_owned(),
                                 argument_name: arg.name.to_owned(),
@@ -90,27 +97,21 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                         });
                     }
 
-                    declared_functions.insert(function.name.to_string(), function.clone());
-                    items.push(types::Item::Function(types::Function {
-                        name: types::Identifier(function.name.clone()),
-                        arguments,
-                        body: function.body.clone(),
-                        export: function.export,
-                        location: function.position,
-                    }));
+                    declared_items.insert(function.name.to_string(), function.clone());
+                    let function_name = types::Identifier(function.name.clone());
+
+                    items.insert(
+                        function_name.clone(),
+                        types::Item::Function(types::Function {
+                            name: function_name,
+                            arguments,
+                            body: function.body.clone(),
+                            export: function.export,
+                            location: function.position,
+                        }),
+                    );
                 }
             };
-        }
-
-        for import in &file.imports {
-            let module_name = import.path[0].clone();
-            let item_name = import.path[1].clone();
-
-            items.push(types::Item::Import(types::Import {
-                path: types::ModulePath(types::Identifier(module_name)),
-                item: types::Identifier(item_name),
-                location: import.position,
-            }));
         }
 
         modules.insert(
@@ -119,14 +120,69 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
         );
     }
 
-    for (_, declared_function) in declared_functions.iter() {
+    for file in &program.0 {
+        for import in &file.imports {
+            let module_name = types::ModulePath(types::Identifier(import.path[0].clone()));
+            let item_name = types::Identifier(import.path[1].clone());
+            let Some(exporting_module) = modules.get_mut(&module_name) else {
+                return Err(
+                    TypeCheckErrorDescription::ModuleDoesNotExist(module_name).at(import.position)
+                );
+            };
+
+            let Some(item) = exporting_module.items.get(&item_name) else {
+                return Err(
+                    TypeCheckErrorDescription::ItemDoesNotExist(module_name, item_name)
+                        .at(import.position),
+                );
+            };
+
+            match item {
+                types::Item::Function(function) => {
+                    if !function.export {
+                        return Err(TypeCheckErrorDescription::ItemNotExported(
+                            module_name,
+                            item_name,
+                        )
+                        .at(import.position));
+                    }
+                    let importing_module_path =
+                        types::ModulePath(types::Identifier(file.name.clone()));
+                    let Some(importing_module) = modules.get_mut(&importing_module_path) else {
+                        return Err(TypeCheckErrorDescription::ModuleDoesNotExist(
+                            importing_module_path,
+                        )
+                        .at(import.position));
+                    };
+
+                    importing_module.items.insert(
+                        item_name.clone(),
+                        types::Item::ImportFunction(types::ImportFunction {
+                            path: module_name,
+                            item: item_name,
+                            location: import.position,
+                        }),
+                    );
+                }
+                types::Item::ImportFunction(_) => {
+                    return Err(TypeCheckErrorDescription::ItemDoesNotExist(
+                        module_name,
+                        item_name,
+                    )
+                    .at(import.position));
+                }
+            }
+        }
+    }
+
+    for (_, declared_function) in declared_items.iter() {
         let ast::FunctionBody::Statements(body_statements, _) = &declared_function.body else {
             continue;
         };
         for statement in body_statements.iter() {
             match statement {
                 ast::Statement::Expression(expression, _) => {
-                    type_check_expression(expression, &declared_functions)?;
+                    type_check_expression(expression, &declared_items)?;
                 }
             }
         }
