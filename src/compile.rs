@@ -85,8 +85,12 @@ impl<'ctx> Compiler<'ctx> {
                 };
             }
 
-            // FIXME import pass should be separate from the one that creates the function
-            // declarations, so that the order of modules does not matter
+            self.declared_modules.insert(file.name.clone(), module);
+        }
+
+        for file in &program.0 {
+            let module = self.declared_modules.get(&file.name).unwrap();
+
             for import in &file.imports {
                 // TODO support multi-level module hierarchies
                 let (import_module, import_function) =
@@ -101,12 +105,6 @@ impl<'ctx> Compiler<'ctx> {
                     &module,
                 );
             }
-
-            self.declared_modules.insert(file.name.clone(), module);
-        }
-
-        for file in &program.0 {
-            let module = self.declared_modules.get(&file.name).unwrap();
 
             for declaration in &file.declarations {
                 match declaration {

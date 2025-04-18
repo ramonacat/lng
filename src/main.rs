@@ -30,7 +30,7 @@ fn main() {
     let program_ast = parse_file("main", program);
     let stdlib_ast = parse_file("std", stdlib);
 
-    let program = Program(vec![stdlib_ast, program_ast]);
+    let program = Program(vec![program_ast, stdlib_ast]);
     let type_check_result = type_check(&program);
 
     println!("{type_check_result:?}");
