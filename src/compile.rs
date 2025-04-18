@@ -10,18 +10,18 @@ use inkwell::{
 };
 
 use crate::{
-    ast::{Expression, Function, FunctionBody, SourceRange, Statement},
+    ast::{Expression, FunctionBody, SourceRange, Statement},
     stdlib::register_mappings,
-    type_check::Program,
+    types::{self, Identifier, ModulePath},
 };
 
 struct Compiler<'ctx> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
-    declared_modules: HashMap<String, Module<'ctx>>,
+    declared_modules: HashMap<types::ModulePath, Module<'ctx>>,
 }
 
-pub fn compile(program: &Program) -> Result<(), CompileError> {
+pub fn compile(program: &types::Program) -> Result<(), CompileError> {
     let context = Context::create();
     let compiler = Compiler::new(&context);
 
@@ -32,7 +32,8 @@ pub fn compile(program: &Program) -> Result<(), CompileError> {
 pub enum ErrorLocation {
     // TODO this should also have the module name
     Position(SourceRange),
-    Module(String),
+    Module(ModulePath),
+    Indeterminate,
 }
 
 impl Display for ErrorLocation {
@@ -40,6 +41,7 @@ impl Display for ErrorLocation {
         match self {
             ErrorLocation::Position(source_range) => write!(f, "{source_range}"),
             ErrorLocation::Module(name) => write!(f, "module {name}"),
+            ErrorLocation::Indeterminate => write!(f, "indeterminate"),
         }
     }
 }
@@ -52,10 +54,10 @@ pub struct CompileError {
 
 #[derive(Debug)]
 pub enum CompileErrorDescription {
-    ModuleNotFound(String),
+    ModuleNotFound(ModulePath),
     FunctionNotFound {
-        module_name: String,
-        function_name: String,
+        module_name: ModulePath,
+        function_name: Identifier,
     },
     InternalError(String),
 }
@@ -68,10 +70,17 @@ impl CompileErrorDescription {
         }
     }
 
-    fn in_module(self, name: String) -> CompileError {
+    fn in_module(self, name: ModulePath) -> CompileError {
         CompileError {
             description: self,
             location: ErrorLocation::Module(name),
+        }
+    }
+
+    fn at_indeterminate(self) -> CompileError {
+        CompileError {
+            description: self,
+            location: ErrorLocation::Indeterminate,
         }
     }
 }
@@ -135,7 +144,12 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn declare_function_inner(&self, function: &Function, module: &Module<'ctx>, linkage: Linkage) {
+    fn declare_function_inner(
+        &self,
+        function: &types::Function,
+        llvm_module: &Module<'ctx>,
+        linkage: Linkage,
+    ) {
         let arguments = function
             .arguments
             .iter()
@@ -144,11 +158,11 @@ impl<'ctx> Compiler<'ctx> {
 
         let function_type = self.context.void_type().fn_type(&arguments[..], false);
 
-        module.add_function(&function.name, function_type, Some(linkage));
+        llvm_module.add_function(&function.name.0, function_type, Some(linkage));
     }
 
-    fn declare_function(&self, function: &Function, module: &Module<'ctx>) {
-        let linkage = if function.export || function.name == "main" {
+    fn declare_function(&self, function: &types::Function, module: &Module<'ctx>) {
+        let linkage = if function.export || function.name == types::Identifier("main".to_string()) {
             Linkage::External
         } else {
             Linkage::Internal
@@ -157,80 +171,85 @@ impl<'ctx> Compiler<'ctx> {
         self.declare_function_inner(function, module, linkage);
     }
 
-    fn import_function(&self, function: &Function, module: &Module<'ctx>) {
+    fn import_function(&self, function: &types::Function, module: &Module<'ctx>) {
         self.declare_function_inner(function, module, Linkage::External);
     }
 
     // TODO instead of executing the code, this should return some object that exposes the
     // executable code with a safe interface
-    pub fn compile(mut self, program: &Program) -> Result<(), CompileError> {
-        let mut function_declarations: HashMap<String, HashMap<String, Function>> = HashMap::new();
+    pub fn compile(mut self, program: &types::Program) -> Result<(), CompileError> {
+        let mut function_declarations: HashMap<
+            types::ModulePath,
+            HashMap<types::Identifier, types::Function>,
+        > = HashMap::new();
 
-        for file in &program.0 {
-            let module = self.context.create_module(&file.name);
+        for (path, program_module) in &program.modules {
+            let module = self.context.create_module(path.as_str());
             let mut function_declarations_for_module = HashMap::new();
 
-            for declaration in &file.declarations {
+            for declaration in &program_module.items {
                 match declaration {
-                    crate::ast::Declaration::Function(function, _) => {
+                    types::Item::Function(function) => {
                         function_declarations_for_module
                             .insert(function.name.clone(), function.clone());
 
                         self.declare_function(function, &module);
                     }
+                    types::Item::Import(_) => {}
                 };
             }
 
-            self.declared_modules.insert(file.name.clone(), module);
-            function_declarations.insert(file.name.clone(), function_declarations_for_module);
+            self.declared_modules.insert(path.clone(), module);
+            function_declarations.insert(path.clone(), function_declarations_for_module);
         }
 
-        for file in &program.0 {
-            let Some(module) = self.declared_modules.get(&file.name) else {
+        for (module_path, file) in &program.modules {
+            let Some(module) = self.declared_modules.get(module_path) else {
                 return Err(
-                    CompileErrorDescription::ModuleNotFound(file.name.clone()).at(file.position)
+                    CompileErrorDescription::ModuleNotFound(module_path.clone()).at_indeterminate()
                 );
             };
 
-            for import in &file.imports {
-                // TODO support multi-level module hierarchies
-                let (import_module, import_function) =
-                    (import.path[0].clone(), import.path[1].clone());
+            for item in &file.items {
+                let types::Item::Import(import) = item else {
+                    continue;
+                };
 
                 self.import_function(
                     function_declarations
-                        .get(&import_module)
+                        .get(&import.path)
                         .ok_or_else(|| {
-                            CompileErrorDescription::ModuleNotFound(import_module.clone())
-                                .at(import.position)
+                            CompileErrorDescription::ModuleNotFound(import.path.clone())
+                                .at(import.location)
                         })?
-                        .get(&import_function)
+                        .get(&import.item)
                         .ok_or_else(|| {
                             CompileErrorDescription::FunctionNotFound {
-                                module_name: import_module,
-                                function_name: import_function,
+                                module_name: import.path.clone(),
+                                function_name: import.item.clone(),
                             }
-                            .at(import.position)
+                            .at(import.location)
                         })?,
                     module,
                 );
             }
 
-            for declaration in &file.declarations {
-                match declaration {
-                    crate::ast::Declaration::Function(function, position) => {
+            for item in &file.items {
+                match item {
+                    types::Item::Function(function) => {
                         let FunctionBody::Statements(statements, _) = &function.body else {
                             continue;
                         };
 
-                        let Some(function) = module.get_function(&function.name) else {
+                        let Some(llvm_function) = module.get_function(&function.name.0) else {
                             return Err(CompileErrorDescription::FunctionNotFound {
-                                module_name: file.name.clone(),
+                                module_name: module_path.clone(),
                                 function_name: function.name.clone(),
                             }
-                            .at(function.position));
+                            .at(function.location));
                         };
-                        let function_block = self.context.append_basic_block(function, "entry");
+                        let function_block =
+                            self.context.append_basic_block(llvm_function, "entry");
 
                         self.builder.position_at_end(function_block);
 
@@ -244,8 +263,9 @@ impl<'ctx> Compiler<'ctx> {
 
                         self.builder
                             .build_return(None)
-                            .map_err(|e| e.into_compile_error_at(*position))?;
+                            .map_err(|e| e.into_compile_error_at(function.location))?;
                     }
+                    types::Item::Import(_) => {}
                 }
             }
         }
@@ -299,8 +319,10 @@ impl<'ctx> Compiler<'ctx> {
             } => {
                 let function = self.resolve_function(name, module).ok_or_else(|| {
                     CompileErrorDescription::FunctionNotFound {
-                        module_name: module.get_name().to_string_lossy().to_string(),
-                        function_name: name.clone(),
+                        module_name: types::ModulePath(types::Identifier(
+                            module.get_name().to_string_lossy().to_string(),
+                        )),
+                        function_name: types::Identifier(name.clone()),
                     }
                     .at(*position)
                 })?;
@@ -346,13 +368,13 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn type_to_llvm(&self, type_: &crate::ast::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
+    fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
         match type_ {
-            crate::ast::Type::Void => panic!("Cannot pass void arguments!"),
-            // todo arrays should be structs that have bounds, not just ptrs
-            crate::ast::Type::Array(_) => Box::new(self.context.ptr_type(AddressSpace::default())),
-            crate::ast::Type::Named(n) => match n.as_str() {
-                // todo string should be some form of a struct
+            types::Type::Void => panic!("Cannot pass void arguments!"),
+            // TODO arrays should be structs that have bounds, not just ptrs
+            types::Type::Array(_) => Box::new(self.context.ptr_type(AddressSpace::default())),
+            types::Type::Object(n) => match n.as_str() {
+                // TODO string should be some form of a struct
                 "string" => Box::new(self.context.ptr_type(AddressSpace::default())),
                 _ => todo!(),
             },

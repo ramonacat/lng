@@ -46,9 +46,8 @@ pub enum Statement {
 
 // TODO add SourcePosition here once the type_check internal type is decoupled from this
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type {
-    Void,
-    Array(Box<Type>),
+pub enum TypeDescription {
+    Array(Box<TypeDescription>),
     Named(String),
 }
 
@@ -56,7 +55,7 @@ pub enum Type {
 pub struct Argument {
     #[allow(unused)] //FIXME actually use it
     pub name: String,
-    pub type_: Type,
+    pub type_: TypeDescription,
     pub position: SourceRange,
 }
 
@@ -72,7 +71,7 @@ pub enum FunctionBody {
 pub struct Function {
     pub name: String,
     pub arguments: Vec<Argument>,
-    pub return_type: Type,
+    pub return_type: TypeDescription,
     pub body: FunctionBody,
     pub export: bool,
     pub position: SourceRange,
@@ -80,7 +79,7 @@ pub struct Function {
 
 #[derive(Debug, Clone)]
 pub enum Declaration {
-    Function(Function, SourceRange),
+    Function(Function),
 }
 
 #[derive(Debug)]
@@ -94,5 +93,4 @@ pub struct SourceFile {
     pub name: String,
     pub declarations: Vec<Declaration>,
     pub imports: Vec<Import>,
-    pub position: SourceRange,
 }

@@ -1,6 +1,12 @@
 use std::{collections::HashMap, error::Error, fmt::Display};
 
-use crate::ast::{Expression, Function, FunctionBody, SourceFile, SourceRange, Statement, Type};
+use crate::{
+    ast::{
+        self, Expression, Function, FunctionBody, SourceFile, SourceRange, Statement,
+        TypeDescription,
+    },
+    types,
+};
 
 #[derive(Debug)]
 pub struct Program(pub Vec<SourceFile>);
@@ -52,26 +58,71 @@ impl Display for TypeCheckErrorDescription {
     }
 }
 
-pub fn type_check(program: &Program) -> Result<(), TypeCheckError> {
+fn check_type(type_: &ast::TypeDescription) -> Result<types::Type, TypeCheckError> {
+    match type_ {
+        TypeDescription::Array(type_description) => {
+            Ok(types::Type::Array(Box::new(check_type(type_description)?)))
+        }
+        TypeDescription::Named(name) if name == "void" => Ok(types::Type::Void),
+        TypeDescription::Named(name) => Ok(types::Type::Object(name.clone())),
+    }
+}
+
+pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
+    let mut modules = HashMap::new();
     let mut declared_functions = HashMap::new();
 
     for file in &program.0 {
+        let mut items = vec![];
+
         for declaration in &file.declarations {
             match declaration {
-                crate::ast::Declaration::Function(function, _) => {
+                ast::Declaration::Function(function) => {
+                    let mut arguments = vec![];
+
                     for arg in &function.arguments {
-                        if matches!(arg.type_, Type::Void) {
+                        if matches!(arg.type_, ast::TypeDescription::Named(ref name) if name == "void")
+                        {
                             return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
                                 function_name: function.name.to_owned(),
                                 argument_name: arg.name.to_owned(),
                             }
                             .at(arg.position));
                         }
+
+                        arguments.push(types::Argument {
+                            name: types::Identifier(arg.name.clone()),
+                            type_: check_type(&arg.type_)?,
+                        });
                     }
-                    declared_functions.insert(function.name.to_string(), function.clone())
+
+                    declared_functions.insert(function.name.to_string(), function.clone());
+                    items.push(types::Item::Function(types::Function {
+                        name: types::Identifier(function.name.clone()),
+                        arguments,
+                        body: function.body.clone(),
+                        export: function.export,
+                        location: function.position,
+                    }));
                 }
             };
         }
+
+        for import in &file.imports {
+            let module_name = import.path[0].clone();
+            let item_name = import.path[1].clone();
+
+            items.push(types::Item::Import(types::Import {
+                path: types::ModulePath(types::Identifier(module_name)),
+                item: types::Identifier(item_name),
+                location: import.position,
+            }));
+        }
+
+        modules.insert(
+            types::ModulePath(types::Identifier(file.name.clone())),
+            types::Module { items },
+        );
     }
 
     for (_, declared_function) in declared_functions.iter() {
@@ -87,7 +138,7 @@ pub fn type_check(program: &Program) -> Result<(), TypeCheckError> {
         }
     }
 
-    Ok(())
+    Ok(types::Program { modules })
 }
 
 fn type_check_expression(
@@ -141,7 +192,7 @@ fn type_check_expression(
 fn determine_expression_type(
     declared_functions: &HashMap<String, Function>,
     expression: &Expression,
-) -> Result<Type, TypeCheckError> {
+) -> Result<TypeDescription, TypeCheckError> {
     match expression {
         Expression::FunctionCall { name, position, .. } => Ok(declared_functions
             .get(name)
@@ -155,7 +206,7 @@ fn determine_expression_type(
             .return_type
             .clone()),
         Expression::Literal(literal, _) => match literal {
-            crate::ast::Literal::String(_, _) => Ok(Type::Named("string".to_string())),
+            crate::ast::Literal::String(_, _) => Ok(TypeDescription::Named("string".to_string())),
         },
     }
 }

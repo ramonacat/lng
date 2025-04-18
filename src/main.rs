@@ -3,6 +3,7 @@ mod compile;
 mod parse;
 mod stdlib;
 mod type_check;
+mod types;
 
 use compile::compile;
 use parse::parse_file;
@@ -23,9 +24,7 @@ fn main() {
     let stdlib_ast = parse_file("std", stdlib).unwrap();
 
     let program = Program(vec![program_ast, stdlib_ast]);
-    let type_check_result = type_check(&program);
+    let type_check_result = type_check(&program).unwrap();
 
-    println!("{type_check_result:?}");
-
-    compile(&program).unwrap();
+    compile(&type_check_result).unwrap();
 }

@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::ast::{
     Argument, Declaration, Expression, Function, FunctionBody, Import, Literal, SourceFile,
-    SourceRange, Statement, Type,
+    SourceRange, Statement, TypeDescription,
 };
 
 #[derive(Parser)]
@@ -76,7 +76,6 @@ pub fn parse_file<'parser>(
         declarations,
         imports,
         name: name.to_string(),
-        position: find_source_position(&parsed_file),
     })
 }
 
@@ -87,10 +86,8 @@ fn find_source_position(pair: &Pair<Rule>) -> SourceRange {
 }
 
 fn parse_declaration(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
-    let position = find_source_position(&item);
-
     match item.as_rule() {
-        Rule::function_declaration => Ok(Declaration::Function(parse_function(item)?, position)),
+        Rule::function_declaration => Ok(Declaration::Function(parse_function(item)?)),
         _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
             item,
         ))),
@@ -263,15 +260,12 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
     }
 }
 
-fn parse_type(mut type_: &str) -> Type {
+fn parse_type(mut type_: &str) -> TypeDescription {
     type_ = type_.trim();
 
     if let Some(stripped) = type_.strip_suffix("[]") {
-        return Type::Array(Box::new(parse_type(stripped)));
+        return TypeDescription::Array(Box::new(parse_type(stripped)));
     }
 
-    match type_ {
-        "void" => Type::Void,
-        _ => Type::Named(type_.to_string()),
-    }
+    TypeDescription::Named(type_.to_string())
 }
