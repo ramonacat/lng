@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, error::Error, fmt::Display};
 
 use inkwell::{
-    builder::Builder,
+    builder::{Builder, BuilderError},
     context::Context,
     module::{Linkage, Module},
     types::BasicType,
@@ -10,7 +10,7 @@ use inkwell::{
 };
 
 use crate::{
-    ast::{Expression, Function, FunctionBody, Statement},
+    ast::{Expression, Function, FunctionBody, SourceRange, Statement},
     stdlib::register_mappings,
     type_check::Program,
 };
@@ -21,11 +21,107 @@ struct Compiler<'ctx> {
     declared_modules: HashMap<String, Module<'ctx>>,
 }
 
-pub fn compile(program: &Program) {
+pub fn compile(program: &Program) -> Result<(), CompileError> {
     let context = Context::create();
     let compiler = Compiler::new(&context);
 
-    compiler.compile(program);
+    compiler.compile(program)
+}
+
+#[derive(Debug)]
+pub enum ErrorLocation {
+    // TODO this should also have the module name
+    Position(SourceRange),
+    Module(String),
+}
+
+impl Display for ErrorLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorLocation::Position(source_range) => write!(f, "{source_range}"),
+            ErrorLocation::Module(name) => write!(f, "module {name}"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct CompileError {
+    description: CompileErrorDescription,
+    location: ErrorLocation,
+}
+
+#[derive(Debug)]
+pub enum CompileErrorDescription {
+    ModuleNotFound(String),
+    FunctionNotFound {
+        module_name: String,
+        function_name: String,
+    },
+    InternalError(String),
+}
+
+impl CompileErrorDescription {
+    fn at(self, position: SourceRange) -> CompileError {
+        CompileError {
+            description: self,
+            location: ErrorLocation::Position(position),
+        }
+    }
+
+    fn in_module(self, name: String) -> CompileError {
+        CompileError {
+            description: self,
+            location: ErrorLocation::Module(name),
+        }
+    }
+}
+
+impl Display for CompileErrorDescription {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompileErrorDescription::ModuleNotFound(name) => write!(f, "Module {name} not found"),
+            CompileErrorDescription::FunctionNotFound {
+                module_name,
+                function_name,
+            } => write!(
+                f,
+                "Function {function_name} was not found in module {module_name}"
+            ),
+            CompileErrorDescription::InternalError(message) => {
+                write!(f, "Internal error: {message}")
+            }
+        }
+    }
+}
+
+impl Error for CompileError {}
+impl Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "compile error: {} at {}",
+            self.description, self.location
+        )
+    }
+}
+
+impl From<BuilderError> for CompileErrorDescription {
+    fn from(value: BuilderError) -> Self {
+        Self::InternalError(format!("{}", value))
+    }
+}
+
+trait IntoCompileError {
+    fn into_compile_error_at(self, position: SourceRange) -> CompileError;
+}
+
+impl IntoCompileError for BuilderError {
+    fn into_compile_error_at(self, position: SourceRange) -> CompileError {
+        CompileError {
+            description: self.into(),
+            location: ErrorLocation::Position(position),
+        }
+    }
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -65,19 +161,19 @@ impl<'ctx> Compiler<'ctx> {
         self.declare_function_inner(function, module, Linkage::External);
     }
 
-    pub fn compile(mut self, program: &Program) {
+    // TODO instead of executing the code, this should return some object that exposes the
+    // executable code with a safe interface
+    pub fn compile(mut self, program: &Program) -> Result<(), CompileError> {
         let mut function_declarations: HashMap<String, HashMap<String, Function>> = HashMap::new();
 
         for file in &program.0 {
             let module = self.context.create_module(&file.name);
-            function_declarations.insert(file.name.clone(), HashMap::new());
+            let mut function_declarations_for_module = HashMap::new();
 
             for declaration in &file.declarations {
                 match declaration {
-                    crate::ast::Declaration::Function(function) => {
-                        function_declarations
-                            .get_mut(&file.name)
-                            .unwrap()
+                    crate::ast::Declaration::Function(function, _) => {
+                        function_declarations_for_module
                             .insert(function.name.clone(), function.clone());
 
                         self.declare_function(function, &module);
@@ -86,10 +182,15 @@ impl<'ctx> Compiler<'ctx> {
             }
 
             self.declared_modules.insert(file.name.clone(), module);
+            function_declarations.insert(file.name.clone(), function_declarations_for_module);
         }
 
         for file in &program.0 {
-            let module = self.declared_modules.get(&file.name).unwrap();
+            let Some(module) = self.declared_modules.get(&file.name) else {
+                return Err(
+                    CompileErrorDescription::ModuleNotFound(file.name.clone()).at(file.position)
+                );
+            };
 
             for import in &file.imports {
                 // TODO support multi-level module hierarchies
@@ -99,34 +200,51 @@ impl<'ctx> Compiler<'ctx> {
                 self.import_function(
                     function_declarations
                         .get(&import_module)
-                        .unwrap()
+                        .ok_or_else(|| {
+                            CompileErrorDescription::ModuleNotFound(import_module.clone())
+                                .at(import.position)
+                        })?
                         .get(&import_function)
-                        .unwrap(),
+                        .ok_or_else(|| {
+                            CompileErrorDescription::FunctionNotFound {
+                                module_name: import_module,
+                                function_name: import_function,
+                            }
+                            .at(import.position)
+                        })?,
                     module,
                 );
             }
 
             for declaration in &file.declarations {
                 match declaration {
-                    crate::ast::Declaration::Function(function) => {
-                        let FunctionBody::Statements(statements) = &function.body else {
+                    crate::ast::Declaration::Function(function, position) => {
+                        let FunctionBody::Statements(statements, _) = &function.body else {
                             continue;
                         };
 
-                        let function = module.get_function(&function.name).unwrap();
+                        let Some(function) = module.get_function(&function.name) else {
+                            return Err(CompileErrorDescription::FunctionNotFound {
+                                module_name: file.name.clone(),
+                                function_name: function.name.clone(),
+                            }
+                            .at(function.position));
+                        };
                         let function_block = self.context.append_basic_block(function, "entry");
 
                         self.builder.position_at_end(function_block);
 
                         for statement in statements {
                             match statement {
-                                Statement::Expression(expression) => {
-                                    self.compile_expression(expression, module);
+                                Statement::Expression(expression, _) => {
+                                    self.compile_expression(expression, module)?;
                                 }
                             }
                         }
 
-                        self.builder.build_return(None).unwrap();
+                        self.builder
+                            .build_return(None)
+                            .map_err(|e| e.into_compile_error_at(*position))?;
                     }
                 }
             }
@@ -134,7 +252,9 @@ impl<'ctx> Compiler<'ctx> {
 
         let root_module = self.context.create_module("root");
         for module in self.declared_modules {
-            root_module.link_in_module(module.1).unwrap();
+            root_module.link_in_module(module.1).map_err(|e| {
+                CompileErrorDescription::InternalError(e.to_string()).in_module(module.0)
+            })?;
         }
 
         root_module.verify().unwrap();
@@ -158,6 +278,8 @@ impl<'ctx> Compiler<'ctx> {
                 .unwrap();
             main.call();
         }
+
+        Ok(())
     }
 
     fn resolve_function(&self, name: &str, module: &Module<'ctx>) -> Option<FunctionValue<'ctx>> {
@@ -168,31 +290,42 @@ impl<'ctx> Compiler<'ctx> {
         &self,
         expression: &Expression,
         module: &Module<'ctx>,
-    ) -> BasicMetadataValueEnum {
+    ) -> Result<BasicMetadataValueEnum, CompileError> {
         match expression {
-            crate::ast::Expression::FunctionCall { name, arguments } => {
-                let function = self.resolve_function(name, module).unwrap();
+            crate::ast::Expression::FunctionCall {
+                name,
+                arguments,
+                position,
+            } => {
+                let function = self.resolve_function(name, module).ok_or_else(|| {
+                    CompileErrorDescription::FunctionNotFound {
+                        module_name: module.get_name().to_string_lossy().to_string(),
+                        function_name: name.clone(),
+                    }
+                    .at(*position)
+                })?;
 
                 let call_arguments = arguments
                     .iter()
                     .map(|a| self.compile_expression(a, module))
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>, _>>()?;
+
                 let call_result = self
                     .builder
                     .build_call(function, &call_arguments, name)
-                    .unwrap();
+                    .map_err(|e| e.into_compile_error_at(*position))?;
 
-                call_result.as_any_value_enum().try_into().unwrap_or(
+                Ok(call_result.as_any_value_enum().try_into().unwrap_or(
                     self.context
                         .i8_type()
                         .const_zero()
                         .as_basic_value_enum()
                         .into(),
-                )
+                ))
             }
-            crate::ast::Expression::Literal(literal) => {
+            crate::ast::Expression::Literal(literal, _) => {
                 match literal {
-                    crate::ast::Literal::String(s) => {
+                    crate::ast::Literal::String(s, _) => {
                         let string_bytes = s.as_bytes().to_vec();
 
                         let string_type = self
@@ -206,7 +339,7 @@ impl<'ctx> Compiler<'ctx> {
                         global.set_constant(true);
                         global.set_visibility(inkwell::GlobalVisibility::Hidden);
 
-                        global.as_pointer_value().as_basic_value_enum().into()
+                        Ok(global.as_pointer_value().as_basic_value_enum().into())
                     }
                 }
             }

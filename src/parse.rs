@@ -1,71 +1,129 @@
+use std::fmt::Display;
+
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
+use thiserror::Error;
 
 use crate::ast::{
     Argument, Declaration, Expression, Function, FunctionBody, Import, Literal, SourceFile,
-    Statement, Type,
+    SourceRange, Statement, Type,
 };
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
 pub struct LNGParser;
 
-pub fn parse_file(name: &str, source: &str) -> SourceFile {
-    let parsed_file = LNGParser::parse(Rule::source_file, source)
-        .expect("failed to parse")
+#[derive(Debug)]
+#[allow(unused)]
+pub enum InternalError<'parser> {
+    UnexpectedRule(Pair<'parser, Rule>),
+    MissingExpectedRule(Pair<'parser, Rule>),
+    MissingRootRules,
+}
+
+impl Display for InternalError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO: mayhaps a more reader friendly representation
+        write!(f, "{self:?}")
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ParseError<'parser> {
+    #[error("Internal parser error: {0}")]
+    InternalError(InternalError<'parser>),
+    #[error("Parsing failed: {0}")]
+    ParseFailed(#[from] Box<pest::error::Error<Rule>>),
+}
+
+pub fn parse_file<'parser>(
+    name: &'parser str,
+    source: &'parser str,
+) -> Result<SourceFile, ParseError<'parser>> {
+    let Some(parsed_file) = LNGParser::parse(Rule::source_file, source)
+        .map_err(Box::new)?
         .next()
-        .unwrap()
-        .into_inner();
+    else {
+        return Err(ParseError::InternalError(InternalError::MissingRootRules));
+    };
+
+    let parsed_file_inner = parsed_file.clone().into_inner();
 
     let mut declarations = vec![];
     let mut imports = vec![];
 
-    for item in parsed_file {
+    for item in parsed_file_inner {
         match item.as_rule() {
             Rule::declaration => {
-                declarations.push(parse_declaration(item.into_inner().next().unwrap()))
+                let Some(inner_declaration) = item.clone().into_inner().next() else {
+                    return Err(ParseError::InternalError(
+                        InternalError::MissingExpectedRule(item),
+                    ));
+                };
+                declarations.push(parse_declaration(inner_declaration)?)
             }
-            Rule::import => imports.push(parse_import(item)),
+            Rule::import => imports.push(parse_import(item)?),
             Rule::EOI => {}
-            _ => panic!("Unexpected rule: {item:?}"),
+            _ => {
+                return Err(ParseError::InternalError(InternalError::UnexpectedRule(
+                    item,
+                )))
+            }
         }
     }
 
-    SourceFile {
+    Ok(SourceFile {
         declarations,
         imports,
         name: name.to_string(),
-    }
+        position: find_source_position(&parsed_file),
+    })
 }
 
-fn parse_declaration(item: Pair<Rule>) -> Declaration {
+fn find_source_position(pair: &Pair<Rule>) -> SourceRange {
+    let span = pair.as_span();
+
+    SourceRange(span.start_pos().line_col(), span.end_pos().line_col())
+}
+
+fn parse_declaration(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
+    let position = find_source_position(&item);
+
     match item.as_rule() {
-        Rule::function_declaration => Declaration::Function(parse_function(item)),
-        _ => panic!("Unexpected rule: {item:?}"),
+        Rule::function_declaration => Ok(Declaration::Function(parse_function(item)?, position)),
+        _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
+            item,
+        ))),
     }
 }
 
-fn parse_import(item: Pair<Rule>) -> Import {
+fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
     let mut path = vec![];
+    let position = find_source_position(&item);
 
     for element in item.into_inner() {
         match element.as_rule() {
             Rule::identifier => {
                 path.push(element.as_str().to_string());
             }
-            _ => panic!("Unexpected rule {element:?}"),
+            _ => {
+                return Err(ParseError::InternalError(InternalError::UnexpectedRule(
+                    element,
+                )))
+            }
         }
     }
 
-    Import { path }
+    Ok(Import { path, position })
 }
 
-fn parse_function(function: Pair<Rule>) -> Function {
+fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
     let mut name = String::new();
     let mut type_ = String::new();
     let mut arguments = vec![];
-    let mut body = FunctionBody::Intrinsic;
+    let mut body = None;
     let mut export = false;
+    let position = find_source_position(&function);
 
     for element in function.into_inner() {
         match element.as_rule() {
@@ -76,77 +134,132 @@ fn parse_function(function: Pair<Rule>) -> Function {
                 type_ = element.as_str().to_string();
             }
             Rule::argument => {
-                let mut argument_inner = element.into_inner();
-                let argument_name = argument_inner.next().unwrap().as_str().to_string();
-                let argument_type = argument_inner.next().unwrap().as_str().to_string();
+                let position = find_source_position(&element);
+                let mut argument_inner = element.clone().into_inner();
+                let Some(argument_name_pair) = argument_inner.next() else {
+                    return Err(ParseError::InternalError(
+                        InternalError::MissingExpectedRule(element),
+                    ));
+                };
+                let Some(argument_type_pair) = argument_inner.next() else {
+                    return Err(ParseError::InternalError(
+                        InternalError::MissingExpectedRule(element),
+                    ));
+                };
 
                 arguments.push(Argument {
-                    name: argument_name,
-                    type_: parse_type(argument_type.as_str()),
+                    name: argument_name_pair.as_str().to_string(),
+                    type_: parse_type(argument_type_pair.as_str()),
+                    position,
                 });
             }
             Rule::function_body => {
-                let inner_expression = element.into_inner().next().unwrap();
+                let position = find_source_position(&element);
+                let Some(inner_expression) = element.clone().into_inner().next() else {
+                    return Err(ParseError::InternalError(
+                        InternalError::MissingExpectedRule(element),
+                    ));
+                };
 
                 if Rule::keyword_extern == inner_expression.as_rule() {
-                    body = FunctionBody::Intrinsic;
+                    body = Some(FunctionBody::Extern(find_source_position(
+                        &inner_expression,
+                    )));
                     continue;
                 }
 
-                let statement_expressions =
-                    inner_expression.into_inner().next().unwrap().into_inner();
+                let Some(body_statements) = inner_expression.clone().into_inner().next() else {
+                    return Err(ParseError::InternalError(
+                        InternalError::MissingExpectedRule(inner_expression),
+                    ));
+                };
+
+                let statement_expressions = body_statements.into_inner();
 
                 let mut statements = vec![];
 
                 for expression in statement_expressions {
-                    statements.push(Statement::Expression(parse_expression(expression)));
+                    let position = find_source_position(&expression);
+                    statements.push(Statement::Expression(
+                        parse_expression(expression)?,
+                        position,
+                    ));
                 }
 
-                body = FunctionBody::Statements(statements);
+                body = Some(FunctionBody::Statements(statements, position));
             }
             Rule::keyword_export => {
                 export = true;
             }
-            _ => panic!("Unexpected rule {element:?}"),
+            _ => {
+                return Err(ParseError::InternalError(InternalError::UnexpectedRule(
+                    element,
+                )))
+            }
         }
     }
 
-    Function {
+    Ok(Function {
         name,
         arguments,
         return_type: parse_type(type_.as_str()),
-        body,
+        body: body.unwrap(),
         export,
-    }
+        position,
+    })
 }
 
-fn parse_expression(expression: Pair<Rule>) -> Expression {
+fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>> {
+    let position = find_source_position(&expression);
+
     match expression.as_rule() {
         Rule::expression_function_call => {
-            let mut expression_inner = expression.into_inner();
+            let mut expression_inner = expression.clone().into_inner();
             let mut arguments = vec![];
-            let function_name = expression_inner.next().unwrap().as_str().to_string();
+            let Some(function_name_pair) = expression_inner.next() else {
+                return Err(ParseError::InternalError(
+                    InternalError::MissingExpectedRule(expression),
+                ));
+            };
             for argument in expression_inner {
-                arguments.push(parse_expression(argument.into_inner().next().unwrap()));
+                let Some(argument_expression) = argument.clone().into_inner().next() else {
+                    return Err(ParseError::InternalError(
+                        InternalError::MissingExpectedRule(argument),
+                    ));
+                };
+
+                arguments.push(parse_expression(argument_expression)?);
             }
 
-            Expression::FunctionCall {
-                name: function_name,
+            Ok(Expression::FunctionCall {
+                name: function_name_pair.as_str().to_string(),
                 arguments,
-            }
+                position,
+            })
         }
         Rule::expression_literal => {
-            let expression_inner = expression.into_inner().next().unwrap();
+            let Some(expression_inner) = expression.clone().into_inner().next() else {
+                return Err(ParseError::InternalError(
+                    InternalError::MissingExpectedRule(expression),
+                ));
+            };
             match expression_inner.as_rule() {
                 Rule::expression_literal_string => {
                     let value = expression_inner.as_str();
 
-                    Expression::Literal(Literal::String((value[1..value.len() - 1]).to_string()))
+                    Ok(Expression::Literal(
+                        Literal::String((value[1..value.len() - 1]).to_string(), position),
+                        position,
+                    ))
                 }
-                _ => panic!("Unexpected rule: {expression_inner:?}"),
+                _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
+                    expression_inner,
+                ))),
             }
         }
-        _ => panic!("Unexpected rule: {expression:?}"),
+        _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
+            expression,
+        ))),
     }
 }
 
