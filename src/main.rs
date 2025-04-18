@@ -16,9 +16,7 @@ use type_check::{type_check, Program};
 pub struct LNGParser;
 
 fn main() {
-    let stdlib = "
-        export fn println(value: string): void extern;
-    ";
+    let stdlib = include_str!("../stdlib/std.lng");
 
     let program = "
         import std::println;

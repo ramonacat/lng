@@ -1,0 +1,1 @@
+export fn println(value: string): void extern;
