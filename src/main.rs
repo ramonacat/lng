@@ -49,7 +49,7 @@ fn parse_file(name: &str, source: &str) -> SourceFile {
 
     for item in parsed_file {
         match item.as_rule() {
-            Rule::function_definition => functions.push(parse_function(item)),
+            Rule::function_declaration => functions.push(parse_function(item)),
             Rule::import => imports.push(parse_import(item)),
             Rule::EOI => {}
             _ => panic!("Unexpected rule: {item:?}"),
