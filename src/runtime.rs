@@ -22,11 +22,10 @@ pub struct LngRc<T: Debug> {
 
 #[no_mangle]
 pub extern "C" fn println(arg: *const LngRc<LngString>) {
-    eprintln!("{:?}", unsafe { &*arg });
-
     let arg = unsafe { CStr::from_ptr((*(*arg).pointee).contents) }
         .to_str()
         .unwrap();
+
     println!("{}", arg);
 }
 

@@ -1,3 +1,5 @@
+mod rc_builder;
+
 use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
 
 use inkwell::{
@@ -8,6 +10,7 @@ use inkwell::{
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, FunctionValue},
     AddressSpace,
 };
+use rc_builder::build_rc;
 
 use crate::{
     ast::{Expression, FunctionBody, SourceRange, Statement},
@@ -446,145 +449,41 @@ impl<'ctx> Compiler<'ctx> {
                         .into(),
                 ))
             }
-            crate::ast::Expression::Literal(literal, _) => {
-                match literal {
-                    crate::ast::Literal::String(s, _) => {
-                        let characters_value = self
-                            .builder
-                            .build_global_string_ptr(s, "literal0_global")
-                            .unwrap();
+            crate::ast::Expression::Literal(literal, _) => match literal {
+                crate::ast::Literal::String(s, _) => {
+                    let characters_value = self
+                        .builder
+                        .build_global_string_ptr(s, "literal0_global")
+                        .unwrap();
 
-                        let literal_value = self
-                            .builder
-                            .build_malloc(global_scope.builtins.string_type, "literal0_value")
-                            .unwrap();
-                        let literal_value_characters = unsafe {
-                            self.builder
-                                .build_gep(
-                                    global_scope.builtins.string_type,
-                                    literal_value,
-                                    &[self.context.i64_type().const_int(0, false)],
-                                    "literal0_value_characters",
-                                )
-                                .unwrap()
-                        };
+                    let literal_value = self
+                        .builder
+                        .build_malloc(global_scope.builtins.string_type, "literal0_value")
+                        .unwrap();
+                    let literal_value_characters = unsafe {
                         self.builder
-                            .build_store(literal_value_characters, characters_value)
-                            .unwrap();
+                            .build_gep(
+                                global_scope.builtins.string_type,
+                                literal_value,
+                                &[self.context.i64_type().const_int(0, false)],
+                                "literal0_value_characters",
+                            )
+                            .unwrap()
+                    };
+                    self.builder
+                        .build_store(literal_value_characters, characters_value)
+                        .unwrap();
 
-                        // TODO generate a unique name for each of the things here!!!
-                        let rc = self
-                            .builder
-                            .build_malloc(global_scope.builtins.rc_type, "literal0")
-                            .unwrap();
-                        let rc_refcount = unsafe {
-                            self.builder
-                                .build_gep(
-                                    global_scope.builtins.rc_type,
-                                    rc,
-                                    &[
-                                        self.context.i32_type().const_int(0, false),
-                                        self.context.i32_type().const_int(0, false),
-                                    ],
-                                    "literal0_refcount",
-                                )
-                                .unwrap()
-                        };
-                        let rc_pointee = unsafe {
-                            self.builder
-                                .build_gep(
-                                    global_scope.builtins.rc_type,
-                                    rc,
-                                    &[
-                                        self.context.i32_type().const_int(0, false),
-                                        self.context.i32_type().const_int(1, false),
-                                    ],
-                                    "literal0_pointee",
-                                )
-                                .unwrap()
-                        };
-
-                        self.builder
-                            .build_store(rc_refcount, self.context.i64_type().const_int(1, false))
-                            .unwrap();
-                        self.builder.build_store(rc_pointee, literal_value).unwrap();
-
-                        let llvm_function = compiled_function.llvm_function;
-
-                        compiled_function.register_exit(
-                            move |builder: &Builder<'ctx>, context: &Context| {
-                                let old_refcount = builder
-                                    .build_load(
-                                        context.i64_type(),
-                                        rc_refcount,
-                                        "literal0_refcount_old",
-                                    )
-                                    .unwrap()
-                                    .into_int_value();
-                                let new_refcount = builder
-                                    .build_int_sub(
-                                        old_refcount,
-                                        context.i64_type().const_int(1, false),
-                                        "literal0_refcount_decremented",
-                                    )
-                                    .unwrap();
-
-                                let compare = builder
-                                    .build_int_compare(
-                                        inkwell::IntPredicate::EQ,
-                                        new_refcount,
-                                        context.i64_type().const_int(0, false),
-                                        "literal0_refcount_iszero",
-                                    )
-                                    .unwrap();
-
-                                let free_rc_block =
-                                    context.append_basic_block(llvm_function, "free_rc");
-                                let do_not_free_rc_block =
-                                    context.append_basic_block(llvm_function, "do_not_free_rc");
-                                let continuation_block =
-                                    context.append_basic_block(llvm_function, "continuation");
-
-                                builder
-                                    .build_conditional_branch(
-                                        compare,
-                                        free_rc_block,
-                                        do_not_free_rc_block,
-                                    )
-                                    .unwrap();
-
-                                builder.position_at_end(free_rc_block);
-
-                                let rc_pointee_value = builder
-                                    .build_load(
-                                        context.ptr_type(AddressSpace::default()),
-                                        rc_pointee,
-                                        "literal0_free_rc_pointee_value",
-                                    )
-                                    .unwrap()
-                                    .into_pointer_value();
-                                builder.build_free(rc_pointee_value).unwrap();
-                                builder.build_free(rc).unwrap();
-
-                                builder
-                                    .build_unconditional_branch(continuation_block)
-                                    .unwrap();
-
-                                builder.position_at_end(do_not_free_rc_block);
-                                builder.build_store(rc_refcount, new_refcount).unwrap();
-
-                                builder
-                                    .build_unconditional_branch(continuation_block)
-                                    .unwrap();
-
-                                builder.position_at_end(continuation_block);
-                            },
-                        );
-
-                        Ok(rc.as_basic_value_enum().into())
-                    }
+                    build_rc(
+                        "literal0",
+                        literal_value,
+                        global_scope,
+                        &self.builder,
+                        self.context,
+                        compiled_function,
+                    )
                 }
-            }
+            },
         }
     }
 
