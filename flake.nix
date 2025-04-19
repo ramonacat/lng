@@ -16,13 +16,11 @@
         export PATH="$PATH:$HOME/.cargo/bin"
       '';
       packages = with pkgs; [
-        cargo
         libffi
         libxml2
         lldb
         llvm
         nil
-        rustc
         valgrind
       ];
     };
