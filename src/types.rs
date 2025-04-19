@@ -66,6 +66,7 @@ pub struct ImportFunction {
 
 #[derive(Debug, Clone)]
 pub struct StructField {
+    #[allow(unused)]
     pub name: Identifier,
     pub type_: Type,
 }

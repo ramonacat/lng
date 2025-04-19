@@ -338,7 +338,7 @@ impl<'ctx> Compiler<'ctx> {
                             self.context.append_basic_block(llvm_function, "entry");
 
                         let mut compiled_function = CompiledFunction {
-                            context: &self.context,
+                            context: self.context,
                             builder: &self.builder,
                             definition: function,
                             llvm_function,
@@ -451,7 +451,7 @@ impl<'ctx> Compiler<'ctx> {
                     crate::ast::Literal::String(s, _) => {
                         let characters_value = self
                             .builder
-                            .build_global_string_ptr(&s, "literal0_global")
+                            .build_global_string_ptr(s, "literal0_global")
                             .unwrap();
 
                         let literal_value = self
