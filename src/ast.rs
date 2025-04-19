@@ -78,8 +78,21 @@ pub struct Function {
 }
 
 #[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: String,
+    pub type_: TypeDescription,
+}
+
+#[derive(Debug, Clone)]
+pub struct Struct {
+    pub name: String,
+    pub fields: Vec<StructField>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Declaration {
     Function(Function),
+    Struct(Struct),
 }
 
 #[derive(Debug)]

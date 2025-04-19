@@ -64,7 +64,7 @@ fn convert_type(type_: &ast::TypeDescription) -> types::Type {
             types::Type::Array(Box::new(convert_type(type_description)))
         }
         ast::TypeDescription::Named(name) if name == "void" => types::Type::Void,
-        ast::TypeDescription::Named(name) => types::Type::Object(name.clone()),
+        ast::TypeDescription::Named(name) => types::Type::Object(types::Identifier(name.clone())),
     }
 }
 
@@ -108,6 +108,25 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                             body: function.body.clone(),
                             export: function.export,
                             location: function.position,
+                        }),
+                    );
+                }
+                ast::Declaration::Struct(struct_) => {
+                    let struct_name = types::Identifier(struct_.name.to_string());
+                    let mut fields = vec![];
+
+                    for field in &struct_.fields {
+                        fields.push(types::StructField {
+                            name: types::Identifier(field.name.clone()),
+                            type_: convert_type(&field.type_),
+                        });
+                    }
+
+                    items.insert(
+                        struct_name.clone(),
+                        types::Item::Struct(types::Struct {
+                            name: struct_name,
+                            fields,
                         }),
                     );
                 }
@@ -171,6 +190,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                     )
                     .at(import.position));
                 }
+                types::Item::Struct(_) => todo!(),
             }
         }
     }
@@ -235,7 +255,9 @@ fn type_check_expression(
             Ok(convert_type(&called_function.return_type))
         }
         ast::Expression::Literal(literal, _) => match literal {
-            ast::Literal::String(_, _) => Ok(types::Type::Object("string".to_string())),
+            ast::Literal::String(_, _) => {
+                Ok(types::Type::Object(types::Identifier("string".to_string())))
+            }
         },
     }
 }

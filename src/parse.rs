@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::ast::{
     Argument, Declaration, Expression, Function, FunctionBody, Import, Literal, SourceFile,
-    SourceRange, Statement, TypeDescription,
+    SourceRange, Statement, Struct, StructField, TypeDescription,
 };
 
 #[derive(Parser)]
@@ -88,10 +88,49 @@ fn find_source_position(pair: &Pair<Rule>) -> SourceRange {
 fn parse_declaration(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     match item.as_rule() {
         Rule::function_declaration => Ok(Declaration::Function(parse_function(item)?)),
+        Rule::struct_declaration => Ok(Declaration::Struct(parse_struct(item)?)),
         _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
             item,
         ))),
     }
+}
+
+fn parse_struct(item: Pair<Rule>) -> Result<Struct, ParseError<'_>> {
+    let mut name = String::new();
+    let mut fields = vec![];
+
+    for item in item.into_inner() {
+        match item.as_rule() {
+            Rule::identifier => name = item.as_str().to_string(),
+            Rule::struct_field => {
+                let mut inner = item.clone().into_inner();
+
+                let Some(field_name) = inner.next() else {
+                    return Err(ParseError::InternalError(
+                        InternalError::MissingExpectedRule(item),
+                    ));
+                };
+
+                let Some(field_type) = inner.next() else {
+                    return Err(ParseError::InternalError(
+                        InternalError::MissingExpectedRule(item),
+                    ));
+                };
+
+                fields.push(StructField {
+                    name: field_name.as_str().to_string(),
+                    type_: parse_type(field_type.as_str()),
+                });
+            }
+            _ => {
+                return Err(ParseError::InternalError(InternalError::UnexpectedRule(
+                    item,
+                )))
+            }
+        }
+    }
+
+    Ok(Struct { name, fields })
 }
 
 fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
@@ -100,9 +139,7 @@ fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
 
     for element in item.into_inner() {
         match element.as_rule() {
-            Rule::identifier => {
-                path.push(element.as_str().to_string());
-            }
+            Rule::identifier => path.push(element.as_str().to_string()),
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     element,

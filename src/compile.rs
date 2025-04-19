@@ -1,17 +1,17 @@
-use std::{collections::HashMap, error::Error, fmt::Display};
+use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
 
 use inkwell::{
     builder::{Builder, BuilderError},
     context::Context,
     module::{Linkage, Module},
-    types::BasicType,
+    types::{BasicType, StructType},
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, FunctionValue},
     AddressSpace,
 };
 
 use crate::{
     ast::{Expression, FunctionBody, SourceRange, Statement},
-    stdlib::register_mappings,
+    runtime::register_mappings,
     types::{self, Identifier, ModulePath},
 };
 
@@ -19,6 +19,15 @@ struct Compiler<'ctx> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
     declared_modules: HashMap<types::ModulePath, Module<'ctx>>,
+}
+
+struct Builtins<'ctx> {
+    rc_type: StructType<'ctx>,
+    string_type: StructType<'ctx>,
+}
+
+struct Scope<'ctx> {
+    builtins: Rc<Builtins<'ctx>>,
 }
 
 pub fn compile(program: &types::Program) -> Result<(), CompileError> {
@@ -133,6 +142,35 @@ impl IntoCompileError for BuilderError {
     }
 }
 
+struct CompiledFunction<'ctx, 'src> {
+    context: &'src Context,
+    definition: &'src types::Function,
+    builder: &'src Builder<'ctx>,
+    llvm_function: FunctionValue<'ctx>,
+    exits: Vec<Box<dyn Fn(&'src Builder<'ctx>, &'src Context) + 'src>>,
+}
+
+impl<'ctx, 'src> CompiledFunction<'ctx, 'src> {
+    fn build_return(
+        &self,
+        return_value: Option<&dyn BasicValue<'ctx>>,
+    ) -> Result<(), CompileError> {
+        for exit in &self.exits {
+            exit(self.builder, self.context);
+        }
+
+        self.builder
+            .build_return(return_value)
+            .map_err(|e| e.into_compile_error_at(self.definition.location))?;
+
+        Ok(())
+    }
+
+    fn register_exit(&mut self, exit_function: impl Fn(&Builder<'ctx>, &Context) + 'src) {
+        self.exits.push(Box::new(exit_function));
+    }
+}
+
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context) -> Self {
         let declared_modules = HashMap::new();
@@ -182,10 +220,19 @@ impl<'ctx> Compiler<'ctx> {
             types::ModulePath,
             HashMap<types::Identifier, types::Function>,
         > = HashMap::new();
+        let mut struct_declarations: HashMap<
+            types::ModulePath,
+            HashMap<types::Identifier, (types::Struct, StructType<'ctx>)>,
+        > = HashMap::new();
 
         for (path, program_module) in &program.modules {
             let module = self.context.create_module(path.as_str());
+
             let mut function_declarations_for_module = HashMap::new();
+            let mut struct_declarations_for_module: HashMap<
+                Identifier,
+                (types::Struct, StructType<'ctx>),
+            > = HashMap::new();
 
             for declaration in program_module.items.values() {
                 match declaration {
@@ -195,13 +242,31 @@ impl<'ctx> Compiler<'ctx> {
 
                         self.declare_function(function, &module);
                     }
+                    types::Item::Struct(struct_) => {
+                        let field_types = struct_
+                            .fields
+                            .iter()
+                            .map(|f| self.type_to_llvm(&f.type_).as_basic_type_enum())
+                            .collect::<Vec<_>>();
+                        let llvm_type = self.context.struct_type(&field_types[..], false);
+
+                        struct_declarations_for_module
+                            .insert(struct_.name.clone(), (struct_.clone(), llvm_type));
+                    }
                     types::Item::ImportFunction(_) => {}
                 };
             }
 
             self.declared_modules.insert(path.clone(), module);
             function_declarations.insert(path.clone(), function_declarations_for_module);
+            struct_declarations.insert(path.clone(), struct_declarations_for_module);
         }
+
+        let std_module_path = types::ModulePath(types::Identifier("std".to_string()));
+
+        let Some(std_struct_declarations) = struct_declarations.get(&std_module_path) else {
+            return Err(CompileErrorDescription::ModuleNotFound(std_module_path).at_indeterminate());
+        };
 
         for (module_path, file) in &program.modules {
             let Some(module) = self.declared_modules.get(module_path) else {
@@ -234,6 +299,26 @@ impl<'ctx> Compiler<'ctx> {
                 );
             }
 
+            let rc_type = self.context.struct_type(
+                &[
+                    self.context.i64_type().as_basic_type_enum(), // refcount
+                    self.context
+                        .ptr_type(AddressSpace::default())
+                        .as_basic_type_enum(), // target object
+                ],
+                false,
+            );
+
+            let global_scope = Scope {
+                builtins: Rc::new(Builtins {
+                    rc_type,
+                    string_type: std_struct_declarations
+                        .get(&Identifier("string".to_string()))
+                        .unwrap()
+                        .1,
+                }),
+            };
+
             for item in file.items.values() {
                 match item {
                     types::Item::Function(function) => {
@@ -248,24 +333,38 @@ impl<'ctx> Compiler<'ctx> {
                             }
                             .at(function.location));
                         };
+
                         let function_block =
                             self.context.append_basic_block(llvm_function, "entry");
+
+                        let mut compiled_function = CompiledFunction {
+                            context: &self.context,
+                            builder: &self.builder,
+                            definition: function,
+                            llvm_function,
+                            exits: vec![],
+                        };
 
                         self.builder.position_at_end(function_block);
 
                         for statement in statements {
                             match statement {
                                 Statement::Expression(expression, _) => {
-                                    self.compile_expression(expression, module)?;
+                                    // TODO each function should have its own scope?
+                                    self.compile_expression(
+                                        expression,
+                                        module,
+                                        &global_scope,
+                                        &mut compiled_function,
+                                    )?;
                                 }
                             }
                         }
 
-                        self.builder
-                            .build_return(None)
-                            .map_err(|e| e.into_compile_error_at(function.location))?;
+                        compiled_function.build_return(None)?;
                     }
                     types::Item::ImportFunction(_) => {}
+                    types::Item::Struct(_) => {}
                 }
             }
         }
@@ -306,10 +405,12 @@ impl<'ctx> Compiler<'ctx> {
         module.get_function(name)
     }
 
-    fn compile_expression(
+    fn compile_expression<'src>(
         &self,
         expression: &Expression,
         module: &Module<'ctx>,
+        global_scope: &Scope<'ctx>,
+        compiled_function: &mut CompiledFunction<'ctx, 'src>,
     ) -> Result<BasicMetadataValueEnum, CompileError> {
         match expression {
             crate::ast::Expression::FunctionCall {
@@ -329,7 +430,7 @@ impl<'ctx> Compiler<'ctx> {
 
                 let call_arguments = arguments
                     .iter()
-                    .map(|a| self.compile_expression(a, module))
+                    .map(|a| self.compile_expression(a, module, global_scope, compiled_function))
                     .collect::<Result<Vec<_>, _>>()?;
 
                 let call_result = self
@@ -348,20 +449,139 @@ impl<'ctx> Compiler<'ctx> {
             crate::ast::Expression::Literal(literal, _) => {
                 match literal {
                     crate::ast::Literal::String(s, _) => {
-                        let string_bytes = s.as_bytes().to_vec();
+                        let characters_value = self
+                            .builder
+                            .build_global_string_ptr(&s, "literal0_global")
+                            .unwrap();
 
-                        let string_type = self
-                            .context
-                            .i8_type()
-                            .array_type(string_bytes.len() as u32 + 1);
+                        let literal_value = self
+                            .builder
+                            .build_malloc(global_scope.builtins.string_type, "literal0_value")
+                            .unwrap();
+                        let literal_value_characters = unsafe {
+                            self.builder
+                                .build_gep(
+                                    global_scope.builtins.string_type,
+                                    literal_value,
+                                    &[self.context.i64_type().const_int(0, false)],
+                                    "literal0_value_characters",
+                                )
+                                .unwrap()
+                        };
+                        self.builder
+                            .build_store(literal_value_characters, characters_value)
+                            .unwrap();
 
-                        // FIXME use a globally unique name for the global
-                        let global = module.add_global(string_type, None, "str0");
-                        global.set_initializer(&self.context.const_string(&string_bytes[..], true));
-                        global.set_constant(true);
-                        global.set_visibility(inkwell::GlobalVisibility::Hidden);
+                        // TODO generate a unique name for each of the things here!!!
+                        let rc = self
+                            .builder
+                            .build_malloc(global_scope.builtins.rc_type, "literal0")
+                            .unwrap();
+                        let rc_refcount = unsafe {
+                            self.builder
+                                .build_gep(
+                                    global_scope.builtins.rc_type,
+                                    rc,
+                                    &[
+                                        self.context.i32_type().const_int(0, false),
+                                        self.context.i32_type().const_int(0, false),
+                                    ],
+                                    "literal0_refcount",
+                                )
+                                .unwrap()
+                        };
+                        let rc_pointee = unsafe {
+                            self.builder
+                                .build_gep(
+                                    global_scope.builtins.rc_type,
+                                    rc,
+                                    &[
+                                        self.context.i32_type().const_int(0, false),
+                                        self.context.i32_type().const_int(1, false),
+                                    ],
+                                    "literal0_pointee",
+                                )
+                                .unwrap()
+                        };
 
-                        Ok(global.as_pointer_value().as_basic_value_enum().into())
+                        self.builder
+                            .build_store(rc_refcount, self.context.i64_type().const_int(1, false))
+                            .unwrap();
+                        self.builder.build_store(rc_pointee, literal_value).unwrap();
+
+                        let llvm_function = compiled_function.llvm_function;
+
+                        compiled_function.register_exit(
+                            move |builder: &Builder<'ctx>, context: &Context| {
+                                let old_refcount = builder
+                                    .build_load(
+                                        context.i64_type(),
+                                        rc_refcount,
+                                        "literal0_refcount_old",
+                                    )
+                                    .unwrap()
+                                    .into_int_value();
+                                let new_refcount = builder
+                                    .build_int_sub(
+                                        old_refcount,
+                                        context.i64_type().const_int(1, false),
+                                        "literal0_refcount_decremented",
+                                    )
+                                    .unwrap();
+
+                                let compare = builder
+                                    .build_int_compare(
+                                        inkwell::IntPredicate::EQ,
+                                        new_refcount,
+                                        context.i64_type().const_int(0, false),
+                                        "literal0_refcount_iszero",
+                                    )
+                                    .unwrap();
+
+                                let free_rc_block =
+                                    context.append_basic_block(llvm_function, "free_rc");
+                                let do_not_free_rc_block =
+                                    context.append_basic_block(llvm_function, "do_not_free_rc");
+                                let continuation_block =
+                                    context.append_basic_block(llvm_function, "continuation");
+
+                                builder
+                                    .build_conditional_branch(
+                                        compare,
+                                        free_rc_block,
+                                        do_not_free_rc_block,
+                                    )
+                                    .unwrap();
+
+                                builder.position_at_end(free_rc_block);
+
+                                let rc_pointee_value = builder
+                                    .build_load(
+                                        context.ptr_type(AddressSpace::default()),
+                                        rc_pointee,
+                                        "literal0_free_rc_pointee_value",
+                                    )
+                                    .unwrap()
+                                    .into_pointer_value();
+                                builder.build_free(rc_pointee_value).unwrap();
+                                builder.build_free(rc).unwrap();
+
+                                builder
+                                    .build_unconditional_branch(continuation_block)
+                                    .unwrap();
+
+                                builder.position_at_end(do_not_free_rc_block);
+                                builder.build_store(rc_refcount, new_refcount).unwrap();
+
+                                builder
+                                    .build_unconditional_branch(continuation_block)
+                                    .unwrap();
+
+                                builder.position_at_end(continuation_block);
+                            },
+                        );
+
+                        Ok(rc.as_basic_value_enum().into())
                     }
                 }
             }
@@ -373,11 +593,7 @@ impl<'ctx> Compiler<'ctx> {
             types::Type::Void => panic!("Cannot pass void arguments!"),
             // TODO arrays should be structs that have bounds, not just ptrs
             types::Type::Array(_) => Box::new(self.context.ptr_type(AddressSpace::default())),
-            types::Type::Object(n) => match n.as_str() {
-                // TODO string should be some form of a struct
-                "string" => Box::new(self.context.ptr_type(AddressSpace::default())),
-                _ => todo!(),
-            },
+            types::Type::Object(_) => Box::new(self.context.ptr_type(AddressSpace::default())),
         }
     }
 }

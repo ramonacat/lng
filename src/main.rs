@@ -1,7 +1,7 @@
 mod ast;
 mod compile;
 mod parse;
-mod stdlib;
+mod runtime;
 mod type_check;
 mod types;
 

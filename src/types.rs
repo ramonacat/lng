@@ -37,7 +37,7 @@ impl Display for ModulePath {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Type {
     Void,
-    Object(String),
+    Object(Identifier),
     Array(Box<Type>),
 }
 
@@ -64,9 +64,22 @@ pub struct ImportFunction {
     pub location: ast::SourceRange,
 }
 
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: Identifier,
+    pub type_: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct Struct {
+    pub name: Identifier,
+    pub fields: Vec<StructField>,
+}
+
 #[derive(Debug)]
 pub enum Item {
     Function(Function),
+    Struct(Struct),
     ImportFunction(ImportFunction),
 }
 

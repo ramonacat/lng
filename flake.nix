@@ -23,6 +23,7 @@
         llvm
         nil
         rustc
+        valgrind
       ];
     };
   };

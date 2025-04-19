@@ -37,8 +37,17 @@ function_declaration = {
     (keyword_export)? ~ "fn" ~ identifier ~ "(" ~ argument_list? ~ ")" ~ ":" ~ type_ ~ function_body
 }
 
+struct_field = {
+    identifier ~ ":" ~ type_
+}
+
+struct_declaration = {
+    (keyword_export)? ~ "struct" ~ identifier ~ "{" ~ (struct_field ~ ("," ~ struct_field)* ~ ","?)? ~ "}"
+}
+
 declaration = {
     function_declaration
+    | struct_declaration
 }
 
 import = {"import" ~ identifier ~ ("::" ~ identifier)* ~ ";"}
