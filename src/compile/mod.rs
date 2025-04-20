@@ -1,16 +1,16 @@
 mod rc_builder;
 
-use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
+use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc, sync::RwLock};
 
 use inkwell::{
     builder::{Builder, BuilderError},
     context::Context,
     module::{Linkage, Module},
     types::{BasicType, StructType},
-    values::{AnyValue, BasicMetadataValueEnum, BasicValue, FunctionValue},
+    values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue},
     AddressSpace,
 };
-use rc_builder::build_rc;
+use rc_builder::RcValue;
 
 use crate::{
     ast::{Expression, FunctionBody, SourceRange, Statement},
@@ -30,7 +30,43 @@ struct Builtins<'ctx> {
 }
 
 struct Scope<'ctx> {
-    builtins: Rc<Builtins<'ctx>>,
+    builtins: Rc<Builtins<'ctx>>, // TODO move this out of scope, into Compiler?
+    locals: RwLock<HashMap<Identifier, BasicValueEnum<'ctx>>>,
+    parent: Option<Rc<Scope<'ctx>>>,
+}
+
+impl<'ctx> Scope<'ctx> {
+    pub fn root(builtins: Rc<Builtins<'ctx>>) -> Rc<Self> {
+        Rc::new(Self {
+            builtins,
+            locals: RwLock::new(HashMap::new()),
+            parent: None,
+        })
+    }
+
+    pub fn child(self: &Rc<Self>) -> Rc<Self> {
+        Rc::new(Self {
+            builtins: self.builtins.clone(),
+            locals: RwLock::new(HashMap::new()),
+            parent: Some(self.clone()),
+        })
+    }
+
+    pub fn register(&self, name: Identifier, value: BasicValueEnum<'ctx>) {
+        self.locals.write().unwrap().insert(name, value);
+    }
+
+    pub fn get_variable(&self, name: &Identifier) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(variable) = self.locals.read().unwrap().get(name) {
+            return Some(*variable);
+        }
+
+        if let Some(parent) = &self.parent {
+            return parent.get_variable(name);
+        }
+
+        None
+    }
 }
 
 pub fn compile(program: &types::Program) -> Result<(), CompileError> {
@@ -145,36 +181,51 @@ impl IntoCompileError for BuilderError {
     }
 }
 
+type OnFunctionExit<'ctx> = dyn Fn(&Builder<'ctx>, &Context) + 'ctx;
+
 struct CompiledFunction<'ctx, 'src> {
     context: &'src Context,
     definition: &'src types::Function,
-    builder: &'src Builder<'ctx>,
     llvm_function: FunctionValue<'ctx>,
-    exits: Vec<Box<dyn Fn(&'src Builder<'ctx>, &'src Context) + 'src>>,
+    exits: Vec<Box<OnFunctionExit<'ctx>>>,
+    scope: Rc<Scope<'ctx>>,
 }
 
-impl<'ctx, 'src> CompiledFunction<'ctx, 'src> {
+impl<'ctx, 'src> CompiledFunction<'ctx, 'src>
+where
+    'src: 'ctx,
+{
     fn build_return(
         &self,
+        builder: &Builder<'ctx>,
         return_value: Option<&dyn BasicValue<'ctx>>,
     ) -> Result<(), CompileError> {
         for exit in &self.exits {
-            exit(self.builder, self.context);
+            exit(builder, self.context);
         }
 
-        self.builder
+        builder
             .build_return(return_value)
             .map_err(|e| e.into_compile_error_at(self.definition.location))?;
 
         Ok(())
     }
 
-    fn register_exit(&mut self, exit_function: impl Fn(&Builder<'ctx>, &Context) + 'src) {
+    fn register_exit(&mut self, exit_function: impl Fn(&Builder<'ctx>, &Context) + 'ctx) {
         self.exits.push(Box::new(exit_function));
     }
 }
 
-impl<'ctx> Compiler<'ctx> {
+#[derive(Clone, Copy)]
+enum ValueType<'ctx> {
+    Value(BasicMetadataValueEnum<'ctx>),
+    Reference(RcValue<'ctx>),
+}
+
+impl<'src, 'ctx> Compiler<'ctx>
+where
+    'src: 'ctx,
+{
     pub fn new(context: &'ctx Context) -> Self {
         let declared_modules = HashMap::new();
 
@@ -218,7 +269,7 @@ impl<'ctx> Compiler<'ctx> {
 
     // TODO instead of executing the code, this should return some object that exposes the
     // executable code with a safe interface
-    pub fn compile(mut self, program: &types::Program) -> Result<(), CompileError> {
+    pub fn compile(mut self, program: &'src types::Program) -> Result<(), CompileError> {
         let mut function_declarations: HashMap<
             types::ModulePath,
             HashMap<types::Identifier, types::Function>,
@@ -270,6 +321,25 @@ impl<'ctx> Compiler<'ctx> {
         let Some(std_struct_declarations) = struct_declarations.get(&std_module_path) else {
             return Err(CompileErrorDescription::ModuleNotFound(std_module_path).at_indeterminate());
         };
+        let rc_type = self.context.struct_type(
+            &[
+                self.context.i64_type().as_basic_type_enum(), // refcount
+                self.context
+                    .ptr_type(AddressSpace::default())
+                    .as_basic_type_enum(), // target object
+            ],
+            false,
+        );
+
+        let builtins = Rc::new(Builtins {
+            rc_type,
+            // TODO define string_type locally, remove from stdlib
+            string_type: std_struct_declarations
+                .get(&Identifier("string".to_string()))
+                .unwrap()
+                .1,
+        });
+        let global_scope = Scope::root(builtins);
 
         for (module_path, file) in &program.modules {
             let Some(module) = self.declared_modules.get(module_path) else {
@@ -302,26 +372,6 @@ impl<'ctx> Compiler<'ctx> {
                 );
             }
 
-            let rc_type = self.context.struct_type(
-                &[
-                    self.context.i64_type().as_basic_type_enum(), // refcount
-                    self.context
-                        .ptr_type(AddressSpace::default())
-                        .as_basic_type_enum(), // target object
-                ],
-                false,
-            );
-
-            let global_scope = Scope {
-                builtins: Rc::new(Builtins {
-                    rc_type,
-                    string_type: std_struct_declarations
-                        .get(&Identifier("string".to_string()))
-                        .unwrap()
-                        .1,
-                }),
-            };
-
             for item in file.items.values() {
                 match item {
                     types::Item::Function(function) => {
@@ -337,15 +387,23 @@ impl<'ctx> Compiler<'ctx> {
                             .at(function.location));
                         };
 
+                        let scope = global_scope.child();
+
+                        for (argument, argument_value) in
+                            function.arguments.iter().zip(llvm_function.get_params())
+                        {
+                            scope.register(argument.name.clone(), argument_value);
+                        }
+
                         let function_block =
                             self.context.append_basic_block(llvm_function, "entry");
 
                         let mut compiled_function = CompiledFunction {
                             context: self.context,
-                            builder: &self.builder,
                             definition: function,
                             llvm_function,
                             exits: vec![],
+                            scope,
                         };
 
                         self.builder.position_at_end(function_block);
@@ -364,7 +422,7 @@ impl<'ctx> Compiler<'ctx> {
                             }
                         }
 
-                        compiled_function.build_return(None)?;
+                        compiled_function.build_return(&self.builder, None)?;
                     }
                     types::Item::ImportFunction(_) => {}
                     types::Item::Struct(_) => {}
@@ -408,13 +466,13 @@ impl<'ctx> Compiler<'ctx> {
         module.get_function(name)
     }
 
-    fn compile_expression<'src>(
+    fn compile_expression<'scope>(
         &self,
         expression: &Expression,
         module: &Module<'ctx>,
-        global_scope: &Scope<'ctx>,
+        global_scope: &'scope Scope<'ctx>,
         compiled_function: &mut CompiledFunction<'ctx, 'src>,
-    ) -> Result<BasicMetadataValueEnum, CompileError> {
+    ) -> Result<ValueType<'ctx>, CompileError> {
         match expression {
             crate::ast::Expression::FunctionCall {
                 name,
@@ -434,20 +492,34 @@ impl<'ctx> Compiler<'ctx> {
                 let call_arguments = arguments
                     .iter()
                     .map(|a| self.compile_expression(a, module, global_scope, compiled_function))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<Vec<_>, _>>()?
+                    .iter_mut()
+                    .map(|a| match a {
+                        ValueType::Value(v) => *v,
+                        ValueType::Reference(rc_value) => {
+                            // TODO in this case we need to codegen refcount increment on enter and
+                            // decrement on exit!
+                            rc_value.as_ptr().as_basic_value_enum().into()
+                        }
+                    })
+                    .collect::<Vec<_>>();
 
+                // todo functions can return a Reference too, we need to consider that and return
+                // the right expression result!
                 let call_result = self
                     .builder
                     .build_call(function, &call_arguments, name)
                     .map_err(|e| e.into_compile_error_at(*position))?;
 
-                Ok(call_result.as_any_value_enum().try_into().unwrap_or(
+                let call_result = call_result.as_any_value_enum().try_into().unwrap_or(
                     self.context
                         .i8_type()
                         .const_zero()
                         .as_basic_value_enum()
                         .into(),
-                ))
+                );
+
+                Ok(ValueType::Value(call_result))
             }
             crate::ast::Expression::Literal(literal, _) => match literal {
                 crate::ast::Literal::String(s, _) => {
@@ -474,16 +546,28 @@ impl<'ctx> Compiler<'ctx> {
                         .build_store(literal_value_characters, characters_value)
                         .unwrap();
 
-                    build_rc(
+                    let rc = RcValue::build_init(
                         "literal0",
                         literal_value,
                         global_scope,
-                        &self.builder,
                         self.context,
                         compiled_function,
-                    )
+                        &self.builder,
+                    )?;
+
+                    Ok(ValueType::Reference(rc))
                 }
             },
+            Expression::VariableReference(name, _) => {
+                // TODO determine based on the signature if this should be a Value or Reference
+                Ok(ValueType::Value(
+                    compiled_function
+                        .scope
+                        .get_variable(&Identifier(name.clone()))
+                        .unwrap()
+                        .into(),
+                ))
+            }
         }
     }
 

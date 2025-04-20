@@ -21,9 +21,14 @@ expression_function_call = {
     identifier ~ "(" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ ")"
 }
 
+expression_variable_reference = { 
+    identifier 
+}
+
 expression = {
     expression_function_call 
     | expression_literal
+    | expression_variable_reference
 }
 
 statement = { expression ~ ";" }

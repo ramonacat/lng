@@ -291,6 +291,18 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
                 ))),
             }
         }
+        Rule::expression_variable_reference => {
+            let Some(expression_inner) = expression.clone().into_inner().next() else {
+                return Err(ParseError::InternalError(
+                    InternalError::MissingExpectedRule(expression),
+                ));
+            };
+
+            Ok(Expression::VariableReference(
+                expression_inner.as_str().to_string(),
+                find_source_position(&expression_inner),
+            ))
+        }
         _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
             expression,
         ))),

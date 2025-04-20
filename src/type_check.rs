@@ -1,6 +1,9 @@
 use std::{collections::HashMap, error::Error, fmt::Display};
 
-use crate::{ast, types};
+use crate::{
+    ast,
+    types::{self, Identifier},
+};
 
 #[derive(Debug)]
 pub struct Program(pub Vec<ast::SourceFile>);
@@ -33,6 +36,7 @@ pub enum TypeCheckErrorDescription {
     ModuleDoesNotExist(types::ModulePath),
     ItemDoesNotExist(types::ModulePath, types::Identifier),
     ItemNotExported(types::ModulePath, types::Identifier),
+    UndeclaredVariable(types::Identifier),
 }
 
 impl TypeCheckErrorDescription {
@@ -54,6 +58,7 @@ impl Display for TypeCheckErrorDescription {
             TypeCheckErrorDescription::ModuleDoesNotExist(module_path) => write!(f, "Module {module_path} does not exist"),
             TypeCheckErrorDescription::ItemDoesNotExist(module_path, identifier) => write!(f, "Item {identifier} does not exist in module {module_path}"),
             TypeCheckErrorDescription::ItemNotExported(module_path, identifier) => write!(f, "Item {identifier} exists in module {module_path}, but is not exported"),
+            TypeCheckErrorDescription::UndeclaredVariable(identifier) => write!(f, "Variable {identifier} does not exist"),
         }
     }
 }
@@ -199,10 +204,20 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
         let ast::FunctionBody::Statements(body_statements, _) = &declared_function.body else {
             continue;
         };
+
+        let mut locals = HashMap::new();
+
+        for argument in &declared_function.arguments {
+            locals.insert(
+                Identifier(argument.name.clone()),
+                convert_type(&argument.type_),
+            );
+        }
+
         for statement in body_statements.iter() {
             match statement {
                 ast::Statement::Expression(expression, _) => {
-                    type_check_expression(expression, &declared_items)?;
+                    type_check_expression(expression, &declared_items, &locals)?;
                 }
             }
         }
@@ -214,6 +229,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
 fn type_check_expression(
     expression: &ast::Expression,
     declared_functions: &HashMap<String, ast::Function>,
+    locals: &HashMap<Identifier, types::Type>,
 ) -> Result<types::Type, TypeCheckError> {
     match expression {
         ast::Expression::FunctionCall {
@@ -238,7 +254,7 @@ fn type_check_expression(
             for (argument, called_function_argument) in
                 arguments.iter().zip(&called_function.arguments)
             {
-                let type_ = type_check_expression(argument, declared_functions)?;
+                let type_ = type_check_expression(argument, declared_functions, locals)?;
                 let expected_type = convert_type(&called_function_argument.type_);
 
                 if type_ != expected_type {
@@ -259,5 +275,13 @@ fn type_check_expression(
                 Ok(types::Type::Object(types::Identifier("string".to_string())))
             }
         },
+        ast::Expression::VariableReference(name, position) => {
+            let id = Identifier(name.clone());
+
+            locals
+                .get(&id)
+                .ok_or_else(|| TypeCheckErrorDescription::UndeclaredVariable(id).at(*position))
+                .cloned()
+        }
     }
 }

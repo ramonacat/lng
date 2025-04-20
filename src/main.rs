@@ -15,8 +15,12 @@ fn main() {
     let program = "
         import std::println;
 
+        fn my_println(arg: string): void {
+            println(arg);
+        }
+
         fn main(args:string[]): void {
-            println(\"hello world\");
+            my_println(\"hello world\");
         }
     ";
 

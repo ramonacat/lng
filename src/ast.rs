@@ -27,6 +27,7 @@ pub enum Expression {
         position: SourceRange,
     },
     Literal(Literal, SourceRange),
+    VariableReference(String, SourceRange),
 }
 
 impl Expression {
@@ -34,6 +35,7 @@ impl Expression {
         match self {
             Expression::FunctionCall { position, .. } => *position,
             Expression::Literal(_, position) => *position,
+            Expression::VariableReference(_, position) => *position,
         }
     }
 }
