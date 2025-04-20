@@ -72,6 +72,35 @@ impl<'ctx> RcValue<'ctx> {
     pub fn as_ptr(&self) -> PointerValue<'ctx> {
         self.value
     }
+
+    pub(crate) fn from_pointer(
+        pointer: PointerValue<'ctx>,
+        context: &CompilerContext<'ctx>,
+    ) -> RcValue<'ctx> {
+        let refcount = unsafe {
+            pointer.const_gep(
+                context.builtins.rc_type,
+                &[
+                    context.llvm_context.i32_type().const_int(0, false),
+                    context.llvm_context.i32_type().const_int(0, false),
+                ],
+            )
+        };
+        let pointee = unsafe {
+            pointer.const_gep(
+                context.builtins.rc_type,
+                &[
+                    context.llvm_context.i32_type().const_int(0, false),
+                    context.llvm_context.i32_type().const_int(1, false),
+                ],
+            )
+        };
+        RcValue {
+            value: pointer,
+            refcount,
+            pointee,
+        }
+    }
 }
 
 pub fn build_cleanup<'ctx>(
@@ -175,4 +204,31 @@ pub fn build_cleanup<'ctx>(
         context.builder.position_at_end(previous_before);
     }
     Ok(first_block)
+}
+
+pub(crate) fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
+    for (i, rc) in rcs.iter().enumerate() {
+        let name = format!("rc{}", i);
+        let init_refcount = context
+            .builder
+            .build_load(
+                context.llvm_context.i64_type(),
+                rc.refcount,
+                &format!("{name}_init_refcount"),
+            )
+            .unwrap();
+        let incremented_refcount = context
+            .builder
+            .build_int_add(
+                init_refcount.into_int_value(),
+                context.llvm_context.i64_type().const_int(1, false),
+                &format!("{name}_init_refcount_incremented"),
+            )
+            .unwrap();
+
+        context
+            .builder
+            .build_store(rc.refcount, incremented_refcount)
+            .unwrap();
+    }
 }

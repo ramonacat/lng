@@ -37,8 +37,19 @@ impl Display for ModulePath {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Type {
     Void,
+    // TODO add integer and floating point types
     Object(Identifier),
     Array(Box<Type>),
+}
+
+impl Type {
+    pub fn is_primitive(&self) -> bool {
+        match self {
+            Type::Void => true,
+            Type::Object(_) => false,
+            Type::Array(_) => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

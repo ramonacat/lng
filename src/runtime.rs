@@ -30,7 +30,7 @@ extern "C" fn println(arg: *const LngRc<LngString>) {
 }
 
 pub fn register_mappings(execution_engine: &ExecutionEngine, module: &Module) {
-    if let Some(println_handle) = module.get_function("println") {
+    if let Some(println_handle) = module.get_function("println_impl") {
         execution_engine
             .add_global_mapping(&println_handle, println as *const extern "C" fn() as usize);
     }

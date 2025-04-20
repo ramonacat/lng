@@ -1,8 +1,9 @@
 use std::{collections::HashMap, rc::Rc};
 
 use super::{
-    context::CompilerContext, CompileError, CompileErrorDescription, CompiledFunction,
-    FunctionHandle, Scope, ValueType,
+    context::CompilerContext,
+    rc_builder::{self, RcValue},
+    CompileError, CompileErrorDescription, CompiledFunction, FunctionHandle, Scope, ValueType,
 };
 use crate::{
     ast::SourceRange,
@@ -34,6 +35,7 @@ impl<'ctx> CompiledModule<'ctx> {
         function: &types::Function,
         context: &CompilerContext<'ctx>,
     ) -> Result<super::CompiledFunction<'ctx>, CompileError> {
+        let mut rcs = vec![];
         let handle = self.resolve_function(&function.name, function.location)?;
         let scope = self.scope.child();
 
@@ -42,29 +44,36 @@ impl<'ctx> CompiledModule<'ctx> {
             .iter()
             .zip(handle.llvm_function.get_params())
         {
-            // TODO this may need to be a reference if the type is not primitive!
-            scope.register(
-                argument.name.clone(),
-                ValueType::Value(argument_value.into()),
-            );
+            let value = if argument.type_.is_primitive() {
+                ValueType::Value(argument_value.into())
+            } else {
+                let rc = RcValue::from_pointer(argument_value.into_pointer_value(), context);
+                rcs.push(rc);
+
+                ValueType::Reference(rc)
+            };
+
+            scope.register(argument.name.clone(), value);
         }
 
         let entry_block = context
             .llvm_context
             .append_basic_block(handle.llvm_function, "entry");
+
         let end_block = context
             .llvm_context
             .append_basic_block(handle.llvm_function, "end");
-        context.builder.position_at_end(end_block);
 
         context.builder.position_at_end(entry_block);
+
+        rc_builder::build_prologue(&rcs, context);
 
         Ok(CompiledFunction {
             handle,
             scope,
             entry: entry_block,
             end: end_block,
-            rcs: vec![],
+            rcs,
         })
     }
 }

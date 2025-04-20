@@ -204,7 +204,6 @@ fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
 
                 let mut statements = vec![];
                 for statement in inner_expression.into_inner() {
-                    dbg!(&statement);
                     for expression in statement.into_inner().next().unwrap().into_inner() {
                         let position = find_source_position(&expression);
                         statements.push(Statement::Expression(

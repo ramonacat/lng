@@ -1,1 +1,5 @@
-export fn println(value: string): void extern;
+fn println_impl(value: string): void extern;
+
+export fn println(value: string): void {
+    println_impl(value);
+}

@@ -258,7 +258,10 @@ where
         function: &types::Function,
         module: &Module<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let linkage = if function.export || function.name == types::Identifier("main".to_string()) {
+        let linkage = if function.export
+            || function.name == types::Identifier("main".to_string())
+            || matches!(function.body, FunctionBody::Extern(_))
+        {
             Linkage::External
         } else {
             Linkage::Internal
@@ -390,6 +393,7 @@ where
                         self.context
                             .builder
                             .position_at_end(compiled_function.entry);
+
                         self.context
                             .builder
                             .build_unconditional_branch(cleanup_label)
@@ -481,8 +485,6 @@ where
                     .map(|a| match a {
                         ValueType::Value(v) => *v,
                         ValueType::Reference(rc_value) => {
-                            // TODO in this case we need to codegen refcount increment on enter and
-                            // decrement on exit!
                             rc_value.as_ptr().as_basic_value_enum().into()
                         }
                         ValueType::Function(_) => todo!("implement passing callables as arguments"),
