@@ -46,7 +46,6 @@ pub enum Statement {
     Expression(Expression, SourceRange),
 }
 
-// TODO add SourcePosition here once the type_check internal type is decoupled from this
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeDescription {
     Array(Box<TypeDescription>),
