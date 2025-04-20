@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use super::{
     context::CompilerContext,
     rc_builder::{self, RcValue},
-    CompileError, CompileErrorDescription, CompiledFunction, FunctionHandle, Scope, ValueType,
+    CompileError, CompileErrorDescription, CompiledFunction, FunctionHandle, Scope, Value,
 };
 use crate::{
     ast::SourceRange,
@@ -26,7 +26,7 @@ impl<'ctx> CompiledModule<'ctx> {
         self.scope.get_function(name, self.path.clone(), location)
     }
 
-    pub(crate) fn set_variable(&self, name: Identifier, value: ValueType<'ctx>) {
+    pub(crate) fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
         self.scope.register(name, value);
     }
 
@@ -45,12 +45,12 @@ impl<'ctx> CompiledModule<'ctx> {
             .zip(handle.llvm_function.get_params())
         {
             let value = if argument.type_.is_primitive() {
-                ValueType::Value(argument_value.into())
+                Value::Primitive(argument_value.into())
             } else {
                 let rc = RcValue::from_pointer(argument_value.into_pointer_value(), context);
                 rcs.push(rc);
 
-                ValueType::Reference(rc)
+                Value::Reference(rc)
             };
 
             scope.register(argument.name.clone(), value);

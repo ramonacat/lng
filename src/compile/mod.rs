@@ -184,9 +184,8 @@ pub struct StructHandle<'ctx> {
 }
 
 #[derive(Clone)]
-// TODO it is not a type, rename to just Value
-enum ValueType<'ctx> {
-    Value(BasicMetadataValueEnum<'ctx>),
+enum Value<'ctx> {
+    Primitive(BasicMetadataValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     Function(FunctionHandle<'ctx>),
     #[allow(unused)]
@@ -305,10 +304,8 @@ where
                             name: function.name.clone(),
                         };
 
-                        created_module.set_variable(
-                            function.name.clone(),
-                            ValueType::Function(function_handle),
-                        );
+                        created_module
+                            .set_variable(function.name.clone(), Value::Function(function_handle));
                     }
                     types::Item::Struct(struct_) => {
                         let field_types = struct_
@@ -323,7 +320,7 @@ where
 
                         created_module.set_variable(
                             struct_.name.clone(),
-                            ValueType::Struct(StructHandle {
+                            Value::Struct(StructHandle {
                                 description: struct_.clone(),
                                 llvm_type,
                             }),
@@ -353,7 +350,7 @@ where
                 let imported_function = self.import_function(&function, &module.llvm_module);
                 module.set_variable(
                     function.name.clone(),
-                    ValueType::Function(FunctionHandle {
+                    Value::Function(FunctionHandle {
                         location: import.location,
                         name: function.name.clone(),
                         arguments: function.arguments.clone(),
@@ -461,7 +458,7 @@ where
         expression: &Expression,
         compiled_function: &mut CompiledFunction<'ctx>,
         module_path: ModulePath,
-    ) -> Result<ValueType<'ctx>, CompileError> {
+    ) -> Result<Value<'ctx>, CompileError> {
         match expression {
             crate::ast::Expression::FunctionCall {
                 name,
@@ -483,12 +480,12 @@ where
                     .collect::<Result<Vec<_>, _>>()?
                     .iter_mut()
                     .map(|a| match a {
-                        ValueType::Value(v) => *v,
-                        ValueType::Reference(rc_value) => {
+                        Value::Primitive(v) => *v,
+                        Value::Reference(rc_value) => {
                             rc_value.as_ptr().as_basic_value_enum().into()
                         }
-                        ValueType::Function(_) => todo!("implement passing callables as arguments"),
-                        ValueType::Struct(_) => {
+                        Value::Function(_) => todo!("implement passing callables as arguments"),
+                        Value::Struct(_) => {
                             todo!("implement passing struct definitions as arguments")
                         }
                     })
@@ -511,7 +508,7 @@ where
                         .into(),
                 );
 
-                Ok(ValueType::Value(call_result))
+                Ok(Value::Primitive(call_result))
             }
             crate::ast::Expression::Literal(literal, _) => match literal {
                 crate::ast::Literal::String(s, location) => {
@@ -557,7 +554,7 @@ where
                     )?;
                     compiled_function.rcs.push(rc);
 
-                    Ok(ValueType::Reference(rc))
+                    Ok(Value::Reference(rc))
                 }
             },
             Expression::VariableReference(name, _) => Ok(compiled_function

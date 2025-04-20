@@ -5,10 +5,10 @@ use crate::{
     types::{self, ModulePath},
 };
 
-use super::{CompileError, CompileErrorDescription, FunctionHandle, ValueType};
+use super::{CompileError, CompileErrorDescription, FunctionHandle, Value};
 
 pub struct Scope<'ctx> {
-    locals: RwLock<HashMap<types::Identifier, ValueType<'ctx>>>,
+    locals: RwLock<HashMap<types::Identifier, Value<'ctx>>>,
     parent: Option<Rc<Scope<'ctx>>>,
 }
 
@@ -27,11 +27,11 @@ impl<'ctx> Scope<'ctx> {
         })
     }
 
-    pub fn register(&self, name: types::Identifier, value: ValueType<'ctx>) {
+    pub fn register(&self, name: types::Identifier, value: Value<'ctx>) {
         self.locals.write().unwrap().insert(name, value);
     }
 
-    pub fn get_variable(&self, name: &types::Identifier) -> Option<ValueType<'ctx>> {
+    pub fn get_variable(&self, name: &types::Identifier) -> Option<Value<'ctx>> {
         if let Some(variable) = self.locals.read().unwrap().get(name) {
             return Some(variable.clone());
         }
@@ -58,7 +58,7 @@ impl<'ctx> Scope<'ctx> {
             .at(module_path.clone(), location)
         })?;
 
-        let ValueType::Function(function) = called_item else {
+        let Value::Function(function) = called_item else {
             todo!();
         };
 
