@@ -138,10 +138,8 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
             };
         }
 
-        modules.insert(
-            types::ModulePath(types::Identifier(file.name.clone())),
-            types::Module { items },
-        );
+        let path = types::ModulePath(types::Identifier(file.name.clone()));
+        modules.insert(path.clone(), types::Module { items, path });
     }
 
     for file in &program.0 {

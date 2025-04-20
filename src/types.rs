@@ -86,6 +86,7 @@ pub enum Item {
 
 #[derive(Debug)]
 pub struct Module {
+    pub path: ModulePath,
     pub items: HashMap<Identifier, Item>,
 }
 

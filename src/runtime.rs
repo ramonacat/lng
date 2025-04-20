@@ -20,6 +20,7 @@ pub struct LngRc<T: Debug> {
     pointee: *const T,
 }
 
+// TODO does it need to be pub?
 #[no_mangle]
 pub extern "C" fn println(arg: *const LngRc<LngString>) {
     let arg = unsafe { CStr::from_ptr((*(*arg).pointee).contents) }
