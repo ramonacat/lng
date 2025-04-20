@@ -21,6 +21,7 @@ fn main() {
 
         fn main(args:string[]): void {
             my_println(\"hello world\");
+            my_println(\"hello world\");
         }
     ";
 

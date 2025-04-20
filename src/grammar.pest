@@ -36,7 +36,8 @@ statement = { expression ~ ";" }
 argument = { identifier ~ ":" ~ type_ }
 argument_list = _{ argument ~ ("," ~ argument_list)? ~ ","? }
 
-function_body = { ("{" ~ statement* ~ "}") | keyword_extern ~ ";" }
+function_body_statements = {("{" ~ statement* ~ "}")}
+function_body = { function_body_statements | keyword_extern ~ ";" }
 
 function_declaration = {
     (keyword_export)? ~ "fn" ~ identifier ~ "(" ~ argument_list? ~ ")" ~ ":" ~ type_ ~ function_body

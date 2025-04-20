@@ -202,22 +202,16 @@ fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
                     continue;
                 }
 
-                let Some(body_statements) = inner_expression.clone().into_inner().next() else {
-                    return Err(ParseError::InternalError(
-                        InternalError::MissingExpectedRule(inner_expression),
-                    ));
-                };
-
-                let statement_expressions = body_statements.into_inner();
-
                 let mut statements = vec![];
-
-                for expression in statement_expressions {
-                    let position = find_source_position(&expression);
-                    statements.push(Statement::Expression(
-                        parse_expression(expression)?,
-                        position,
-                    ));
+                for statement in inner_expression.into_inner() {
+                    dbg!(&statement);
+                    for expression in statement.into_inner().next().unwrap().into_inner() {
+                        let position = find_source_position(&expression);
+                        statements.push(Statement::Expression(
+                            parse_expression(expression)?,
+                            position,
+                        ));
+                    }
                 }
 
                 body = Some(FunctionBody::Statements(statements, position));

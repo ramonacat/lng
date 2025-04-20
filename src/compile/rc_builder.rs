@@ -84,6 +84,7 @@ pub fn build_cleanup<'ctx>(
 
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{}", i);
+        let previous_before = before;
 
         before = context.llvm_context.prepend_basic_block(before, &name);
         if i == 0 {
@@ -166,9 +167,12 @@ pub fn build_cleanup<'ctx>(
 
         context.builder.position_at_end(continuation_block);
 
-        context.builder.build_unconditional_branch(before).unwrap();
+        context
+            .builder
+            .build_unconditional_branch(previous_before)
+            .unwrap();
 
-        context.builder.position_at_end(before);
+        context.builder.position_at_end(previous_before);
     }
     Ok(first_block)
 }

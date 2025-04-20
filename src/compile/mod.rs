@@ -381,7 +381,7 @@ where
                             }
                         }
 
-                        rc_builder::build_cleanup(
+                        let cleanup_label = rc_builder::build_cleanup(
                             &self.context,
                             &compiled_function.rcs,
                             compiled_function.end,
@@ -392,7 +392,7 @@ where
                             .position_at_end(compiled_function.entry);
                         self.context
                             .builder
-                            .build_unconditional_branch(compiled_function.end)
+                            .build_unconditional_branch(cleanup_label)
                             .unwrap();
 
                         self.context.builder.position_at_end(compiled_function.end);
@@ -512,17 +512,24 @@ where
                 Ok(ValueType::Value(call_result))
             }
             crate::ast::Expression::Literal(literal, _) => match literal {
-                crate::ast::Literal::String(s, _) => {
+                crate::ast::Literal::String(s, location) => {
+                    let name = format!(
+                        "literal_{}_{}_{}_{}",
+                        location.0 .0, location.0 .1, location.1 .0, location.1 .1
+                    );
                     let characters_value = self
                         .context
                         .builder
-                        .build_global_string_ptr(s, "literal0_global")
+                        .build_global_string_ptr(s, &(name.clone() + "_global"))
                         .unwrap();
 
                     let literal_value = self
                         .context
                         .builder
-                        .build_malloc(self.context.builtins.string_type, "literal0_value")
+                        .build_malloc(
+                            self.context.builtins.string_type,
+                            &(name.clone() + "_value"),
+                        )
                         .unwrap();
                     let literal_value_characters = unsafe {
                         self.context
@@ -531,7 +538,7 @@ where
                                 self.context.builtins.string_type,
                                 literal_value,
                                 &[self.context.llvm_context.i64_type().const_int(0, false)],
-                                "literal0_value_characters",
+                                &(name.clone() + "_value_characters"),
                             )
                             .unwrap()
                     };
@@ -541,7 +548,7 @@ where
                         .unwrap();
 
                     let rc = RcValue::build_init(
-                        "literal0",
+                        &name,
                         literal_value,
                         &self.context,
                         &self.context.builtins,
