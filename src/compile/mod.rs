@@ -1,18 +1,23 @@
 mod context;
+mod module;
 mod rc_builder;
+mod scope;
 
-use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc, sync::RwLock};
+use std::{error::Error, fmt::Display, rc::Rc};
 
 use context::{Builtins, CompilerContext};
 use inkwell::{
+    basic_block::BasicBlock,
     builder::BuilderError,
     context::Context,
     module::{Linkage, Module},
     types::{BasicType, StructType},
-    values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue},
+    values::{AnyValue, BasicMetadataValueEnum, BasicValue, FunctionValue},
     AddressSpace,
 };
+use module::GlobalScope;
 use rc_builder::RcValue;
+use scope::Scope;
 
 use crate::{
     ast::{Expression, FunctionBody, SourceRange, Statement},
@@ -20,54 +25,16 @@ use crate::{
     types::{self, Identifier, ModulePath},
 };
 
-struct Compiler<'ctx> {
-    context: CompilerContext<'ctx>,
-    declared_modules: HashMap<types::ModulePath, Module<'ctx>>,
-}
-
-struct Scope<'ctx> {
-    locals: RwLock<HashMap<Identifier, BasicValueEnum<'ctx>>>,
-    parent: Option<Rc<Scope<'ctx>>>,
-}
-
-impl<'ctx> Scope<'ctx> {
-    pub fn root() -> Rc<Self> {
-        Rc::new(Self {
-            locals: RwLock::new(HashMap::new()),
-            parent: None,
-        })
-    }
-
-    pub fn child(self: &Rc<Self>) -> Rc<Self> {
-        Rc::new(Self {
-            locals: RwLock::new(HashMap::new()),
-            parent: Some(self.clone()),
-        })
-    }
-
-    pub fn register(&self, name: Identifier, value: BasicValueEnum<'ctx>) {
-        self.locals.write().unwrap().insert(name, value);
-    }
-
-    pub fn get_variable(&self, name: &Identifier) -> Option<BasicValueEnum<'ctx>> {
-        if let Some(variable) = self.locals.read().unwrap().get(name) {
-            return Some(*variable);
-        }
-
-        if let Some(parent) = &self.parent {
-            return parent.get_variable(name);
-        }
-
-        None
-    }
-}
-
 pub fn compile(program: &types::Program) -> Result<(), CompileError> {
     let context = Context::create();
 
     let compiler = Compiler::new(&context);
 
     compiler.compile(program)
+}
+
+struct Compiler<'ctx> {
+    context: CompilerContext<'ctx>,
 }
 
 #[derive(Debug)]
@@ -176,47 +143,54 @@ impl IntoCompileError for BuilderError {
     }
 }
 
-type OnFunctionExit<'ctx> = dyn Fn(&CompilerContext<'ctx>) + 'ctx;
+struct CompiledFunction<'ctx> {
+    handle: FunctionHandle<'ctx>,
 
-struct CompiledFunction<'ctx, 'src> {
-    module: &'src types::Module,
-    definition: &'src types::Function,
-
-    exits: Vec<Box<OnFunctionExit<'ctx>>>,
+    entry: BasicBlock<'ctx>,
+    end: BasicBlock<'ctx>,
     scope: Rc<Scope<'ctx>>,
-
-    llvm_function: FunctionValue<'ctx>,
+    rcs: Vec<RcValue<'ctx>>,
 }
 
-impl<'ctx, 'src> CompiledFunction<'ctx, 'src>
-where
-    'src: 'ctx,
-{
+impl<'ctx> CompiledFunction<'ctx> {
     fn build_return(
         &self,
         return_value: Option<&dyn BasicValue<'ctx>>,
         context: &CompilerContext<'ctx>,
+        module_path: ModulePath,
     ) -> Result<(), CompileError> {
-        for exit in &self.exits {
-            exit(context);
-        }
-
-        context.builder.build_return(return_value).map_err(|e| {
-            e.into_compile_error_at(self.module.path.clone(), self.definition.location)
-        })?;
+        context
+            .builder
+            .build_return(return_value)
+            .map_err(|e| e.into_compile_error_at(module_path.clone(), self.handle.location))?;
 
         Ok(())
     }
-
-    fn register_exit(&mut self, exit_function: impl Fn(&CompilerContext<'ctx>) + 'ctx) {
-        self.exits.push(Box::new(exit_function));
-    }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
+pub struct FunctionHandle<'ctx> {
+    pub location: SourceRange,
+    pub name: types::Identifier,
+    pub arguments: Vec<types::Argument>,
+    pub llvm_function: FunctionValue<'ctx>,
+}
+
+#[derive(Clone)]
+#[allow(unused)]
+pub struct StructHandle<'ctx> {
+    pub description: types::Struct,
+    pub llvm_type: StructType<'ctx>,
+}
+
+#[derive(Clone)]
+// TODO it is not a type, rename to just Value
 enum ValueType<'ctx> {
     Value(BasicMetadataValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
+    Function(FunctionHandle<'ctx>),
+    #[allow(unused)]
+    Struct(StructHandle<'ctx>),
 }
 
 impl<'src, 'ctx> Compiler<'ctx>
@@ -254,18 +228,18 @@ where
                 builder: context.create_builder(),
                 builtins,
             },
-            declared_modules: HashMap::new(),
         }
     }
 
+    // TODO implement name mangling to avoid collisions between functions from different modules!!!
     fn declare_function_inner(
         &self,
-        function: &types::Function,
+        name: &str,
+        arguments: &[types::Argument],
         llvm_module: &Module<'ctx>,
         linkage: Linkage,
-    ) {
-        let arguments = function
-            .arguments
+    ) -> FunctionValue<'ctx> {
+        let arguments = arguments
             .iter()
             .map(|arg| self.type_to_llvm(&arg.type_).as_basic_type_enum().into())
             .collect::<Vec<_>>();
@@ -276,52 +250,62 @@ where
             .void_type()
             .fn_type(&arguments[..], false);
 
-        llvm_module.add_function(&function.name.0, function_type, Some(linkage));
+        llvm_module.add_function(name, function_type, Some(linkage))
     }
 
-    fn declare_function(&self, function: &types::Function, module: &Module<'ctx>) {
+    fn declare_function(
+        &self,
+        function: &types::Function,
+        module: &Module<'ctx>,
+    ) -> FunctionValue<'ctx> {
         let linkage = if function.export || function.name == types::Identifier("main".to_string()) {
             Linkage::External
         } else {
             Linkage::Internal
         };
 
-        self.declare_function_inner(function, module, linkage);
+        self.declare_function_inner(&function.name.0, &function.arguments, module, linkage)
     }
 
-    fn import_function(&self, function: &types::Function, module: &Module<'ctx>) {
-        self.declare_function_inner(function, module, Linkage::External);
+    fn import_function(
+        &self,
+        function: &FunctionHandle<'ctx>,
+        module: &Module<'ctx>,
+    ) -> FunctionValue<'ctx> {
+        self.declare_function_inner(
+            &function.name.0,
+            &function.arguments,
+            module,
+            Linkage::External,
+        )
     }
 
     // TODO instead of executing the code, this should return some object that exposes the
     // executable code with a safe interface
-    pub fn compile(mut self, program: &'src types::Program) -> Result<(), CompileError> {
-        let mut function_declarations: HashMap<
-            types::ModulePath,
-            HashMap<types::Identifier, types::Function>,
-        > = HashMap::new();
-
-        let mut struct_declarations: HashMap<
-            types::ModulePath,
-            HashMap<types::Identifier, (types::Struct, StructType<'ctx>)>,
-        > = HashMap::new();
+    pub fn compile(self, program: &'src types::Program) -> Result<(), CompileError> {
+        let mut global_scope = GlobalScope::new();
 
         for (path, program_module) in &program.modules {
             let module = self.context.llvm_context.create_module(path.as_str());
-
-            let mut function_declarations_for_module = HashMap::new();
-            let mut struct_declarations_for_module: HashMap<
-                Identifier,
-                (types::Struct, StructType<'ctx>),
-            > = HashMap::new();
+            let created_module = global_scope.create_module(path.clone(), module);
 
             for declaration in program_module.items.values() {
                 match declaration {
                     types::Item::Function(function) => {
-                        function_declarations_for_module
-                            .insert(function.name.clone(), function.clone());
+                        let llvm_function =
+                            self.declare_function(function, &created_module.llvm_module);
 
-                        self.declare_function(function, &module);
+                        let function_handle = FunctionHandle {
+                            arguments: function.arguments.clone(),
+                            llvm_function,
+                            location: function.location,
+                            name: function.name.clone(),
+                        };
+
+                        created_module.set_variable(
+                            function.name.clone(),
+                            ValueType::Function(function_handle),
+                        );
                     }
                     types::Item::Struct(struct_) => {
                         let field_types = struct_
@@ -334,48 +318,44 @@ where
                             .llvm_context
                             .struct_type(&field_types[..], false);
 
-                        struct_declarations_for_module
-                            .insert(struct_.name.clone(), (struct_.clone(), llvm_type));
+                        created_module.set_variable(
+                            struct_.name.clone(),
+                            ValueType::Struct(StructHandle {
+                                description: struct_.clone(),
+                                llvm_type,
+                            }),
+                        );
                     }
                     types::Item::ImportFunction(_) => {}
                 };
             }
-
-            self.declared_modules.insert(path.clone(), module);
-            function_declarations.insert(path.clone(), function_declarations_for_module);
-            struct_declarations.insert(path.clone(), struct_declarations_for_module);
         }
 
-        let global_scope = Scope::root();
-
         for (module_path, file) in &program.modules {
-            let Some(module) = self.declared_modules.get(module_path) else {
+            let Some(module) = global_scope.get(module_path) else {
                 return Err(
                     CompileErrorDescription::ModuleNotFound(module_path.clone()).at_indeterminate()
                 );
             };
 
             for item in file.items.values() {
+                // TODO support importing structs, and possibly other types
                 let types::Item::ImportFunction(import) = item else {
                     continue;
                 };
 
-                self.import_function(
-                    function_declarations
-                        .get(&import.path)
-                        .ok_or_else(|| {
-                            CompileErrorDescription::ModuleNotFound(import.path.clone())
-                                .at(module_path.clone(), import.location)
-                        })?
-                        .get(&import.item)
-                        .ok_or_else(|| {
-                            CompileErrorDescription::FunctionNotFound {
-                                module_name: import.path.clone(),
-                                function_name: import.item.clone(),
-                            }
-                            .at(module_path.clone(), import.location)
-                        })?,
-                    module,
+                let function =
+                    global_scope.resolve_function(&import.path, &import.item, import.location)?;
+
+                let imported_function = self.import_function(&function, &module.llvm_module);
+                module.set_variable(
+                    function.name.clone(),
+                    ValueType::Function(FunctionHandle {
+                        location: import.location,
+                        name: function.name.clone(),
+                        arguments: function.arguments.clone(),
+                        llvm_function: imported_function,
+                    }),
                 );
             }
 
@@ -386,36 +366,8 @@ where
                             continue;
                         };
 
-                        let Some(llvm_function) = module.get_function(&function.name.0) else {
-                            return Err(CompileErrorDescription::FunctionNotFound {
-                                module_name: module_path.clone(),
-                                function_name: function.name.clone(),
-                            }
-                            .at(module_path.clone(), function.location));
-                        };
-
-                        let scope = global_scope.child();
-
-                        for (argument, argument_value) in
-                            function.arguments.iter().zip(llvm_function.get_params())
-                        {
-                            scope.register(argument.name.clone(), argument_value);
-                        }
-
-                        let function_block = self
-                            .context
-                            .llvm_context
-                            .append_basic_block(llvm_function, "entry");
-
-                        let mut compiled_function = CompiledFunction {
-                            module: file,
-                            definition: function,
-                            llvm_function,
-                            exits: vec![],
-                            scope,
-                        };
-
-                        self.context.builder.position_at_end(function_block);
+                        let mut compiled_function =
+                            module.begin_compile_function(function, &self.context)?;
 
                         for statement in statements {
                             match statement {
@@ -423,14 +375,29 @@ where
                                     self.compile_expression(
                                         expression,
                                         &mut compiled_function,
-                                        &self.context.builtins,
-                                        module,
+                                        module_path.clone(),
                                     )?;
                                 }
                             }
                         }
 
-                        compiled_function.build_return(None, &self.context)?;
+                        rc_builder::build_cleanup(
+                            &self.context,
+                            &compiled_function.rcs,
+                            compiled_function.end,
+                        )?;
+
+                        self.context
+                            .builder
+                            .position_at_end(compiled_function.entry);
+                        self.context
+                            .builder
+                            .build_unconditional_branch(compiled_function.end)
+                            .unwrap();
+
+                        self.context.builder.position_at_end(compiled_function.end);
+
+                        compiled_function.build_return(None, &self.context, module_path.clone())?;
                     }
                     types::Item::ImportFunction(_) => {}
                     types::Item::Struct(_) => {}
@@ -439,19 +406,25 @@ where
         }
 
         let root_module = self.context.llvm_context.create_module("root");
-        for module in self.declared_modules {
-            println!("{}", module.0);
+        for module in global_scope.into_modules() {
+            println!("{}", module.path);
 
             println!(
                 "{}",
-                module.1.print_to_string().to_string().replace("\\n", "\n")
+                module
+                    .llvm_module
+                    .print_to_string()
+                    .to_string()
+                    .replace("\\n", "\n")
             );
 
-            module.1.verify().unwrap();
+            module.llvm_module.verify().unwrap();
 
-            root_module.link_in_module(module.1).map_err(|e| {
-                CompileErrorDescription::InternalError(e.to_string()).in_module(module.0)
-            })?;
+            root_module
+                .link_in_module(module.llvm_module)
+                .map_err(|e| {
+                    CompileErrorDescription::InternalError(e.to_string()).in_module(module.path)
+                })?;
         }
 
         root_module.verify().unwrap();
@@ -482,10 +455,8 @@ where
     fn compile_expression(
         &self,
         expression: &Expression,
-        compiled_function: &mut CompiledFunction<'ctx, 'src>,
-        builtins: &Builtins<'ctx>,
-        module: &Module<'ctx>, // TODO this should be Scope instead, and functions should be values
-                               // therein
+        compiled_function: &mut CompiledFunction<'ctx>,
+        module_path: ModulePath,
     ) -> Result<ValueType<'ctx>, CompileError> {
         match expression {
             crate::ast::Expression::FunctionCall {
@@ -493,11 +464,18 @@ where
                 arguments,
                 position,
             } => {
-                let function = module.get_function(name).unwrap();
+                let function = compiled_function
+                    .scope
+                    .get_function(
+                        &types::Identifier(name.clone()),
+                        module_path.clone(),
+                        expression.position(),
+                    )
+                    .unwrap();
 
                 let call_arguments = arguments
                     .iter()
-                    .map(|a| self.compile_expression(a, compiled_function, builtins, module))
+                    .map(|a| self.compile_expression(a, compiled_function, module_path.clone()))
                     .collect::<Result<Vec<_>, _>>()?
                     .iter_mut()
                     .map(|a| match a {
@@ -507,6 +485,10 @@ where
                             // decrement on exit!
                             rc_value.as_ptr().as_basic_value_enum().into()
                         }
+                        ValueType::Function(_) => todo!("implement passing callables as arguments"),
+                        ValueType::Struct(_) => {
+                            todo!("implement passing struct definitions as arguments")
+                        }
                     })
                     .collect::<Vec<_>>();
 
@@ -515,10 +497,8 @@ where
                 let call_result = self
                     .context
                     .builder
-                    .build_call(function, &call_arguments, name)
-                    .map_err(|e| {
-                        e.into_compile_error_at(compiled_function.module.path.clone(), *position)
-                    })?;
+                    .build_call(function.llvm_function, &call_arguments, name)
+                    .map_err(|e| e.into_compile_error_at(module_path.clone(), *position))?;
 
                 let call_result = call_result.as_any_value_enum().try_into().unwrap_or(
                     self.context
@@ -542,13 +522,13 @@ where
                     let literal_value = self
                         .context
                         .builder
-                        .build_malloc(builtins.string_type, "literal0_value")
+                        .build_malloc(self.context.builtins.string_type, "literal0_value")
                         .unwrap();
                     let literal_value_characters = unsafe {
                         self.context
                             .builder
                             .build_gep(
-                                builtins.string_type,
+                                self.context.builtins.string_type,
                                 literal_value,
                                 &[self.context.llvm_context.i64_type().const_int(0, false)],
                                 "literal0_value_characters",
@@ -564,23 +544,17 @@ where
                         "literal0",
                         literal_value,
                         &self.context,
-                        compiled_function,
                         &self.context.builtins,
                     )?;
+                    compiled_function.rcs.push(rc);
 
                     Ok(ValueType::Reference(rc))
                 }
             },
-            Expression::VariableReference(name, _) => {
-                // TODO determine based on the signature if this should be a Value or Reference
-                Ok(ValueType::Value(
-                    compiled_function
-                        .scope
-                        .get_variable(&Identifier(name.clone()))
-                        .unwrap()
-                        .into(),
-                ))
-            }
+            Expression::VariableReference(name, _) => Ok(compiled_function
+                .scope
+                .get_variable(&Identifier(name.clone()))
+                .unwrap()),
         }
     }
 
