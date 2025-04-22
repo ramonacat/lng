@@ -5,7 +5,7 @@ use pest_derive::Parser;
 use thiserror::Error;
 
 use crate::ast::{
-    Argument, Declaration, Expression, Function, FunctionBody, Import, Literal, SourceFile,
+    Argument, Declaration, Expression, Function, FunctionBody, Impl, Import, Literal, SourceFile,
     SourceRange, Statement, Struct, StructField, TypeDescription,
 };
 
@@ -89,13 +89,40 @@ fn parse_declaration(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     match item.as_rule() {
         Rule::function_declaration => Ok(Declaration::Function(parse_function(item)?)),
         Rule::struct_declaration => Ok(Declaration::Struct(parse_struct(item)?)),
+        Rule::impl_declaration => Ok(Declaration::Impl(parse_impl(item)?)),
         _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
             item,
         ))),
     }
 }
 
+fn parse_impl(item: Pair<Rule>) -> Result<Impl, ParseError<'_>> {
+    let position = find_source_position(&item);
+
+    let mut struct_name = String::new();
+    let mut functions = vec![];
+
+    for item in item.into_inner() {
+        match item.as_rule() {
+            Rule::identifier => struct_name = item.as_str().to_string(),
+            Rule::function_declaration => functions.push(parse_function(item)?),
+            _ => {
+                return Err(ParseError::InternalError(InternalError::UnexpectedRule(
+                    item,
+                )))
+            }
+        }
+    }
+
+    Ok(Impl {
+        struct_name,
+        functions,
+        position,
+    })
+}
+
 fn parse_struct(item: Pair<Rule>) -> Result<Struct, ParseError<'_>> {
+    let position = find_source_position(&item);
     let mut name = String::new();
     let mut fields = vec![];
 
@@ -103,6 +130,7 @@ fn parse_struct(item: Pair<Rule>) -> Result<Struct, ParseError<'_>> {
         match item.as_rule() {
             Rule::identifier => name = item.as_str().to_string(),
             Rule::struct_field => {
+                let position = find_source_position(&item);
                 let mut inner = item.clone().into_inner();
 
                 let Some(field_name) = inner.next() else {
@@ -120,6 +148,7 @@ fn parse_struct(item: Pair<Rule>) -> Result<Struct, ParseError<'_>> {
                 fields.push(StructField {
                     name: field_name.as_str().to_string(),
                     type_: parse_type(field_type.as_str()),
+                    position,
                 });
             }
             _ => {
@@ -130,7 +159,11 @@ fn parse_struct(item: Pair<Rule>) -> Result<Struct, ParseError<'_>> {
         }
     }
 
-    Ok(Struct { name, fields })
+    Ok(Struct {
+        name,
+        fields,
+        position,
+    })
 }
 
 fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
@@ -204,15 +237,32 @@ fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
 
                 let mut statements = vec![];
                 for statement in inner_expression.into_inner() {
-                    for expression in statement.into_inner().next().unwrap().into_inner() {
-                        let position = find_source_position(&expression);
-                        statements.push(Statement::Expression(
-                            parse_expression(expression)?,
-                            position,
-                        ));
+                    for expression in statement.into_inner() {
+                        match expression.as_rule() {
+                            Rule::expression => {
+                                let position = find_source_position(&expression);
+                                statements.push(Statement::Expression(
+                                    parse_expression(expression)?,
+                                    position,
+                                ));
+                            }
+                            Rule::statement_let => {
+                                let mut inner = expression.into_inner();
+
+                                let declared_name = inner.next().unwrap().as_str().to_string();
+                                let type_ = parse_type(inner.next().unwrap().as_str());
+                                let expression = parse_expression(inner.next().unwrap())?;
+
+                                statements.push(Statement::Let(declared_name, type_, expression));
+                            }
+                            _ => {
+                                return Err(ParseError::InternalError(
+                                    InternalError::UnexpectedRule(expression),
+                                ));
+                            }
+                        };
                     }
                 }
-
                 body = Some(FunctionBody::Statements(statements, position));
             }
             Rule::keyword_export => {
@@ -237,29 +287,33 @@ fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
 }
 
 fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>> {
+    let Some(expression) = expression.clone().into_inner().next() else {
+        return Err(ParseError::InternalError(
+            InternalError::MissingExpectedRule(expression),
+        ));
+    };
+
     let position = find_source_position(&expression);
 
     match expression.as_rule() {
-        Rule::expression_function_call => {
+        Rule::expression_call => {
             let mut expression_inner = expression.clone().into_inner();
             let mut arguments = vec![];
-            let Some(function_name_pair) = expression_inner.next() else {
+
+            let Some(call_target) = expression_inner.next() else {
                 return Err(ParseError::InternalError(
                     InternalError::MissingExpectedRule(expression),
                 ));
             };
-            for argument in expression_inner {
-                let Some(argument_expression) = argument.clone().into_inner().next() else {
-                    return Err(ParseError::InternalError(
-                        InternalError::MissingExpectedRule(argument),
-                    ));
-                };
 
-                arguments.push(parse_expression(argument_expression)?);
+            let target_expression = parse_expression(call_target)?;
+
+            for argument in expression_inner {
+                arguments.push(parse_expression(argument)?);
             }
 
             Ok(Expression::FunctionCall {
-                name: function_name_pair.as_str().to_string(),
+                target: Box::new(target_expression),
                 arguments,
                 position,
             })
@@ -295,6 +349,32 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
                 expression_inner.as_str().to_string(),
                 find_source_position(&expression_inner),
             ))
+        }
+        Rule::expression_struct_constructor => {
+            let position = find_source_position(&expression);
+            let mut expression_inner = expression.clone().into_inner();
+            let Some(struct_name) = expression_inner.next() else {
+                return Err(ParseError::InternalError(
+                    InternalError::MissingExpectedRule(expression),
+                ));
+            };
+
+            Ok(Expression::StructConstructor(
+                struct_name.as_str().to_string(),
+                position,
+            ))
+        }
+        Rule::expression_field_access => {
+            let position = find_source_position(&expression);
+            let mut expression_inner = expression.clone().into_inner();
+            let target = parse_expression(expression_inner.next().unwrap().clone())?;
+            let field_name = expression_inner.next().unwrap().as_str().to_string();
+
+            Ok(Expression::FieldAccess {
+                target: Box::new(target),
+                field_name,
+                position,
+            })
         }
         _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
             expression,

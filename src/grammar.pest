@@ -17,21 +17,52 @@ expression_literal = {
     expression_literal_string
 }
 
-expression_function_call = {
-    identifier ~ "(" ~ (expression ~ ("," ~ expression)* ~ ","?)? ~ ")"
+expression_function_call_arguments = _{ (expression ~ ("," ~ expression)* ~ ","?)? }
+
+expression_call_target = {expression_field_access | expression_primary | expression_parenthesised}
+
+expression_call = {
+    expression_call_target ~ "(" ~ expression_function_call_arguments ~ ")"
 }
 
 expression_variable_reference = { 
     identifier 
 }
 
-expression = {
-    expression_function_call 
-    | expression_literal
-    | expression_variable_reference
+expression_struct_constructor = {
+    // TODO field initializers go between the curlies
+    identifier ~ "{" ~ "}"
 }
 
-statement = { expression ~ ";" }
+expression_field_access_target = {expression_primary | expression_parenthesised}
+
+expression_field_access = {
+    expression_field_access_target ~ "." ~ identifier
+}
+
+expression_primary = _{
+    expression_struct_constructor
+    | expression_variable_reference
+    | expression_literal
+}
+
+expression_parenthesised = _{ "(" ~ expression ~ ")" }
+
+expression = {
+    expression_parenthesised
+    | expression_call
+    | expression_field_access
+    | expression_primary
+}
+
+statement_let = {
+    "let" ~ identifier ~ ":" ~ type_ ~ "=" ~ expression ~ ";"
+}
+
+statement = { 
+    (expression ~ ";") 
+    | statement_let
+}
 
 argument = { identifier ~ ":" ~ type_ }
 argument_list = _{ argument ~ ("," ~ argument_list)? ~ ","? }
@@ -51,9 +82,14 @@ struct_declaration = {
     (keyword_export)? ~ "struct" ~ identifier ~ "{" ~ (struct_field ~ ("," ~ struct_field)* ~ ","?)? ~ "}"
 }
 
+impl_declaration = {
+    (keyword_export)? ~ "impl" ~ identifier ~ "{" ~ function_declaration* ~ "}"
+}
+
 declaration = {
     function_declaration
     | struct_declaration
+    | impl_declaration
 }
 
 import = {"import" ~ identifier ~ ("::" ~ identifier)* ~ ";"}

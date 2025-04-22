@@ -5,7 +5,7 @@ use crate::{
     types::{self, ModulePath},
 };
 
-use super::{CompileError, CompileErrorDescription, FunctionHandle, Value};
+use super::{CompileError, CompileErrorDescription, FunctionHandle, StructHandle, Value};
 
 pub struct Scope<'ctx> {
     locals: RwLock<HashMap<types::Identifier, Value<'ctx>>>,
@@ -44,6 +44,8 @@ impl<'ctx> Scope<'ctx> {
     }
 
     // TODO make (ModulePath, SourceLocation) an instance of ErrorLocation
+    // TODO make this get_callable, and handle other types of callables when they exist
+    // TODO instead of the get_* methods, there should be into_ on Value
     pub fn get_function(
         &self,
         name: &types::Identifier,
@@ -63,5 +65,26 @@ impl<'ctx> Scope<'ctx> {
         };
 
         Ok(function.clone())
+    }
+
+    pub fn get_struct(
+        &self,
+        name: &types::Identifier,
+        module_path: ModulePath,
+        location: SourceRange,
+    ) -> Result<StructHandle<'ctx>, CompileError> {
+        let called_item = self.get_variable(name).ok_or_else(|| {
+            CompileErrorDescription::StructNotFound {
+                module_name: module_path.clone(),
+                struct_name: name.clone(),
+            }
+            .at(module_path.clone(), location)
+        })?;
+
+        let Value::Struct(struct_) = called_item else {
+            todo!();
+        };
+
+        Ok(struct_.clone())
     }
 }

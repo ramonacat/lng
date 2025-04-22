@@ -14,6 +14,7 @@ impl<'ctx> RcValue<'ctx> {
         name: &str,
         value: PointerValue<'ctx>,
         context: &CompilerContext<'ctx>,
+        // TODO builtins are in the context, remove this argument
         builtins: &Builtins<'ctx>,
     ) -> Result<Self, CompileError>
     where
@@ -73,7 +74,7 @@ impl<'ctx> RcValue<'ctx> {
         self.value
     }
 
-    pub(crate) fn from_pointer(
+    pub fn from_pointer(
         pointer: PointerValue<'ctx>,
         context: &CompilerContext<'ctx>,
     ) -> RcValue<'ctx> {

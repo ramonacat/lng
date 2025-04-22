@@ -22,7 +22,20 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         name: &Identifier,
         location: SourceRange,
+        struct_: Option<Identifier>,
     ) -> Result<FunctionHandle<'ctx>, CompileError> {
+        if let Some(struct_) = struct_ {
+            let struct_handle = self
+                .scope
+                .get_struct(&struct_, self.path.clone(), location)
+                .unwrap();
+            let function_value = struct_handle.static_fields.get(name).unwrap();
+
+            return match function_value {
+                Value::Function(function_handle) => Ok(function_handle.clone()),
+                _ => todo!(),
+            };
+        }
         self.scope.get_function(name, self.path.clone(), location)
     }
 
@@ -34,9 +47,10 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         function: &types::Function,
         context: &CompilerContext<'ctx>,
+        struct_: Option<Identifier>,
     ) -> Result<super::CompiledFunction<'ctx>, CompileError> {
         let mut rcs = vec![];
-        let handle = self.resolve_function(&function.name, function.location)?;
+        let handle = self.resolve_function(&function.name, function.location, struct_)?;
         let scope = self.scope.child();
 
         for (argument, argument_value) in function
@@ -50,7 +64,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 let rc = RcValue::from_pointer(argument_value.into_pointer_value(), context);
                 rcs.push(rc);
 
-                Value::Reference(rc)
+                Value::Reference(context.builtins.rc_handle.clone(), rc)
             };
 
             scope.register(argument.name.clone(), value);
@@ -120,7 +134,7 @@ impl<'ctx> GlobalScope<'ctx> {
             .ok_or_else(|| {
                 CompileErrorDescription::ModuleNotFound(module.clone()).at(module.clone(), location)
             })?
-            .resolve_function(name, location)
+            .resolve_function(name, location, None)
     }
 
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {

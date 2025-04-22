@@ -34,12 +34,20 @@ impl Display for ModulePath {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Void,
     // TODO add integer and floating point types
     Object(Identifier),
     Array(Box<Type>),
+    // TODO this should probably be simply an object, just of StructDescriptor<TargetStruct> type
+    StructDescriptor(Identifier, Vec<StructField>),
+    // TODO this should be an object with special properties
+    Callable {
+        self_type: Option<Identifier>,
+        arguments: Vec<Argument>,
+        return_type: Box<Type>,
+    },
 }
 
 impl Type {
@@ -48,21 +56,60 @@ impl Type {
             Type::Void => true,
             Type::Object(_) => false,
             Type::Array(_) => false,
+            Type::StructDescriptor(_, _) => false,
+            // TODO This should be an object, but right now we consider it to just be a function
+            // pointer
+            Type::Callable { .. } => true,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Void => write!(f, "void"),
+            Type::Object(identifier) => write!(f, "{}", identifier),
+            Type::Array(inner) => write!(f, "{}[]", inner),
+            Type::StructDescriptor(name, _) => write!(f, "StructDescriptor<{}>", name),
+            Type::Callable {
+                self_type,
+                arguments,
+                return_type,
+            } => write!(
+                f,
+                "({}{}): {return_type}",
+                self_type
+                    .as_ref()
+                    .map(|x| format!("self: {x}"))
+                    .unwrap_or_else(String::new),
+                arguments
+                    .iter()
+                    .map(|a| format!("{}", a))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Argument {
     #[allow(unused)]
     pub name: Identifier,
     pub type_: Type,
 }
 
+impl Display for Argument {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.name, self.type_)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: Identifier,
     pub arguments: Vec<Argument>,
+    pub return_type: Type,
     pub body: ast::FunctionBody,
     pub export: bool,
     pub location: ast::SourceRange,
@@ -75,17 +122,19 @@ pub struct ImportFunction {
     pub location: ast::SourceRange,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructField {
     #[allow(unused)]
     pub name: Identifier,
     pub type_: Type,
+    pub static_: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: Identifier,
     pub fields: Vec<StructField>,
+    pub impls: HashMap<Identifier, Function>,
 }
 
 #[derive(Debug)]
@@ -93,6 +142,33 @@ pub enum Item {
     Function(Function),
     Struct(Struct),
     ImportFunction(ImportFunction),
+}
+
+impl Item {
+    pub fn type_(
+        &self,
+        self_type: Option<Identifier>,
+        modules: &HashMap<ModulePath, Module>,
+    ) -> Type {
+        match self {
+            Item::Function(f) => Type::Callable {
+                self_type,
+                arguments: f.arguments.clone(),
+                return_type: Box::new(f.return_type.clone()),
+            },
+            Item::Struct(s) => Type::StructDescriptor(s.name.clone(), s.fields.clone()),
+
+            // TODO return errors instead of panic
+            // TODO we should actually check whether the item is exported here!
+            Item::ImportFunction(if_) => modules
+                .get(&if_.path)
+                .unwrap()
+                .items
+                .get(&if_.item)
+                .unwrap()
+                .type_(self_type, modules),
+        }
+    }
 }
 
 #[derive(Debug)]

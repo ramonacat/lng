@@ -15,11 +15,23 @@ fn main() {
     let program = "
         import std::println;
 
+        struct Greeter {}
+
+        impl Greeter {
+            fn greet(self: Greeter, whom: string): void {
+                println(\"hello\");
+                println(whom);
+            }
+        }
+
         fn my_println(arg: string): void {
             println(arg);
         }
 
         fn main(args:string[]): void {
+            let greeter:Greeter = Greeter {};
+            greeter.greet(\"henlo\");
+
             my_println(\"hello world\");
             my_println(\"hello world\");
         }
