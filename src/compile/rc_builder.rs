@@ -1,6 +1,6 @@
 use inkwell::{basic_block::BasicBlock, values::PointerValue, AddressSpace};
 
-use super::{context::CompilerContext, Builtins, CompileError};
+use super::{context::CompilerContext, CompileError};
 
 #[derive(Clone, Copy)]
 pub struct RcValue<'ctx> {
@@ -14,22 +14,20 @@ impl<'ctx> RcValue<'ctx> {
         name: &str,
         value: PointerValue<'ctx>,
         context: &CompilerContext<'ctx>,
-        // TODO builtins are in the context, remove this argument
-        builtins: &Builtins<'ctx>,
     ) -> Result<Self, CompileError>
     where
         'src: 'ctx,
     {
         let rc = context
             .builder
-            .build_malloc(builtins.rc_handle.llvm_type, name)
+            .build_malloc(context.builtins.rc_handle.llvm_type, name)
             .unwrap();
 
         let rc_refcount = unsafe {
             context
                 .builder
                 .build_gep(
-                    builtins.rc_handle.llvm_type,
+                    context.builtins.rc_handle.llvm_type,
                     rc,
                     &[
                         context.llvm_context.i32_type().const_int(0, false),
@@ -43,7 +41,7 @@ impl<'ctx> RcValue<'ctx> {
             context
                 .builder
                 .build_gep(
-                    builtins.rc_handle.llvm_type,
+                    context.builtins.rc_handle.llvm_type,
                     rc,
                     &[
                         context.llvm_context.i32_type().const_int(0, false),

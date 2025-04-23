@@ -638,12 +638,7 @@ where
                         .build_store(literal_value_characters, characters_value)
                         .unwrap();
 
-                    let rc = RcValue::build_init(
-                        &name,
-                        literal_value,
-                        &self.context,
-                        &self.context.builtins,
-                    )?;
+                    let rc = RcValue::build_init(&name, literal_value, &self.context)?;
                     compiled_function.rcs.push(rc);
 
                     Ok((
@@ -677,7 +672,7 @@ where
                     )
                     .unwrap();
 
-                let rc = RcValue::build_init(name, value, &self.context, &self.context.builtins)?;
+                let rc = RcValue::build_init(name, value, &self.context)?;
                 compiled_function.rcs.push(rc);
 
                 Ok((None, Value::Reference(s, rc)))
