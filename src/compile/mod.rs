@@ -226,8 +226,6 @@ where
         );
 
         let builtins = Builtins {
-            rc_type,
-            string_type,
             // TODO we skip the field so it is not accessible, in the future we should somehow add
             // impls from stdlib which will be methods of the strings
             // TODO StructHandle should have a ::new() to ensure description.impls are in sync
@@ -247,7 +245,7 @@ where
                     fields: vec![],
                     impls: HashMap::new(),
                 },
-                llvm_type: string_type,
+                llvm_type: rc_type,
                 static_fields: HashMap::new(),
             },
         };
@@ -620,7 +618,7 @@ where
                         .context
                         .builder
                         .build_malloc(
-                            self.context.builtins.string_type,
+                            self.context.builtins.string_handle.llvm_type,
                             &(name.clone() + "_value"),
                         )
                         .unwrap();
@@ -628,7 +626,7 @@ where
                         self.context
                             .builder
                             .build_gep(
-                                self.context.builtins.string_type,
+                                self.context.builtins.string_handle.llvm_type,
                                 literal_value,
                                 &[self.context.llvm_context.i64_type().const_int(0, false)],
                                 &(name.clone() + "_value_characters"),

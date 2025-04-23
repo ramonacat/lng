@@ -22,14 +22,14 @@ impl<'ctx> RcValue<'ctx> {
     {
         let rc = context
             .builder
-            .build_malloc(builtins.rc_type, name)
+            .build_malloc(builtins.rc_handle.llvm_type, name)
             .unwrap();
 
         let rc_refcount = unsafe {
             context
                 .builder
                 .build_gep(
-                    builtins.rc_type,
+                    builtins.rc_handle.llvm_type,
                     rc,
                     &[
                         context.llvm_context.i32_type().const_int(0, false),
@@ -43,7 +43,7 @@ impl<'ctx> RcValue<'ctx> {
             context
                 .builder
                 .build_gep(
-                    builtins.rc_type,
+                    builtins.rc_handle.llvm_type,
                     rc,
                     &[
                         context.llvm_context.i32_type().const_int(0, false),
@@ -80,7 +80,7 @@ impl<'ctx> RcValue<'ctx> {
     ) -> RcValue<'ctx> {
         let refcount = unsafe {
             pointer.const_gep(
-                context.builtins.rc_type,
+                context.builtins.rc_handle.llvm_type,
                 &[
                     context.llvm_context.i32_type().const_int(0, false),
                     context.llvm_context.i32_type().const_int(0, false),
@@ -89,7 +89,7 @@ impl<'ctx> RcValue<'ctx> {
         };
         let pointee = unsafe {
             pointer.const_gep(
-                context.builtins.rc_type,
+                context.builtins.rc_handle.llvm_type,
                 &[
                     context.llvm_context.i32_type().const_int(0, false),
                     context.llvm_context.i32_type().const_int(1, false),
