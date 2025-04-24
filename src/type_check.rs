@@ -11,13 +11,18 @@ pub struct Program(pub Vec<ast::SourceFile>);
 #[derive(Debug)]
 pub struct TypeCheckError {
     description: TypeCheckErrorDescription,
+    module: types::ModulePath,
     position: ast::SourceRange,
 }
 
 impl Error for TypeCheckError {}
 impl Display for TypeCheckError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Error {} at {}", self.description, self.position)
+        write!(
+            f,
+            "Error {} at {} in module {}",
+            self.description, self.position, self.module
+        )
     }
 }
 
@@ -47,9 +52,10 @@ pub enum TypeCheckErrorDescription {
 
 impl TypeCheckErrorDescription {
     // TODO this should also tell us which module it is in!
-    fn at(self, position: ast::SourceRange) -> TypeCheckError {
+    fn at(self, module: types::ModulePath, position: ast::SourceRange) -> TypeCheckError {
         TypeCheckError {
             description: self,
+            module,
             position,
         }
     }
@@ -155,11 +161,13 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
 
     for file in &program.0 {
         let mut items: HashMap<Identifier, DeclaredItem> = HashMap::new();
+        let module_path = ModulePath(Identifier(file.name.clone()));
 
         for declaration in &file.declarations {
             match declaration {
                 ast::Declaration::Function(function) => {
-                    let declaration = type_check_function_declaration(function, None)?;
+                    let declaration =
+                        type_check_function_declaration(function, None, module_path.clone())?;
 
                     items.insert(
                         Identifier(function.name.to_string()),
@@ -195,6 +203,8 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
         HashMap::new();
 
     for file in &program.0 {
+        let module_path = ModulePath(Identifier(file.name.clone()));
+
         for import in &file.imports {
             let exporting_module_name =
                 types::ModulePath(types::Identifier(import.path[0].clone()));
@@ -202,7 +212,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
             let Some(exporting_module) = modules.get(&exporting_module_name) else {
                 return Err(
                     TypeCheckErrorDescription::ModuleDoesNotExist(exporting_module_name)
-                        .at(import.position),
+                        .at(module_path, import.position),
                 );
             };
 
@@ -211,7 +221,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                     exporting_module_name,
                     item_name,
                 )
-                .at(import.position));
+                .at(module_path, import.position));
             };
 
             match item {
@@ -221,7 +231,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                             exporting_module_name,
                             item_name,
                         )
-                        .at(import.position));
+                        .at(module_path, import.position));
                     }
                     let importing_module_path =
                         types::ModulePath(types::Identifier(file.name.clone()));
@@ -229,7 +239,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                         return Err(TypeCheckErrorDescription::ModuleDoesNotExist(
                             importing_module_path,
                         )
-                        .at(import.position));
+                        .at(module_path, import.position));
                     };
 
                     importing_module.insert(
@@ -246,7 +256,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                         exporting_module_name,
                         item_name,
                     )
-                    .at(import.position));
+                    .at(module_path, import.position));
                 }
                 DeclaredItem::Struct { .. } => todo!(),
             }
@@ -270,10 +280,13 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                         .functions
                         .iter()
                         .map(|f| {
-                            let checked_declaration =
-                                type_check_function_declaration(f, Some(struct_name.clone()))?;
+                            let checked_declaration = type_check_function_declaration(
+                                f,
+                                Some(struct_name.clone()),
+                                module_path.clone(),
+                            )?;
 
-                            type_check_function(&checked_declaration, &globals)
+                            type_check_function(&checked_declaration, &globals, module_path.clone())
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
@@ -284,13 +297,12 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                             module_name,
                             struct_name,
                         )
-                        .at(position));
+                        .at(module_path, position));
                     };
 
                     let DeclaredItem::Struct { fields, name, .. } = struct_ else {
-                        return Err(
-                            TypeCheckErrorDescription::ImplNotOnStruct(struct_name).at(position)
-                        );
+                        return Err(TypeCheckErrorDescription::ImplNotOnStruct(struct_name)
+                            .at(module_path, position));
                     };
 
                     for function in &functions {
@@ -329,7 +341,8 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
         for declared_item in module.values() {
             match declared_item {
                 DeclaredItem::Function(declared_function) => {
-                    let body = type_check_function(declared_function, &globals)?;
+                    let body =
+                        type_check_function(declared_function, &globals, module_name.clone())?;
 
                     current_module_items
                         .insert(declared_function.name.clone(), types::Item::Function(body));
@@ -386,6 +399,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
 fn type_check_function(
     declared_function: &DeclaredFunction,
     globals: &HashMap<Identifier, types::Type>,
+    module_path: ModulePath,
 ) -> Result<types::Function, TypeCheckError> {
     let mut locals: HashMap<Identifier, types::Type> = globals.clone();
     for argument in &declared_function.arguments {
@@ -397,12 +411,13 @@ fn type_check_function(
 
             for statement in body_statements.iter() {
                 let checked_statement = match statement {
-                    ast::Statement::Expression(expression, _) => {
-                        types::Statement::Expression(type_check_expression(expression, &locals)?)
-                    }
+                    ast::Statement::Expression(expression, _) => types::Statement::Expression(
+                        type_check_expression(expression, &locals, module_path.clone())?,
+                    ),
 
                     ast::Statement::Let(name, type_, expression) => {
-                        let checked_expression = type_check_expression(expression, &locals)?;
+                        let checked_expression =
+                            type_check_expression(expression, &locals, module_path.clone())?;
                         let type_ = convert_type(type_);
 
                         if checked_expression.type_ != type_ {
@@ -411,7 +426,7 @@ fn type_check_function(
                                 variable_type: type_,
                                 assigned_type: checked_expression.type_,
                             }
-                            .at(expression.position()));
+                            .at(module_path, expression.position()));
                         }
 
                         locals.insert(types::Identifier(name.clone()), type_);
@@ -451,6 +466,7 @@ fn type_check_function(
 fn type_check_function_declaration(
     function: &ast::Function,
     self_type: Option<Identifier>,
+    module_path: ModulePath,
 ) -> Result<DeclaredFunction, TypeCheckError> {
     let mut arguments = vec![];
 
@@ -462,7 +478,7 @@ fn type_check_function_declaration(
                 function_name: types::Identifier(function.name.to_owned()),
                 argument_name: types::Identifier(arg.name.to_owned()),
             }
-            .at(arg.position));
+            .at(module_path, arg.position));
         }
 
         arguments.push(DeclaredArgument {
@@ -485,6 +501,7 @@ fn type_check_function_declaration(
 fn type_check_expression(
     expression: &ast::Expression,
     locals: &HashMap<Identifier, types::Type>,
+    module_path: ModulePath,
 ) -> Result<types::Expression, TypeCheckError> {
     match expression {
         ast::Expression::FunctionCall {
@@ -492,7 +509,7 @@ fn type_check_expression(
             arguments: passed_arguments,
             position,
         } => {
-            let checked_target = type_check_expression(target, locals)?;
+            let checked_target = type_check_expression(target, locals, module_path.clone())?;
 
             let types::Type::Callable {
                 ref self_type,
@@ -503,7 +520,7 @@ fn type_check_expression(
                 return Err(TypeCheckErrorDescription::CallingNotCallableItem(
                     checked_target.type_.clone(),
                 )
-                .at(*position));
+                .at(module_path, *position));
             };
             let mut callable_arguments = callable_arguments.clone();
 
@@ -513,7 +530,7 @@ fn type_check_expression(
                 return Err(TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(
                     checked_target.type_.clone(),
                 )
-                .at(*position));
+                .at(module_path.clone(), *position));
             }
 
             let mut checked_arguments = vec![];
@@ -536,7 +553,7 @@ fn type_check_expression(
                                 target: *target.clone(),
                                 argument_name: Identifier(self_argument.name.to_string()),
                             }
-                            .at(*position),
+                            .at(module_path.clone(), *position),
                         );
                     }
 
@@ -551,7 +568,8 @@ fn type_check_expression(
             for (argument, called_function_argument) in
                 passed_arguments.iter().zip(callable_arguments)
             {
-                let checked_argument = type_check_expression(argument, locals)?;
+                let checked_argument =
+                    type_check_expression(argument, locals, module_path.clone())?;
                 let expected_type = &called_function_argument.type_;
 
                 if &checked_argument.type_ != expected_type {
@@ -560,7 +578,7 @@ fn type_check_expression(
                             target: *target.clone(),
                             argument_name: Identifier(called_function_argument.name.to_string()),
                         }
-                        .at(argument.position()),
+                        .at(module_path.clone(), argument.position()),
                     );
                 }
 
@@ -589,7 +607,8 @@ fn type_check_expression(
             let value_type = locals
                 .get(&id)
                 .ok_or_else(|| {
-                    TypeCheckErrorDescription::UndeclaredVariable(id.clone()).at(*position)
+                    TypeCheckErrorDescription::UndeclaredVariable(id.clone())
+                        .at(module_path.clone(), *position)
                 })
                 .cloned()?;
 
@@ -605,7 +624,8 @@ fn type_check_expression(
             let types::Type::StructDescriptor(name, _) = locals
                 .get(&id)
                 .ok_or_else(|| {
-                    TypeCheckErrorDescription::UndeclaredVariable(id.clone()).at(*position)
+                    TypeCheckErrorDescription::UndeclaredVariable(id.clone())
+                        .at(module_path.clone(), *position)
                 })
                 .cloned()
                 .unwrap()
@@ -624,7 +644,7 @@ fn type_check_expression(
             field_name,
             position,
         } => {
-            let target = type_check_expression(target, locals)?;
+            let target = type_check_expression(target, locals, module_path.clone())?;
 
             let types::Type::Object(ref type_name) = target.type_ else {
                 todo!("{target:?}")
