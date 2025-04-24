@@ -3,7 +3,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use crate::ast;
+use crate::ast::{self, SourceRange};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Identifier(pub String);
@@ -92,11 +92,18 @@ impl Display for Type {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Argument {
-    #[allow(unused)]
     pub name: Identifier,
     pub type_: Type,
+    pub position: SourceRange,
+}
+
+impl Eq for Argument {}
+impl PartialEq for Argument {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.name, &self.type_) == (&other.name, &other.type_)
+    }
 }
 
 impl Display for Argument {
@@ -110,9 +117,63 @@ pub struct Function {
     pub name: Identifier,
     pub arguments: Vec<Argument>,
     pub return_type: Type,
-    pub body: ast::FunctionBody,
+    pub body: FunctionBody,
     pub export: bool,
     pub location: ast::SourceRange,
+}
+impl Function {
+    pub(crate) fn has_self(&self) -> bool {
+        self.arguments
+            .first()
+            .map(|a| a.name.0 == "self")
+            .unwrap_or(false)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum FunctionBody {
+    Extern,
+    Statements(Vec<Statement>),
+}
+
+#[derive(Debug, Clone)]
+pub enum Statement {
+    Expression(Expression),
+    Let(LetStatement),
+}
+
+#[derive(Debug, Clone)]
+pub enum Literal {
+    String(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum ExpressionKind {
+    FunctionCall {
+        target: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
+    Literal(Literal),
+    VariableAccess(Identifier),
+    StructConstructor(Identifier),
+    FieldAccess {
+        target: Box<Expression>,
+        field: Identifier,
+    },
+    SelfAccess,
+}
+
+#[derive(Debug, Clone)]
+pub struct Expression {
+    pub position: SourceRange,
+    pub type_: Type,
+    pub kind: ExpressionKind,
+}
+
+#[derive(Debug, Clone)]
+pub struct LetStatement {
+    pub binding: Identifier,
+    pub value: Expression,
 }
 
 #[derive(Debug)]
@@ -142,33 +203,6 @@ pub enum Item {
     Function(Function),
     Struct(Struct),
     ImportFunction(ImportFunction),
-}
-
-impl Item {
-    pub fn type_(
-        &self,
-        self_type: Option<Identifier>,
-        modules: &HashMap<ModulePath, Module>,
-    ) -> Type {
-        match self {
-            Item::Function(f) => Type::Callable {
-                self_type,
-                arguments: f.arguments.clone(),
-                return_type: Box::new(f.return_type.clone()),
-            },
-            Item::Struct(s) => Type::StructDescriptor(s.name.clone(), s.fields.clone()),
-
-            // TODO return errors instead of panic
-            // TODO we should actually check whether the item is exported here!
-            Item::ImportFunction(if_) => modules
-                .get(&if_.path)
-                .unwrap()
-                .items
-                .get(&if_.item)
-                .unwrap()
-                .type_(self_type, modules),
-        }
-    }
 }
 
 #[derive(Debug)]

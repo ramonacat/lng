@@ -2,7 +2,7 @@ use inkwell::{basic_block::BasicBlock, values::PointerValue, AddressSpace};
 
 use super::{context::CompilerContext, CompileError};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct RcValue<'ctx> {
     value: PointerValue<'ctx>,
     refcount: PointerValue<'ctx>,

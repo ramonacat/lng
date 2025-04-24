@@ -20,7 +20,7 @@ use rc_builder::RcValue;
 use scope::Scope;
 
 use crate::{
-    ast::{Expression, FunctionBody, SourceRange, Statement},
+    ast::SourceRange,
     runtime::register_mappings,
     types::{self, Identifier, ModulePath},
 };
@@ -176,23 +176,21 @@ impl<'ctx> CompiledFunction<'ctx> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FunctionHandle<'ctx> {
-    pub self_: Option<Identifier>,
     pub location: SourceRange,
     pub arguments: Vec<types::Argument>,
     pub llvm_function: FunctionValue<'ctx>,
 }
 
-#[derive(Clone)]
-#[allow(unused)]
+#[derive(Debug, Clone)]
 pub struct StructHandle<'ctx> {
     description: types::Struct,
     static_fields: HashMap<types::Identifier, Value<'ctx>>,
     llvm_type: StructType<'ctx>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 enum Value<'ctx> {
     Primitive(BasicMetadataValueEnum<'ctx>),
     // TODO the StructHandle should probably be inside RcValue
@@ -289,7 +287,7 @@ where
     ) -> FunctionValue<'ctx> {
         let linkage = if function.export
             || function.name == types::Identifier("main".to_string())
-            || matches!(function.body, FunctionBody::Extern(_))
+            || matches!(function.body, types::FunctionBody::Extern)
         {
             Linkage::External
         } else {
@@ -325,7 +323,6 @@ where
                             self.declare_function(function, &created_module.llvm_module);
 
                         let function_handle = FunctionHandle {
-                            self_: None,
                             arguments: function.arguments.clone(),
                             llvm_function,
                             location: function.location,
@@ -352,7 +349,6 @@ where
                                 let llvm_function =
                                     self.declare_function(impl_, &created_module.llvm_module);
                                 let handle = FunctionHandle {
-                                    self_: Some(struct_.name.clone()),
                                     arguments: impl_.arguments.clone(),
                                     llvm_function,
                                     location: impl_.location,
@@ -397,7 +393,6 @@ where
                 module.set_variable(
                     import.item.clone(),
                     Value::Function(FunctionHandle {
-                        self_: None,
                         location: import.location,
                         arguments: function.arguments.clone(),
                         llvm_function: imported_function,
@@ -480,31 +475,40 @@ where
         function: &types::Function,
         struct_: Option<Identifier>,
     ) -> Result<(), CompileError> {
-        let FunctionBody::Statements(statements, _) = &function.body else {
+        let types::FunctionBody::Statements(statements) = &function.body else {
             return Ok(());
         };
         let mut compiled_function =
             module.begin_compile_function(function, &self.context, struct_)?;
         for statement in statements {
+            let self_value = function.has_self().then(|| {
+                compiled_function
+                    .scope
+                    .get_variable(&Identifier("self".to_string()))
+                    .unwrap()
+            });
+
             match statement {
                 // TODO get rid of the ast types, and make typecheck create its own
-                Statement::Expression(expression, _) => {
+                types::Statement::Expression(expression) => {
                     self.compile_expression(
                         expression,
+                        self_value,
                         &mut compiled_function,
                         module_path.clone(),
                     )?;
                 }
-                Statement::Let(name, _, value) => {
+                types::Statement::Let(let_) => {
                     let value = self.compile_expression(
-                        value,
+                        &let_.value,
+                        self_value,
                         &mut compiled_function,
                         module_path.clone(),
                     )?;
 
                     compiled_function
                         .scope
-                        .register(Identifier(name.to_string()), value.1);
+                        .register(let_.binding.clone(), value.1);
                 }
             }
         }
@@ -527,18 +531,21 @@ where
 
     fn compile_expression(
         &self,
-        expression: &Expression,
+        expression: &types::Expression,
+        self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
         module_path: ModulePath,
     ) -> Result<(Option<Value<'ctx>>, Value<'ctx>), CompileError> {
-        match expression {
-            crate::ast::Expression::FunctionCall {
-                target,
-                arguments,
-                position,
-            } => {
-                let compiled_target =
-                    self.compile_expression(target, compiled_function, module_path.clone())?;
+        let position = expression.position;
+
+        match &expression.kind {
+            types::ExpressionKind::FunctionCall { target, arguments } => {
+                let compiled_target = self.compile_expression(
+                    target,
+                    self_.clone(),
+                    compiled_function,
+                    module_path.clone(),
+                )?;
                 let (self_value, Value::Function(function)) = compiled_target else {
                     // TODO actual error check!
                     panic!();
@@ -547,20 +554,15 @@ where
                 let mut compiled_arguments_iter = arguments
                     .iter()
                     .map(|a| {
-                        self.compile_expression(a, compiled_function, module_path.clone())
-                            .map(|x| x.1)
+                        self.compile_expression(
+                            a,
+                            self_value.clone(),
+                            compiled_function,
+                            module_path.clone(),
+                        )
+                        .map(|x| x.1)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-
-                if function.self_.is_some() {
-                    if let Some(first) = function.arguments.first() {
-                        if first.name.0 == "self" {
-                            let mut new_compiled_arguments = vec![self_value.unwrap()];
-                            new_compiled_arguments.append(&mut compiled_arguments_iter);
-                            compiled_arguments_iter = new_compiled_arguments;
-                        }
-                    }
-                }
 
                 let call_arguments = compiled_arguments_iter
                     .iter_mut()
@@ -589,7 +591,7 @@ where
                             position.0 .0, position.0 .1, position.1 .0, position.1 .1
                         ),
                     )
-                    .map_err(|e| e.into_compile_error_at(module_path.clone(), *position))?;
+                    .map_err(|e| e.into_compile_error_at(module_path.clone(), position))?;
 
                 let call_result = call_result.as_any_value_enum().try_into().unwrap_or(
                     self.context
@@ -602,11 +604,11 @@ where
 
                 Ok((None, Value::Primitive(call_result)))
             }
-            crate::ast::Expression::Literal(literal, _) => match literal {
-                crate::ast::Literal::String(s, location) => {
+            types::ExpressionKind::Literal(literal) => match literal {
+                types::Literal::String(s) => {
                     let name = format!(
                         "literal_{}_{}_{}_{}",
-                        location.0 .0, location.0 .1, location.1 .0, location.1 .1
+                        position.0 .0, position.0 .1, position.1 .0, position.1 .1
                     );
                     let characters_value = self
                         .context
@@ -647,17 +649,13 @@ where
                     ))
                 }
             },
-            Expression::VariableReference(name, _) => Ok((
-                None,
-                compiled_function
-                    .scope
-                    .get_variable(&Identifier(name.clone()))
-                    .unwrap(),
-            )),
-            Expression::StructConstructor(name, location) => {
+            types::ExpressionKind::VariableAccess(name) => {
+                Ok((None, compiled_function.scope.get_variable(name).unwrap()))
+            }
+            types::ExpressionKind::StructConstructor(name) => {
                 let s = compiled_function
                     .scope
-                    .get_struct(&Identifier(name.clone()), module_path, *location)
+                    .get_struct(name, module_path, position)
                     .unwrap();
 
                 let value = self
@@ -667,23 +665,22 @@ where
                         s.llvm_type,
                         &format!(
                             "{}_{}_{}_{}_{}",
-                            name, location.0 .0, location.0 .1, location.1 .0, location.1 .1
+                            name, position.0 .0, position.0 .1, position.1 .0, position.1 .1
                         ),
                     )
                     .unwrap();
 
-                let rc = RcValue::build_init(name, value, &self.context)?;
+                let rc = RcValue::build_init(&name.0, value, &self.context)?;
                 compiled_function.rcs.push(rc);
 
                 Ok((None, Value::Reference(s, rc)))
             }
-            Expression::FieldAccess {
+            types::ExpressionKind::FieldAccess {
                 target,
-                field_name,
-                position: _,
+                field: field_name,
             } => {
                 let value =
-                    self.compile_expression(target, compiled_function, module_path.clone())?;
+                    self.compile_expression(target, self_, compiled_function, module_path.clone())?;
 
                 let (_, Value::Reference(ref reference_type, _)) = value else {
                     todo!();
@@ -695,7 +692,7 @@ where
                     .iter()
                     .filter(|f| !f.static_)
                     .enumerate()
-                    .any(|x| x.1.name == Identifier(field_name.clone()))
+                    .any(|x| &x.1.name == field_name)
                 {
                     todo!()
                 };
@@ -704,11 +701,12 @@ where
                     Some(value.1.clone()),
                     reference_type
                         .static_fields
-                        .get(&Identifier(field_name.clone()))
+                        .get(field_name)
                         .unwrap()
                         .clone(),
                 ))
             }
+            types::ExpressionKind::SelfAccess => Ok((None, self_.unwrap())),
         }
     }
 

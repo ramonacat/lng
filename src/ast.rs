@@ -15,7 +15,6 @@ impl Display for SourceRange {
 
 #[derive(Debug, Clone)]
 pub enum Literal {
-    #[allow(unused)]
     String(String, SourceRange),
 }
 
@@ -28,6 +27,7 @@ impl Display for Literal {
 }
 
 #[derive(Debug, Clone)]
+// TODO this should be wrapped in a struct, so position does not have to be repeated
 pub enum Expression {
     FunctionCall {
         target: Box<Expression>,
