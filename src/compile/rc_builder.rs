@@ -1,18 +1,22 @@
 use inkwell::{basic_block::BasicBlock, values::PointerValue, AddressSpace};
 
-use super::{context::CompilerContext, CompileError};
+use super::{context::CompilerContext, CompileError, StructHandle};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
-    value: PointerValue<'ctx>,
+    pointer: PointerValue<'ctx>,
+
     refcount: PointerValue<'ctx>,
     pointee: PointerValue<'ctx>,
+
+    value_type: StructHandle<'ctx>,
 }
 
 impl<'ctx> RcValue<'ctx> {
     pub fn build_init<'src>(
         name: &str,
         value: PointerValue<'ctx>,
+        value_type: StructHandle<'ctx>,
         context: &CompilerContext<'ctx>,
     ) -> Result<Self, CompileError>
     where
@@ -62,18 +66,21 @@ impl<'ctx> RcValue<'ctx> {
         context.builder.build_store(rc_pointee, value).unwrap();
 
         Ok(Self {
-            value: rc,
+            pointer: rc,
             refcount: rc_refcount,
             pointee: rc_pointee,
+
+            value_type,
         })
     }
 
     pub fn as_ptr(&self) -> PointerValue<'ctx> {
-        self.value
+        self.pointer
     }
 
     pub fn from_pointer(
         pointer: PointerValue<'ctx>,
+        value_type: StructHandle<'ctx>,
         context: &CompilerContext<'ctx>,
     ) -> RcValue<'ctx> {
         let refcount = unsafe {
@@ -95,10 +102,15 @@ impl<'ctx> RcValue<'ctx> {
             )
         };
         RcValue {
-            value: pointer,
+            pointer,
             refcount,
             pointee,
+            value_type,
         }
+    }
+
+    pub(crate) fn type_(&self) -> &StructHandle<'ctx> {
+        &self.value_type
     }
 }
 
@@ -175,7 +187,7 @@ pub fn build_cleanup<'ctx>(
             .unwrap()
             .into_pointer_value();
         context.builder.build_free(rc_pointee_value).unwrap();
-        context.builder.build_free(rc.value).unwrap();
+        context.builder.build_free(rc.pointer).unwrap();
 
         context
             .builder

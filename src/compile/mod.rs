@@ -194,7 +194,7 @@ pub struct StructHandle<'ctx> {
 enum Value<'ctx> {
     Primitive(BasicMetadataValueEnum<'ctx>),
     // TODO the StructHandle should probably be inside RcValue
-    Reference(StructHandle<'ctx>, RcValue<'ctx>),
+    Reference(RcValue<'ctx>),
     Function(FunctionHandle<'ctx>),
     Struct(StructHandle<'ctx>),
 }
@@ -311,6 +311,10 @@ where
     // executable code with a safe interface
     pub fn compile(self, program: &'src types::Program) -> Result<(), CompileError> {
         let mut global_scope = GlobalScope::new();
+        global_scope.register(
+            Identifier("string".to_string()),
+            Value::Struct(self.context.builtins.string_handle.clone()),
+        );
 
         for (path, program_module) in &program.modules {
             let module = self.context.llvm_context.create_module(path.as_str());
@@ -566,7 +570,7 @@ where
                     .iter_mut()
                     .map(|a| match a {
                         Value::Primitive(v) => *v,
-                        Value::Reference(_, rc_value) => {
+                        Value::Reference(rc_value) => {
                             rc_value.as_ptr().as_basic_value_enum().into()
                         }
                         Value::Function(_) => todo!("implement passing callables as arguments"),
@@ -638,13 +642,15 @@ where
                         .build_store(literal_value_characters, characters_value)
                         .unwrap();
 
-                    let rc = RcValue::build_init(&name, literal_value, &self.context)?;
-                    compiled_function.rcs.push(rc);
+                    let rc = RcValue::build_init(
+                        &name,
+                        literal_value,
+                        self.context.builtins.string_handle.clone(),
+                        &self.context,
+                    )?;
+                    compiled_function.rcs.push(rc.clone());
 
-                    Ok((
-                        None,
-                        Value::Reference(self.context.builtins.string_handle.clone(), rc),
-                    ))
+                    Ok((None, Value::Reference(rc)))
                 }
             },
             types::ExpressionKind::VariableAccess(name) => {
@@ -668,10 +674,10 @@ where
                     )
                     .unwrap();
 
-                let rc = RcValue::build_init(&name.0, value, &self.context)?;
-                compiled_function.rcs.push(rc);
+                let rc = RcValue::build_init(&name.0, value, s.clone(), &self.context)?;
+                compiled_function.rcs.push(rc.clone());
 
-                Ok((None, Value::Reference(s, rc)))
+                Ok((None, Value::Reference(rc)))
             }
             types::ExpressionKind::FieldAccess {
                 target,
@@ -680,11 +686,12 @@ where
                 let value =
                     self.compile_expression(target, self_, compiled_function, module_path.clone())?;
 
-                let (_, Value::Reference(ref reference_type, _)) = value else {
+                let (_, Value::Reference(ref_)) = &value else {
                     todo!();
                 };
 
-                if reference_type
+                if ref_
+                    .type_()
                     .description
                     .fields
                     .iter()
@@ -697,11 +704,7 @@ where
 
                 Ok((
                     Some(value.1.clone()),
-                    reference_type
-                        .static_fields
-                        .get(field_name)
-                        .unwrap()
-                        .clone(),
+                    ref_.type_().static_fields.get(field_name).unwrap().clone(),
                 ))
             }
             types::ExpressionKind::SelfAccess => Ok((None, self_.unwrap())),

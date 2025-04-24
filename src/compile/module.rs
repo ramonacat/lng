@@ -58,13 +58,33 @@ impl<'ctx> CompiledModule<'ctx> {
             .iter()
             .zip(handle.llvm_function.get_params())
         {
-            let value = if argument.type_.is_primitive() {
-                Value::Primitive(argument_value.into())
-            } else {
-                let rc = RcValue::from_pointer(argument_value.into_pointer_value(), context);
-                rcs.push(rc);
+            let value = match &argument.type_ {
+                types::Type::Void => todo!(),
+                types::Type::Object(identifier) => {
+                    let rc = RcValue::from_pointer(
+                        argument_value.into_pointer_value(),
+                        scope.get_struct(identifier, self.path.clone(), argument.position)?,
+                        context,
+                    );
+                    rcs.push(rc.clone());
 
-                Value::Reference(context.builtins.rc_handle.clone(), rc)
+                    Value::Reference(rc)
+                }
+                // TODO there should be a built-in object for arrays that has bounds, etc. and
+                // this object should be passed to the function, instead to a reference
+                types::Type::Array(a) => match &**a {
+                    types::Type::Void => todo!(),
+                    types::Type::Object(identifier) => Value::Reference(RcValue::from_pointer(
+                        argument_value.into_pointer_value(),
+                        scope.get_struct(identifier, self.path.clone(), argument.position)?,
+                        context,
+                    )),
+                    types::Type::Array(_) => todo!(),
+                    types::Type::StructDescriptor(_, _) => todo!(),
+                    types::Type::Callable { .. } => todo!(),
+                },
+                types::Type::StructDescriptor(_, _) => todo!(),
+                types::Type::Callable { .. } => todo!(),
             };
 
             scope.register(argument.name.clone(), value);
@@ -139,5 +159,9 @@ impl<'ctx> GlobalScope<'ctx> {
 
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
         self.modules.into_values()
+    }
+
+    pub(crate) fn register(&self, id: Identifier, value: Value<'ctx>) {
+        self.scope.register(id, value);
     }
 }

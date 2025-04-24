@@ -50,20 +50,6 @@ pub enum Type {
     },
 }
 
-impl Type {
-    pub fn is_primitive(&self) -> bool {
-        match self {
-            Type::Void => true,
-            Type::Object(_) => false,
-            Type::Array(_) => false,
-            Type::StructDescriptor(_, _) => false,
-            // TODO This should be an object, but right now we consider it to just be a function
-            // pointer
-            Type::Callable { .. } => true,
-        }
-    }
-}
-
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
