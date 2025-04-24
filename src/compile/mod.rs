@@ -547,8 +547,7 @@ where
                     module_path.clone(),
                 )?;
                 let (self_value, Value::Function(function)) = compiled_target else {
-                    // TODO actual error check!
-                    panic!();
+                    todo!();
                 };
 
                 let mut compiled_arguments_iter = arguments

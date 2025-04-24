@@ -22,16 +22,15 @@ impl Display for TypeCheckError {
 }
 
 #[derive(Debug)]
-// TODO get rid of the strings and replace with the right objects (Identifier, ModulePath, etc.)
 pub enum TypeCheckErrorDescription {
     UnexpectedArgumentTypeInFunctionCall {
         target: ast::Expression,
-        argument_name: String,
+        argument_name: Identifier,
     },
     IncorrectNumberOfArgumentsPassed(types::Type),
     FunctionArgumentCannotBeVoid {
-        function_name: String,
-        argument_name: String,
+        function_name: Identifier,
+        argument_name: Identifier,
     },
     ModuleDoesNotExist(types::ModulePath),
     ItemDoesNotExist(types::ModulePath, types::Identifier),
@@ -39,7 +38,7 @@ pub enum TypeCheckErrorDescription {
     UndeclaredVariable(types::Identifier),
     ImplNotOnStruct(Identifier),
     MismatchedAssignmentType {
-        target_variable: String,
+        target_variable: Identifier,
         variable_type: types::Type,
         assigned_type: types::Type,
     },
@@ -408,7 +407,7 @@ fn type_check_function(
 
                         if checked_expression.type_ != type_ {
                             return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
-                                target_variable: name.clone(),
+                                target_variable: types::Identifier(name.clone()),
                                 variable_type: type_,
                                 assigned_type: checked_expression.type_,
                             }
@@ -460,8 +459,8 @@ fn type_check_function_declaration(
 
         if type_ == types::Type::Void {
             return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
-                function_name: function.name.to_owned(),
-                argument_name: arg.name.to_owned(),
+                function_name: types::Identifier(function.name.to_owned()),
+                argument_name: types::Identifier(arg.name.to_owned()),
             }
             .at(arg.position));
         }
@@ -535,7 +534,7 @@ fn type_check_expression(
                         return Err(
                             TypeCheckErrorDescription::UnexpectedArgumentTypeInFunctionCall {
                                 target: *target.clone(),
-                                argument_name: self_argument.name.to_string(),
+                                argument_name: Identifier(self_argument.name.to_string()),
                             }
                             .at(*position),
                         );
@@ -559,7 +558,7 @@ fn type_check_expression(
                     return Err(
                         TypeCheckErrorDescription::UnexpectedArgumentTypeInFunctionCall {
                             target: *target.clone(),
-                            argument_name: called_function_argument.name.to_string(),
+                            argument_name: Identifier(called_function_argument.name.to_string()),
                         }
                         .at(argument.position()),
                     );
