@@ -51,7 +51,6 @@ pub enum TypeCheckErrorDescription {
 }
 
 impl TypeCheckErrorDescription {
-    // TODO this should also tell us which module it is in!
     fn at(self, module: types::ModulePath, position: ast::SourceRange) -> TypeCheckError {
         TypeCheckError {
             description: self,
@@ -112,6 +111,14 @@ struct DeclaredStructField {
     static_: bool,
 }
 
+// TODO support aliased imports
+#[derive(Debug, Clone)]
+struct DeclaredImport {
+    from: ModulePath,
+    item: Box<DeclaredItem>,
+    position: SourceRange,
+}
+
 #[derive(Debug, Clone)]
 enum DeclaredItem {
     Function(DeclaredFunction),
@@ -119,9 +126,7 @@ enum DeclaredItem {
         name: Identifier,
         fields: HashMap<Identifier, DeclaredStructField>,
     },
-    // TODO support aliased imports
-    // TODO make this a struct so fields can be named
-    Import(ModulePath, Box<DeclaredItem>, SourceRange),
+    Import(DeclaredImport),
 }
 
 impl DeclaredItem {
@@ -151,7 +156,7 @@ impl DeclaredItem {
                     })
                     .collect(),
             ),
-            DeclaredItem::Import(_, declared_item, _) => declared_item.type_(),
+            DeclaredItem::Import(DeclaredImport { item, .. }) => item.type_(),
         }
     }
 }
@@ -243,15 +248,16 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                     };
 
                     importing_module.insert(
+                        // TODO support aliases here
                         item_name.clone(),
-                        DeclaredItem::Import(
-                            exporting_module_name,
-                            Box::new(item.clone()),
-                            import.position,
-                        ),
+                        DeclaredItem::Import(DeclaredImport {
+                            from: exporting_module_name,
+                            item: Box::new(item.clone()),
+                            position: import.position,
+                        }),
                     );
                 }
-                DeclaredItem::Import(_, _, _) => {
+                DeclaredItem::Import(_) => {
                     return Err(TypeCheckErrorDescription::ItemDoesNotExist(
                         exporting_module_name,
                         item_name,
@@ -367,8 +373,12 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                         }),
                     );
                 }
-                DeclaredItem::Import(from, imported, position) => {
-                    match imported.as_ref() {
+                DeclaredItem::Import(DeclaredImport {
+                    from,
+                    item,
+                    position,
+                }) => {
+                    match item.as_ref() {
                         DeclaredItem::Function(declared_function) => current_module_items.insert(
                             declared_function.name.clone(),
                             types::Item::ImportFunction(ImportFunction {
@@ -378,7 +388,7 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                             }),
                         ),
                         DeclaredItem::Struct { .. } => todo!(),
-                        DeclaredItem::Import(_, _, _) => todo!(),
+                        DeclaredItem::Import(_) => todo!(),
                     };
                 }
             }

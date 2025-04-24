@@ -489,7 +489,6 @@ where
             });
 
             match statement {
-                // TODO get rid of the ast types, and make typecheck create its own
                 types::Statement::Expression(expression) => {
                     self.compile_expression(
                         expression,
