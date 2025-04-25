@@ -39,19 +39,13 @@ fn register_test_mappings(engine: &ExecutionEngine, module: &Module) {
 }
 
 pub fn run(program: HashMap<&str, &str>) -> String {
-    // TODO the stdlib should be in compiler and handled internally!
-    let stdlib = include_str!("../../../compiler-bin/stdlib/std.lng");
-
-    let mut asts = program
+    let asts = program
         .into_iter()
         .map(|(name, contents)| parse_file(name, contents).unwrap())
         .collect::<Vec<_>>();
 
-    let stdlib_ast = parse_file("std", stdlib).unwrap();
-    asts.push(stdlib_ast);
-
     let program = Program(asts);
-    let type_check_result = type_check(&program).unwrap();
+    let type_check_result = type_check(program).unwrap();
 
     TEST_RESUTLS
         .get_or_init(|| Mutex::new(String::new()))
@@ -59,7 +53,7 @@ pub fn run(program: HashMap<&str, &str>) -> String {
         .unwrap()
         .clear();
 
-    compile(&type_check_result, Some(Box::new(register_test_mappings))).unwrap();
+    compile(type_check_result, Some(Box::new(register_test_mappings))).unwrap();
 
     TEST_RESUTLS
         .get_or_init(|| Mutex::new(String::new()))

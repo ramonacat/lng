@@ -28,13 +28,13 @@ use crate::{
 };
 
 pub fn compile(
-    program: &types::Program,
+    program: types::Program,
     register_global_mappings: RegisterGlobalMappings,
 ) -> Result<(), CompileError> {
     let context = Context::create();
     let compiler = Compiler::new(&context);
 
-    compiler.compile(program, register_global_mappings)
+    compiler.compile(&program, register_global_mappings)
 }
 
 type RegisterGlobalMappings = Option<Box<dyn FnOnce(&ExecutionEngine, &Module)>>;

@@ -3,6 +3,7 @@ use std::{collections::HashMap, error::Error, fmt::Display};
 use crate::{
     ast::{self, SourceRange},
     name_mangler::{mangle_field, mangle_item, nomangle_item},
+    parse,
     types::{self, Identifier, ImportFunction, ModulePath},
 };
 
@@ -208,7 +209,10 @@ impl DeclaredItem {
     }
 }
 
-pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
+pub fn type_check(mut program: Program) -> Result<types::Program, TypeCheckError> {
+    let parsed_std = parse::parse_file("std", include_str!("../stdlib/std.lng")).unwrap();
+    program.0.push(parsed_std);
+
     let mut modules = HashMap::new();
 
     for file in &program.0 {

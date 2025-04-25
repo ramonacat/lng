@@ -5,8 +5,6 @@ use compiler::{
 };
 
 fn main() {
-    let stdlib = include_str!("../stdlib/std.lng");
-
     let program = "
         import std::println;
         import main::printer::my_println;
@@ -39,10 +37,9 @@ fn main() {
 
     let program_ast = parse_file("main", program).unwrap();
     let greeter_ast = parse_file("main.printer", printer).unwrap();
-    let stdlib_ast = parse_file("std", stdlib).unwrap();
 
-    let program = Program(vec![program_ast, greeter_ast, stdlib_ast]);
-    let type_check_result = type_check(&program).unwrap();
+    let program = Program(vec![program_ast, greeter_ast]);
+    let type_check_result = type_check(program).unwrap();
 
-    compile(&type_check_result, None).unwrap();
+    compile(type_check_result, None).unwrap();
 }
