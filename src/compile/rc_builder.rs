@@ -1,6 +1,6 @@
 use inkwell::{basic_block::BasicBlock, values::PointerValue, AddressSpace};
 
-use crate::types::Identifier;
+use crate::name_mangler::MangledIdentifier;
 
 use super::{context::CompilerContext, CompileError, StructHandle};
 
@@ -16,7 +16,7 @@ pub struct RcValue<'ctx> {
 
 impl<'ctx> RcValue<'ctx> {
     pub fn build_init<'src>(
-        name: Identifier,
+        name: MangledIdentifier,
         value: PointerValue<'ctx>,
         value_type: StructHandle<'ctx>,
         context: &CompilerContext<'ctx>,
@@ -39,7 +39,7 @@ impl<'ctx> RcValue<'ctx> {
                         context.llvm_context.i32_type().const_int(0, false),
                         context.llvm_context.i32_type().const_int(0, false),
                     ],
-                    &(name.to_string() + "refcount"),
+                    &(name.as_str().to_string() + "refcount"),
                 )
                 .unwrap()
         };
@@ -53,7 +53,7 @@ impl<'ctx> RcValue<'ctx> {
                         context.llvm_context.i32_type().const_int(0, false),
                         context.llvm_context.i32_type().const_int(1, false),
                     ],
-                    &(name.to_string() + "pointee"),
+                    &(name.as_str().to_string() + "pointee"),
                 )
                 .unwrap()
         };

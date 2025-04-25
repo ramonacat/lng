@@ -1,5 +1,6 @@
 mod ast;
 mod compile;
+mod name_mangler;
 mod parse;
 mod runtime;
 mod type_check;

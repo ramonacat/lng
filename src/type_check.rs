@@ -2,6 +2,7 @@ use std::{collections::HashMap, error::Error, fmt::Display};
 
 use crate::{
     ast::{self, SourceRange},
+    name_mangler::{mangle_field, mangle_item, nomangle_item},
     types::{self, Identifier, ImportFunction, ModulePath},
 };
 
@@ -124,6 +125,7 @@ enum DeclaredItem {
     Function(DeclaredFunction),
     Struct {
         name: Identifier,
+        module: ModulePath,
         fields: HashMap<Identifier, DeclaredStructField>,
     },
     Import(DeclaredImport),
@@ -145,12 +147,22 @@ impl DeclaredItem {
                     .collect(),
                 return_type: Box::new(declared_function.return_type.clone()),
             },
-            DeclaredItem::Struct { name, fields, .. } => types::Type::StructDescriptor(
-                name.clone(),
+            DeclaredItem::Struct {
+                name: struct_name,
+                module,
+                fields,
+                ..
+            } => types::Type::StructDescriptor(
+                struct_name.clone(),
                 fields
                     .iter()
-                    .map(|(name, declaration)| types::StructField {
-                        name: name.clone(),
+                    .map(|(field_name, declaration)| types::StructField {
+                        name: field_name.clone(),
+                        mangled_name: mangle_field(
+                            module.clone(),
+                            struct_name.clone(),
+                            field_name.clone(),
+                        ),
                         type_: declaration.type_.clone(),
                         static_: declaration.static_,
                     })
@@ -192,7 +204,14 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                         );
                     }
                     let name = Identifier::parse(&struct_.name);
-                    items.insert(name.clone(), DeclaredItem::Struct { name, fields });
+                    items.insert(
+                        name.clone(),
+                        DeclaredItem::Struct {
+                            name,
+                            module: module_path.clone(),
+                            fields,
+                        },
+                    );
                 }
                 ast::Declaration::Impl(_) => {} // impls are handled in the second pass, so
                                                 // that they can be declared before structs
@@ -354,21 +373,31 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
                     current_module_items
                         .insert(declared_function.name.clone(), types::Item::Function(body));
                 }
-                DeclaredItem::Struct { name, fields } => {
+                DeclaredItem::Struct {
+                    name: struct_name,
+                    fields,
+                    module,
+                } => {
                     current_module_items.insert(
-                        name.clone(),
+                        struct_name.clone(),
                         types::Item::Struct(types::Struct {
-                            name: name.clone(),
+                            name: struct_name.clone(),
+                            mangled_name: mangle_item(module.clone(), struct_name.clone()),
                             fields: fields
                                 .iter()
-                                .map(|(name, declaration)| types::StructField {
-                                    name: name.clone(),
+                                .map(|(field_name, declaration)| types::StructField {
+                                    name: field_name.clone(),
                                     type_: declaration.type_.clone(),
                                     static_: declaration.static_,
+                                    mangled_name: mangle_field(
+                                        module.clone(),
+                                        struct_name.clone(),
+                                        field_name.clone(),
+                                    ),
                                 })
                                 .collect(),
                             impls: impls
-                                .get(&(module_name.clone(), name.clone()))
+                                .get(&(module_name.clone(), struct_name.clone()))
                                 .cloned()
                                 .unwrap_or_else(HashMap::new),
                         }),
@@ -456,6 +485,22 @@ fn type_check_function(
         }
         ast::FunctionBody::Extern(_) => types::FunctionBody::Extern,
     };
+
+    let mangled_name = {
+        if matches!(body, types::FunctionBody::Extern) {
+            nomangle_item(declared_function.name.clone())
+        } else {
+            match &declared_function.self_type {
+                Some(self_type) => mangle_field(
+                    module_path.clone(),
+                    self_type.clone(),
+                    declared_function.name.clone(),
+                ),
+                None => mangle_item(module_path.clone(), declared_function.name.clone()),
+            }
+        }
+    };
+
     Ok(types::Function {
         name: declared_function.name.clone(),
         arguments: declared_function
@@ -471,6 +516,7 @@ fn type_check_function(
         body,
         export: declared_function.export,
         location: declared_function.ast.position,
+        mangled_name,
     })
 }
 
@@ -479,6 +525,7 @@ fn type_check_function_declaration(
     self_type: Option<Identifier>,
     module_path: ModulePath,
 ) -> Result<DeclaredFunction, TypeCheckError> {
+    let name = types::Identifier::parse(&function.name);
     let mut arguments = vec![];
 
     for arg in &function.arguments {
@@ -486,7 +533,7 @@ fn type_check_function_declaration(
 
         if type_ == types::Type::Void {
             return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
-                function_name: types::Identifier::parse(&function.name),
+                function_name: name.clone(),
                 argument_name: types::Identifier::parse(&arg.name),
             }
             .at(module_path, arg.position));

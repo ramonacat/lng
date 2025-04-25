@@ -5,7 +5,10 @@ use std::{
 
 use itertools::Itertools as _;
 
-use crate::ast::{self, SourceRange};
+use crate::{
+    ast::{self, SourceRange},
+    name_mangler::MangledIdentifier,
+};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Identifier(String);
@@ -15,7 +18,7 @@ impl Identifier {
         Self(raw.to_string())
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn raw(&self) -> &str {
         &self.0
     }
 }
@@ -40,15 +43,14 @@ impl ModulePath {
         Self(path.map(Identifier::parse).collect())
     }
 
-    // TODO remove this method, this should be done by the NameMangler(tm)
-    pub fn mangle(&self) -> String {
-        self.0.iter().map(|id| id.as_str()).join(".")
+    pub fn parts(&self) -> &[Identifier] {
+        &self.0
     }
 }
 
 impl Display for ModulePath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = self.mangle();
+        let name = self.0.iter().map(|id| id.raw()).join(".");
 
         write!(f, "{name}")
     }
@@ -121,6 +123,7 @@ impl Display for Argument {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: Identifier,
+    pub mangled_name: MangledIdentifier,
     pub arguments: Vec<Argument>,
     pub return_type: Type,
     pub body: FunctionBody,
@@ -191,8 +194,8 @@ pub struct ImportFunction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructField {
-    #[allow(unused)]
     pub name: Identifier,
+    pub mangled_name: MangledIdentifier,
     pub type_: Type,
     pub static_: bool,
 }
@@ -200,6 +203,8 @@ pub struct StructField {
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: Identifier,
+    #[allow(unused)]
+    pub mangled_name: MangledIdentifier,
     pub fields: Vec<StructField>,
     pub impls: HashMap<Identifier, Function>,
 }

@@ -21,6 +21,7 @@ use scope::Scope;
 
 use crate::{
     ast::SourceRange,
+    name_mangler::{mangle_item, mangle_module, MangledIdentifier},
     runtime::register_mappings,
     types::{self, Identifier, ModulePath},
 };
@@ -231,15 +232,21 @@ where
             string_handle: StructHandle {
                 description: types::Struct {
                     name: types::Identifier::parse("string"),
+                    mangled_name: mangle_item(
+                        ModulePath::parse("std"),
+                        Identifier::parse("string"),
+                    ),
                     fields: vec![],
                     impls: HashMap::new(),
                 },
                 llvm_type: string_type,
                 static_fields: HashMap::new(),
             },
+            // TODO do we need the handle here? this is not exposed to userland anyway
             rc_handle: StructHandle {
                 description: types::Struct {
                     name: types::Identifier::parse("rc"),
+                    mangled_name: mangle_item(ModulePath::parse("std"), Identifier::parse("rc")),
                     fields: vec![],
                     impls: HashMap::new(),
                 },
@@ -260,7 +267,7 @@ where
     // TODO implement name mangling to avoid collisions between functions from different modules!!!
     fn declare_function_inner(
         &self,
-        name: Identifier,
+        name: MangledIdentifier,
         arguments: &[types::Argument],
         llvm_module: &Module<'ctx>,
         linkage: Linkage,
@@ -276,7 +283,6 @@ where
             .void_type()
             .fn_type(&arguments[..], false);
 
-        // TODO name mangling!!!
         llvm_module.add_function(name.as_str(), function_type, Some(linkage))
     }
 
@@ -294,15 +300,19 @@ where
             Linkage::Internal
         };
 
-        self.declare_function_inner(function.name.clone(), &function.arguments, module, linkage)
+        self.declare_function_inner(
+            function.mangled_name.clone(),
+            &function.arguments,
+            module,
+            linkage,
+        )
     }
 
     fn import_function(
         &self,
         function: &FunctionHandle<'ctx>,
         module: &Module<'ctx>,
-        // TODO support importing as an alias
-        name: Identifier,
+        name: MangledIdentifier,
     ) -> FunctionValue<'ctx> {
         self.declare_function_inner(name, &function.arguments, module, Linkage::External)
     }
@@ -317,7 +327,10 @@ where
         );
 
         for (path, program_module) in &program.modules {
-            let module = self.context.llvm_context.create_module(&path.mangle());
+            let module = self
+                .context
+                .llvm_context
+                .create_module(mangle_module(path.clone()).as_str());
             let created_module = global_scope.create_module(path.clone(), module);
 
             for declaration in program_module.items.values() {
@@ -391,8 +404,11 @@ where
                 let function =
                     global_scope.resolve_function(&import.path, &import.item, import.location)?;
 
-                let imported_function =
-                    self.import_function(&function, &module.llvm_module, import.item.clone());
+                let imported_function = self.import_function(
+                    &function,
+                    &module.llvm_module,
+                    mangle_item(import.path.clone(), import.item.clone()),
+                );
 
                 module.set_variable(
                     import.item.clone(),
@@ -464,7 +480,10 @@ where
 
         unsafe {
             let main = execution_engine
-                .get_function::<unsafe extern "C" fn()>("main")
+                // TODO we should allow for main to be in any module, not just "main"
+                .get_function::<unsafe extern "C" fn()>(
+                    mangle_item(ModulePath::parse("main"), Identifier::parse("main")).as_str(),
+                )
                 .unwrap();
             main.call();
         }
@@ -643,7 +662,7 @@ where
                         .unwrap();
 
                     let rc = RcValue::build_init(
-                        Identifier::parse(&name),
+                        mangle_item(module_path.clone(), Identifier::parse(&name)),
                         literal_value,
                         self.context.builtins.string_handle.clone(),
                         &self.context,
@@ -659,7 +678,7 @@ where
             types::ExpressionKind::StructConstructor(name) => {
                 let s = compiled_function
                     .scope
-                    .get_struct(name, module_path, position)
+                    .get_struct(name, module_path.clone(), position)
                     .unwrap();
 
                 let value = self
@@ -674,7 +693,12 @@ where
                     )
                     .unwrap();
 
-                let rc = RcValue::build_init(name.clone(), value, s.clone(), &self.context)?;
+                let rc = RcValue::build_init(
+                    mangle_item(module_path.clone(), name.clone()),
+                    value,
+                    s.clone(),
+                    &self.context,
+                )?;
                 compiled_function.rcs.push(rc.clone());
 
                 Ok((None, Value::Reference(rc)))
