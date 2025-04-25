@@ -6,7 +6,17 @@ use std::{
 use crate::ast::{self, SourceRange};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct Identifier(pub String);
+pub struct Identifier(String);
+
+impl Identifier {
+    pub fn parse(raw: &str) -> Self {
+        Self(raw.to_string())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl Display for Identifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -18,7 +28,13 @@ impl Display for Identifier {
 
 // TODO support paths that are nested
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct ModulePath(pub Identifier);
+pub struct ModulePath(Identifier);
+
+impl ModulePath {
+    pub fn parse(raw: &str) -> Self {
+        Self(Identifier(raw.to_string()))
+    }
+}
 
 impl ModulePath {
     pub(crate) fn as_str(&self) -> &str {

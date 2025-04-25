@@ -1,5 +1,7 @@
 use inkwell::{basic_block::BasicBlock, values::PointerValue, AddressSpace};
 
+use crate::types::Identifier;
+
 use super::{context::CompilerContext, CompileError, StructHandle};
 
 #[derive(Debug, Clone)]
@@ -14,7 +16,7 @@ pub struct RcValue<'ctx> {
 
 impl<'ctx> RcValue<'ctx> {
     pub fn build_init<'src>(
-        name: &str,
+        name: Identifier,
         value: PointerValue<'ctx>,
         value_type: StructHandle<'ctx>,
         context: &CompilerContext<'ctx>,
@@ -24,7 +26,7 @@ impl<'ctx> RcValue<'ctx> {
     {
         let rc = context
             .builder
-            .build_malloc(context.builtins.rc_handle.llvm_type, name)
+            .build_malloc(context.builtins.rc_handle.llvm_type, name.as_str())
             .unwrap();
 
         let rc_refcount = unsafe {

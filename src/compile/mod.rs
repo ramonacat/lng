@@ -230,7 +230,7 @@ where
             // with static_fields
             string_handle: StructHandle {
                 description: types::Struct {
-                    name: types::Identifier("string".to_string()),
+                    name: types::Identifier::parse("string"),
                     fields: vec![],
                     impls: HashMap::new(),
                 },
@@ -239,7 +239,7 @@ where
             },
             rc_handle: StructHandle {
                 description: types::Struct {
-                    name: types::Identifier("rc".to_string()),
+                    name: types::Identifier::parse("rc"),
                     fields: vec![],
                     impls: HashMap::new(),
                 },
@@ -277,7 +277,7 @@ where
             .fn_type(&arguments[..], false);
 
         // TODO name mangling!!!
-        llvm_module.add_function(&name.0, function_type, Some(linkage))
+        llvm_module.add_function(name.as_str(), function_type, Some(linkage))
     }
 
     fn declare_function(
@@ -286,7 +286,7 @@ where
         module: &Module<'ctx>,
     ) -> FunctionValue<'ctx> {
         let linkage = if function.export
-            || function.name == types::Identifier("main".to_string())
+            || function.name == types::Identifier::parse("main")
             || matches!(function.body, types::FunctionBody::Extern)
         {
             Linkage::External
@@ -312,7 +312,7 @@ where
     pub fn compile(self, program: &'src types::Program) -> Result<(), CompileError> {
         let mut global_scope = GlobalScope::new();
         global_scope.register(
-            Identifier("string".to_string()),
+            Identifier::parse("string"),
             Value::Struct(self.context.builtins.string_handle.clone()),
         );
 
@@ -488,7 +488,7 @@ where
             let self_value = function.has_self().then(|| {
                 compiled_function
                     .scope
-                    .get_variable(&Identifier("self".to_string()))
+                    .get_variable(&Identifier::parse("self"))
                     .unwrap()
             });
 
@@ -643,7 +643,7 @@ where
                         .unwrap();
 
                     let rc = RcValue::build_init(
-                        &name,
+                        Identifier::parse(&name),
                         literal_value,
                         self.context.builtins.string_handle.clone(),
                         &self.context,
@@ -674,7 +674,7 @@ where
                     )
                     .unwrap();
 
-                let rc = RcValue::build_init(&name.0, value, s.clone(), &self.context)?;
+                let rc = RcValue::build_init(name.clone(), value, s.clone(), &self.context)?;
                 compiled_function.rcs.push(rc.clone());
 
                 Ok((None, Value::Reference(rc)))
