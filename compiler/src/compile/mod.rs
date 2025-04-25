@@ -11,6 +11,7 @@ use inkwell::{
     basic_block::BasicBlock,
     builder::BuilderError,
     context::Context,
+    execution_engine::ExecutionEngine,
     module::{Linkage, Module},
     types::{BasicType, StructType},
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, FunctionValue},
@@ -26,13 +27,17 @@ use crate::{
     types::{self, Identifier, ModulePath},
 };
 
-pub fn compile(program: &types::Program) -> Result<(), CompileError> {
+pub fn compile(
+    program: &types::Program,
+    register_global_mappings: RegisterGlobalMappings,
+) -> Result<(), CompileError> {
     let context = Context::create();
-
     let compiler = Compiler::new(&context);
 
-    compiler.compile(program)
+    compiler.compile(program, register_global_mappings)
 }
+
+type RegisterGlobalMappings = Option<Box<dyn FnOnce(&ExecutionEngine, &Module)>>;
 
 struct Compiler<'ctx> {
     context: CompilerContext<'ctx>,
@@ -319,7 +324,11 @@ where
 
     // TODO instead of executing the code, this should return some object that exposes the
     // executable code with a safe interface
-    pub fn compile(self, program: &'src types::Program) -> Result<(), CompileError> {
+    pub fn compile(
+        self,
+        program: &'src types::Program,
+        register_global_mappings: RegisterGlobalMappings,
+    ) -> Result<(), CompileError> {
         let mut global_scope = GlobalScope::new();
         global_scope.register(
             Identifier::parse("string"),
@@ -476,7 +485,10 @@ where
             .create_jit_execution_engine(inkwell::OptimizationLevel::Default)
             .unwrap();
 
-        register_mappings(&execution_engine, &root_module);
+        (register_global_mappings.unwrap_or(Box::new(register_mappings)))(
+            &execution_engine,
+            &root_module,
+        );
 
         unsafe {
             let main = execution_engine

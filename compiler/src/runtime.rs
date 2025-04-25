@@ -9,15 +9,15 @@ use inkwell::{execution_engine::ExecutionEngine, module::Module};
 #[repr(C)]
 #[derive(Debug)]
 pub struct LngString {
-    contents: *const c_char,
+    pub contents: *const c_char,
 }
 
 // keep in sync with the definiton in compiler
 #[repr(C)]
 #[derive(Debug)]
 pub struct LngRc<T: Debug> {
-    refcount: u64,
-    pointee: *const T,
+    pub refcount: u64,
+    pub pointee: *const T,
 }
 
 #[unsafe(no_mangle)]

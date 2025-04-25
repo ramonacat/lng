@@ -1,0 +1,28 @@
+use std::collections::HashMap;
+
+mod common;
+
+#[test]
+pub fn import_function_from_nested() {
+    let main = "
+        import main::test::my_println;
+
+        fn main(): void {
+            my_println(\"hello\");
+        }
+    ";
+    let main_test = "
+        import std::println;
+
+        export fn my_println(text: string): void {
+            println(text);
+        }
+    ";
+
+    let mut program = HashMap::new();
+    program.insert("main", main);
+    program.insert("main.test", main_test);
+    let result = common::run(program);
+
+    assert_eq!("hello\n", result);
+}
