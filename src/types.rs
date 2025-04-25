@@ -3,6 +3,8 @@ use std::{
     fmt::{Display, Formatter},
 };
 
+use itertools::Itertools as _;
+
 use crate::ast::{self, SourceRange};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -26,25 +28,27 @@ impl Display for Identifier {
     }
 }
 
-// TODO support paths that are nested
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct ModulePath(Identifier);
+pub struct ModulePath(Vec<Identifier>);
 
 impl ModulePath {
     pub fn parse(raw: &str) -> Self {
-        Self(Identifier(raw.to_string()))
+        Self(raw.split(".").map(Identifier::parse).collect())
     }
-}
 
-impl ModulePath {
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0 .0
+    pub fn from_parts<'a>(path: impl Iterator<Item = &'a str>) -> Self {
+        Self(path.map(Identifier::parse).collect())
+    }
+
+    // TODO remove this method, this should be done by the NameMangler(tm)
+    pub fn mangle(&self) -> String {
+        self.0.iter().map(|id| id.as_str()).join(".")
     }
 }
 
 impl Display for ModulePath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = &self.0;
+        let name = self.mangle();
 
         write!(f, "{name}")
     }

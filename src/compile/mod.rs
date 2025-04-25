@@ -317,7 +317,7 @@ where
         );
 
         for (path, program_module) in &program.modules {
-            let module = self.context.llvm_context.create_module(path.as_str());
+            let module = self.context.llvm_context.create_module(&path.mangle());
             let created_module = global_scope.create_module(path.clone(), module);
 
             for declaration in program_module.items.values() {

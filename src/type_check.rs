@@ -211,8 +211,10 @@ pub fn type_check(program: &Program) -> Result<types::Program, TypeCheckError> {
         let module_path = ModulePath::parse(&file.name);
 
         for import in &file.imports {
-            let exporting_module_name = types::ModulePath::parse(&import.path[0]);
-            let item_name = types::Identifier::parse(&import.path[1]);
+            let (name, path) = import.path.split_last().unwrap();
+            let exporting_module_name =
+                types::ModulePath::from_parts(path.iter().map(String::as_str));
+            let item_name = types::Identifier::parse(name);
 
             let Some(exporting_module) = modules.get(&exporting_module_name) else {
                 return Err(

@@ -14,6 +14,7 @@ fn main() {
 
     let program = "
         import std::println;
+        import main::printer::my_println;
 
         struct Greeter {}
 
@@ -22,10 +23,6 @@ fn main() {
                 println(\"hello\");
                 println(whom);
             }
-        }
-
-        fn my_println(arg: string): void {
-            println(arg);
         }
 
         fn main(args:string[]): void {
@@ -37,10 +34,19 @@ fn main() {
         }
     ";
 
+    let printer = "
+        import std::println;
+
+        export fn my_println(arg: string): void {
+            println(arg);
+        }
+    ";
+
     let program_ast = parse_file("main", program).unwrap();
+    let greeter_ast = parse_file("main.printer", printer).unwrap();
     let stdlib_ast = parse_file("std", stdlib).unwrap();
 
-    let program = Program(vec![program_ast, stdlib_ast]);
+    let program = Program(vec![program_ast, greeter_ast, stdlib_ast]);
     let type_check_result = type_check(&program).unwrap();
 
     compile(&type_check_result).unwrap();
