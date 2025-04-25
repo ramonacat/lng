@@ -64,16 +64,51 @@ impl TypeCheckErrorDescription {
 impl Display for TypeCheckErrorDescription {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeCheckErrorDescription::UnexpectedArgumentTypeInFunctionCall { target, argument_name } => write!(f, "Incorrect argument type for argument {argument_name} in a call to {target}"),
-            TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(name) => write!(f, "Incorrect number of arguments passed to {name}"),
-            TypeCheckErrorDescription::FunctionArgumentCannotBeVoid { function_name, argument_name } => write!(f, "Argument {argument_name} in the declaration of {function_name} cannot be of type void"),
-            TypeCheckErrorDescription::ModuleDoesNotExist(module_path) => write!(f, "Module {module_path} does not exist"),
-            TypeCheckErrorDescription::ItemDoesNotExist(module_path, identifier) => write!(f, "Item {identifier} does not exist in module {module_path}"),
-            TypeCheckErrorDescription::ItemNotExported(module_path, identifier) => write!(f, "Item {identifier} exists in module {module_path}, but is not exported"),
-            TypeCheckErrorDescription::UndeclaredVariable(identifier) => write!(f, "Variable {identifier} does not exist"),
-            TypeCheckErrorDescription::ImplNotOnStruct(identifier) => write!(f, "{identifier} is not a struct, impl is not allowed"),
-            TypeCheckErrorDescription::MismatchedAssignmentType { target_variable, variable_type, assigned_type } => write!(f, "Cannot assign value of type {assigned_type} to variiable {target_variable} of typee {variable_type}"),
-            TypeCheckErrorDescription::CallingNotCallableItem(identifier) => write!(f, "{identifier} cannot be called"),
+            TypeCheckErrorDescription::UnexpectedArgumentTypeInFunctionCall {
+                target,
+                argument_name,
+            } => write!(
+                f,
+                "Incorrect argument type for argument {argument_name} in a call to {target}"
+            ),
+            TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(name) => {
+                write!(f, "Incorrect number of arguments passed to {name}")
+            }
+            TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
+                function_name,
+                argument_name,
+            } => write!(
+                f,
+                "Argument {argument_name} in the declaration of {function_name} cannot be of type void"
+            ),
+            TypeCheckErrorDescription::ModuleDoesNotExist(module_path) => {
+                write!(f, "Module {module_path} does not exist")
+            }
+            TypeCheckErrorDescription::ItemDoesNotExist(module_path, identifier) => write!(
+                f,
+                "Item {identifier} does not exist in module {module_path}"
+            ),
+            TypeCheckErrorDescription::ItemNotExported(module_path, identifier) => write!(
+                f,
+                "Item {identifier} exists in module {module_path}, but is not exported"
+            ),
+            TypeCheckErrorDescription::UndeclaredVariable(identifier) => {
+                write!(f, "Variable {identifier} does not exist")
+            }
+            TypeCheckErrorDescription::ImplNotOnStruct(identifier) => {
+                write!(f, "{identifier} is not a struct, impl is not allowed")
+            }
+            TypeCheckErrorDescription::MismatchedAssignmentType {
+                target_variable,
+                variable_type,
+                assigned_type,
+            } => write!(
+                f,
+                "Cannot assign value of type {assigned_type} to variiable {target_variable} of typee {variable_type}"
+            ),
+            TypeCheckErrorDescription::CallingNotCallableItem(identifier) => {
+                write!(f, "{identifier} cannot be called")
+            }
         }
     }
 }

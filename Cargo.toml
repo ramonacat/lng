@@ -1,11 +1,4 @@
-[package]
-name = "lng"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-inkwell = { version = "0.5.0", features = ["llvm18-0"] }
-itertools = "0.14.0"
-pest = "2.8.0"
-pest_derive = "2.8.0"
-thiserror = "2.0.12"
+[workspace]
+resolver = "2"
+members = [ "compiler", "compiler-bin" ]
+default-members = ["compiler-bin"]

@@ -1,8 +1,8 @@
-use inkwell::{basic_block::BasicBlock, values::PointerValue, AddressSpace};
+use inkwell::{AddressSpace, basic_block::BasicBlock, values::PointerValue};
 
 use crate::name_mangler::MangledIdentifier;
 
-use super::{context::CompilerContext, CompileError, StructHandle};
+use super::{CompileError, StructHandle, context::CompilerContext};
 
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {

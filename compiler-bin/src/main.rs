@@ -1,14 +1,8 @@
-mod ast;
-mod compile;
-mod name_mangler;
-mod parse;
-mod runtime;
-mod type_check;
-mod types;
-
-use compile::compile;
-use parse::parse_file;
-use type_check::{type_check, Program};
+use compiler::{
+    compile::compile,
+    parse::parse_file,
+    type_check::{type_check, Program},
+};
 
 fn main() {
     let stdlib = include_str!("../stdlib/std.lng");

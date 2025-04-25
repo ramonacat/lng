@@ -8,7 +8,7 @@ impl Display for SourceRange {
         write!(
             f,
             "({}, {}) to ({}, {})",
-            self.0 .0, self.0 .1, self.1 .0, self.1 .1
+            self.0.0, self.0.1, self.1.0, self.1.1
         )
     }
 }

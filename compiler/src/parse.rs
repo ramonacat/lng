@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use pest::{iterators::Pair, Parser};
+use pest::{Parser, iterators::Pair};
 use pest_derive::Parser;
 use thiserror::Error;
 
@@ -67,7 +67,7 @@ pub fn parse_file<'parser>(
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     item,
-                )))
+                )));
             }
         }
     }
@@ -109,7 +109,7 @@ fn parse_impl(item: Pair<Rule>) -> Result<Impl, ParseError<'_>> {
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     item,
-                )))
+                )));
             }
         }
     }
@@ -154,7 +154,7 @@ fn parse_struct(item: Pair<Rule>) -> Result<Struct, ParseError<'_>> {
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     item,
-                )))
+                )));
             }
         }
     }
@@ -176,7 +176,7 @@ fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     element,
-                )))
+                )));
             }
         }
     }
@@ -271,7 +271,7 @@ fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     element,
-                )))
+                )));
             }
         }
     }

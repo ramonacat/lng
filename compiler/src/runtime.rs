@@ -1,5 +1,5 @@
 use std::{
-    ffi::{c_char, CStr},
+    ffi::{CStr, c_char},
     fmt::Debug,
 };
 
@@ -20,7 +20,7 @@ pub struct LngRc<T: Debug> {
     pointee: *const T,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn println(arg: *const LngRc<LngString>) {
     let arg = unsafe { CStr::from_ptr((*(*arg).pointee).contents) }
         .to_str()

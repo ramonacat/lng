@@ -7,13 +7,13 @@ use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
 
 use context::{Builtins, CompilerContext};
 use inkwell::{
+    AddressSpace,
     basic_block::BasicBlock,
     builder::BuilderError,
     context::Context,
     module::{Linkage, Module},
     types::{BasicType, StructType},
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, FunctionValue},
-    AddressSpace,
 };
 use module::GlobalScope;
 use rc_builder::RcValue;
@@ -21,7 +21,7 @@ use scope::Scope;
 
 use crate::{
     ast::SourceRange,
-    name_mangler::{mangle_item, mangle_module, MangledIdentifier},
+    name_mangler::{MangledIdentifier, mangle_item, mangle_module},
     runtime::register_mappings,
     types::{self, Identifier, ModulePath},
 };
@@ -609,7 +609,7 @@ where
                         &call_arguments,
                         &format!(
                             "call_result_{}_{}_{}_{}",
-                            position.0 .0, position.0 .1, position.1 .0, position.1 .1
+                            position.0.0, position.0.1, position.1.0, position.1.1
                         ),
                     )
                     .map_err(|e| e.into_compile_error_at(module_path.clone(), position))?;
@@ -629,7 +629,7 @@ where
                 types::Literal::String(s) => {
                     let name = format!(
                         "literal_{}_{}_{}_{}",
-                        position.0 .0, position.0 .1, position.1 .0, position.1 .1
+                        position.0.0, position.0.1, position.1.0, position.1.1
                     );
                     let characters_value = self
                         .context
@@ -688,7 +688,7 @@ where
                         s.llvm_type,
                         &format!(
                             "{}_{}_{}_{}_{}",
-                            name, position.0 .0, position.0 .1, position.1 .0, position.1 .1
+                            name, position.0.0, position.0.1, position.1.0, position.1.1
                         ),
                     )
                     .unwrap();

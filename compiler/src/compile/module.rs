@@ -1,9 +1,9 @@
 use std::{collections::HashMap, rc::Rc};
 
 use super::{
+    CompileError, CompileErrorDescription, CompiledFunction, FunctionHandle, Scope, Value,
     context::CompilerContext,
     rc_builder::{self, RcValue},
-    CompileError, CompileErrorDescription, CompiledFunction, FunctionHandle, Scope, Value,
 };
 use crate::{
     ast::SourceRange,
