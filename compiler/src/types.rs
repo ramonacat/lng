@@ -59,7 +59,6 @@ impl Display for ModulePath {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Void,
-    // TODO add integer and floating point types
     Object(Identifier),
     Array(Box<Type>),
     // TODO this should probably be simply an object, just of StructDescriptor<TargetStruct> type
@@ -70,6 +69,9 @@ pub enum Type {
         arguments: Vec<Argument>,
         return_type: Box<Type>,
     },
+    // TODO add u128,u32,u16,u8 and signed counterparts
+    // TODO add bool
+    // TODO add float
     U64,
 }
 
