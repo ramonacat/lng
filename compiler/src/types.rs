@@ -70,6 +70,7 @@ pub enum Type {
         arguments: Vec<Argument>,
         return_type: Box<Type>,
     },
+    U64,
 }
 
 impl Display for Type {
@@ -96,6 +97,7 @@ impl Display for Type {
                     .collect::<Vec<_>>()
                     .join(",")
             ),
+            Type::U64 => write!(f, "u64"),
         }
     }
 }
@@ -137,6 +139,10 @@ impl Function {
             .map(|a| a.name.0 == "self")
             .unwrap_or(false)
     }
+
+    pub(crate) fn is_exported(&self) -> bool {
+        self.name.0 == "main" || matches!(self.body, FunctionBody::Extern) || self.export
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -149,11 +155,13 @@ pub enum FunctionBody {
 pub enum Statement {
     Expression(Expression),
     Let(LetStatement),
+    Return(Expression),
 }
 
 #[derive(Debug, Clone)]
 pub enum Literal {
     String(String),
+    UnsignedInteger(u64),
 }
 
 #[derive(Debug, Clone)]
@@ -186,7 +194,7 @@ pub struct LetStatement {
 }
 
 #[derive(Debug)]
-pub struct ImportFunction {
+pub struct Import {
     pub path: ModulePath,
     pub item: Identifier,
     pub location: ast::SourceRange,
@@ -213,7 +221,7 @@ pub struct Struct {
 pub enum Item {
     Function(Function),
     Struct(Struct),
-    ImportFunction(ImportFunction),
+    Import(Import),
 }
 
 #[derive(Debug)]

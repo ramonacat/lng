@@ -51,7 +51,7 @@ impl<'ctx> Scope<'ctx> {
         name: &types::Identifier,
         module_path: ModulePath,
         location: SourceRange,
-    ) -> Result<FunctionHandle<'ctx>, CompileError> {
+    ) -> Result<FunctionHandle, CompileError> {
         let called_item = self.get_variable(name).ok_or_else(|| {
             CompileErrorDescription::FunctionNotFound {
                 module_name: module_path.clone(),

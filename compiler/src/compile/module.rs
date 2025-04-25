@@ -1,15 +1,19 @@
 use std::{collections::HashMap, rc::Rc};
 
 use super::{
-    CompileError, CompileErrorDescription, CompiledFunction, FunctionHandle, Scope, Value,
+    CompileError, CompiledFunction, FunctionHandle, Scope, Value,
     context::CompilerContext,
     rc_builder::{self, RcValue},
 };
 use crate::{
     ast::SourceRange,
+    name_mangler::MangledIdentifier,
     types::{self, Identifier, ModulePath},
 };
-use inkwell::module::Module;
+use inkwell::{
+    module::{Linkage, Module},
+    values::FunctionValue,
+};
 
 pub struct CompiledModule<'ctx> {
     pub path: types::ModulePath,
@@ -18,12 +22,65 @@ pub struct CompiledModule<'ctx> {
 }
 
 impl<'ctx> CompiledModule<'ctx> {
+    // TODO implement name mangling to avoid collisions between functions from different modules!!!
+    fn declare_function_inner(
+        &self,
+        name: MangledIdentifier,
+        arguments: &[types::Argument],
+        return_type: &types::Type,
+        linkage: Linkage,
+        context: &CompilerContext<'ctx>,
+    ) -> FunctionValue<'ctx> {
+        let arguments = arguments
+            .iter()
+            .map(|arg| context.type_to_llvm(&arg.type_).as_basic_type_enum().into())
+            .collect::<Vec<_>>();
+
+        let function_type = context
+            .type_to_llvm(return_type)
+            .fn_type(&arguments[..], false);
+
+        self.llvm_module
+            .add_function(name.as_str(), function_type, Some(linkage))
+    }
+
+    pub fn declare_function(
+        &self,
+        export: bool,
+        name: MangledIdentifier,
+        arguments: &[types::Argument],
+        return_type: &types::Type,
+        context: &CompilerContext<'ctx>,
+    ) -> FunctionValue<'ctx> {
+        let linkage = if export {
+            Linkage::External
+        } else {
+            Linkage::Internal
+        };
+
+        self.declare_function_inner(name, arguments, return_type, linkage, context)
+    }
+
+    pub fn import_function(
+        &self,
+        function: &FunctionHandle,
+        name: MangledIdentifier,
+        context: &CompilerContext<'ctx>,
+    ) -> FunctionValue<'ctx> {
+        self.declare_function_inner(
+            name,
+            &function.arguments,
+            &function.return_type,
+            Linkage::External,
+            context,
+        )
+    }
     pub fn resolve_function(
         &self,
         name: &Identifier,
         location: SourceRange,
         struct_: Option<Identifier>,
-    ) -> Result<FunctionHandle<'ctx>, CompileError> {
+    ) -> Result<FunctionHandle, CompileError> {
         if let Some(struct_) = struct_ {
             let struct_handle = self
                 .scope
@@ -39,8 +96,12 @@ impl<'ctx> CompiledModule<'ctx> {
         self.scope.get_function(name, self.path.clone(), location)
     }
 
-    pub(crate) fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
+    pub fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
         self.scope.register(name, value);
+    }
+
+    pub fn get_variable(&self, name: &Identifier) -> Option<Value<'ctx>> {
+        self.scope.get_variable(name)
     }
 
     pub(crate) fn begin_compile_function(
@@ -53,10 +114,8 @@ impl<'ctx> CompiledModule<'ctx> {
         let handle = self.resolve_function(&function.name, function.location, struct_)?;
         let scope = self.scope.child();
 
-        for (argument, argument_value) in function
-            .arguments
-            .iter()
-            .zip(handle.llvm_function.get_params())
+        let llvm_function = handle.get_or_create_in_module(self, context);
+        for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
         {
             let value = match &argument.type_ {
                 types::Type::Void => todo!(),
@@ -82,9 +141,20 @@ impl<'ctx> CompiledModule<'ctx> {
                     types::Type::Array(_) => todo!(),
                     types::Type::StructDescriptor(_, _) => todo!(),
                     types::Type::Callable { .. } => todo!(),
+                    types::Type::U64 => todo!(),
                 },
                 types::Type::StructDescriptor(_, _) => todo!(),
                 types::Type::Callable { .. } => todo!(),
+                types::Type::U64 => Value::Primitive(
+                    self.scope
+                        .get_struct(
+                            &Identifier::parse("u64"),
+                            self.path.clone(),
+                            argument.position,
+                        )
+                        .unwrap(),
+                    argument_value,
+                ),
             };
 
             scope.register(argument.name.clone(), value);
@@ -92,11 +162,11 @@ impl<'ctx> CompiledModule<'ctx> {
 
         let entry_block = context
             .llvm_context
-            .append_basic_block(handle.llvm_function, "entry");
+            .append_basic_block(llvm_function, "entry");
 
         let end_block = context
             .llvm_context
-            .append_basic_block(handle.llvm_function, "end");
+            .append_basic_block(llvm_function, "end");
 
         context.builder.position_at_end(entry_block);
 
@@ -108,6 +178,7 @@ impl<'ctx> CompiledModule<'ctx> {
             entry: entry_block,
             end: end_block,
             rcs,
+            return_value: None,
         })
     }
 }
@@ -139,22 +210,17 @@ impl<'ctx> GlobalScope<'ctx> {
             })
     }
 
+    // TODO rename to get_module
     pub fn get(&self, path: &types::ModulePath) -> Option<&CompiledModule<'ctx>> {
         self.modules.get(path)
     }
 
-    pub fn resolve_function(
+    pub fn get_value(
         &self,
         module: &types::ModulePath,
         name: &types::Identifier,
-        location: SourceRange,
-    ) -> Result<FunctionHandle<'ctx>, CompileError> {
-        self.modules
-            .get(module)
-            .ok_or_else(|| {
-                CompileErrorDescription::ModuleNotFound(module.clone()).at(module.clone(), location)
-            })?
-            .resolve_function(name, location, None)
+    ) -> Option<Value<'ctx>> {
+        self.modules.get(module).and_then(|x| x.get_variable(name))
     }
 
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {

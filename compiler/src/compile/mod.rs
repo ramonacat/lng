@@ -12,17 +12,17 @@ use inkwell::{
     builder::BuilderError,
     context::Context,
     execution_engine::ExecutionEngine,
-    module::{Linkage, Module},
+    module::Module,
     types::{BasicType, StructType},
-    values::{AnyValue, BasicMetadataValueEnum, BasicValue, FunctionValue},
+    values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue},
 };
-use module::GlobalScope;
+use module::{CompiledModule, GlobalScope};
 use rc_builder::RcValue;
 use scope::Scope;
 
 use crate::{
     ast::SourceRange,
-    name_mangler::{MangledIdentifier, mangle_item, mangle_module},
+    name_mangler::{MangledIdentifier, mangle_field, mangle_item, mangle_module},
     runtime::register_mappings,
     types::{self, Identifier, ModulePath},
 };
@@ -158,12 +158,13 @@ impl IntoCompileError for BuilderError {
 }
 
 struct CompiledFunction<'ctx> {
-    handle: FunctionHandle<'ctx>,
+    handle: FunctionHandle,
 
     entry: BasicBlock<'ctx>,
     end: BasicBlock<'ctx>,
     scope: Rc<Scope<'ctx>>,
     rcs: Vec<RcValue<'ctx>>,
+    return_value: Option<Value<'ctx>>,
 }
 
 impl<'ctx> CompiledFunction<'ctx> {
@@ -180,29 +181,69 @@ impl<'ctx> CompiledFunction<'ctx> {
 
         Ok(())
     }
+
+    fn set_return_value(&mut self, value: Value<'ctx>) {
+        self.return_value = Some(value);
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionHandle<'ctx> {
+pub struct FunctionHandle {
+    pub name: MangledIdentifier,
     pub location: SourceRange,
     pub arguments: Vec<types::Argument>,
-    pub llvm_function: FunctionValue<'ctx>,
+    pub return_type: types::Type,
+    pub export: bool,
+}
+
+impl<'ctx> FunctionHandle {
+    // TODO move the declare_function* methods from Compiler into CompiledModule and use them here
+    fn get_or_create_in_module(
+        &self,
+        module: &CompiledModule<'ctx>,
+        context: &CompilerContext<'ctx>,
+    ) -> FunctionValue<'ctx> {
+        module
+            .llvm_module
+            .get_function(self.name.as_str())
+            .unwrap_or_else(|| {
+                module.declare_function(
+                    self.export,
+                    self.name.clone(),
+                    &self.arguments,
+                    &self.return_type,
+                    context,
+                )
+            })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct StructHandle<'ctx> {
     description: types::Struct,
+    // TODO static_fileds should be in types::Struct really
     static_fields: HashMap<types::Identifier, Value<'ctx>>,
     llvm_type: StructType<'ctx>,
 }
 
+// TODO The *Handle structs should be lightweight handles, and not copied with the vecs and all
+// that
 #[derive(Debug, Clone)]
 enum Value<'ctx> {
-    Primitive(BasicMetadataValueEnum<'ctx>),
-    // TODO the StructHandle should probably be inside RcValue
+    Primitive(StructHandle<'ctx>, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
-    Function(FunctionHandle<'ctx>),
+    Function(FunctionHandle),
     Struct(StructHandle<'ctx>),
+}
+impl<'ctx> Value<'ctx> {
+    fn to_basic_value(&self) -> BasicValueEnum<'ctx> {
+        match self {
+            Value::Primitive(_, value) => *value,
+            Value::Reference(value) => value.as_ptr().as_basic_value_enum(),
+            Value::Function(_) => todo!(),
+            Value::Struct(_) => todo!(),
+        }
+    }
 }
 
 impl<'src, 'ctx> Compiler<'ctx>
@@ -269,59 +310,6 @@ where
         }
     }
 
-    // TODO implement name mangling to avoid collisions between functions from different modules!!!
-    fn declare_function_inner(
-        &self,
-        name: MangledIdentifier,
-        arguments: &[types::Argument],
-        llvm_module: &Module<'ctx>,
-        linkage: Linkage,
-    ) -> FunctionValue<'ctx> {
-        let arguments = arguments
-            .iter()
-            .map(|arg| self.type_to_llvm(&arg.type_).as_basic_type_enum().into())
-            .collect::<Vec<_>>();
-
-        let function_type = self
-            .context
-            .llvm_context
-            .void_type()
-            .fn_type(&arguments[..], false);
-
-        llvm_module.add_function(name.as_str(), function_type, Some(linkage))
-    }
-
-    fn declare_function(
-        &self,
-        function: &types::Function,
-        module: &Module<'ctx>,
-    ) -> FunctionValue<'ctx> {
-        let linkage = if function.export
-            || function.name == types::Identifier::parse("main")
-            || matches!(function.body, types::FunctionBody::Extern)
-        {
-            Linkage::External
-        } else {
-            Linkage::Internal
-        };
-
-        self.declare_function_inner(
-            function.mangled_name.clone(),
-            &function.arguments,
-            module,
-            linkage,
-        )
-    }
-
-    fn import_function(
-        &self,
-        function: &FunctionHandle<'ctx>,
-        module: &Module<'ctx>,
-        name: MangledIdentifier,
-    ) -> FunctionValue<'ctx> {
-        self.declare_function_inner(name, &function.arguments, module, Linkage::External)
-    }
-
     // TODO instead of executing the code, this should return some object that exposes the
     // executable code with a safe interface
     pub fn compile(
@@ -330,6 +318,7 @@ where
         register_global_mappings: RegisterGlobalMappings,
     ) -> Result<(), CompileError> {
         let mut global_scope = GlobalScope::new();
+
         global_scope.register(
             Identifier::parse("string"),
             Value::Struct(self.context.builtins.string_handle.clone()),
@@ -345,12 +334,11 @@ where
             for declaration in program_module.items.values() {
                 match declaration {
                     types::Item::Function(function) => {
-                        let llvm_function =
-                            self.declare_function(function, &created_module.llvm_module);
-
                         let function_handle = FunctionHandle {
+                            export: function.is_exported(),
+                            name: function.mangled_name.clone(),
+                            return_type: function.return_type.clone(),
                             arguments: function.arguments.clone(),
-                            llvm_function,
                             location: function.location,
                         };
 
@@ -361,7 +349,7 @@ where
                         let field_types = struct_
                             .fields
                             .iter()
-                            .map(|f| self.type_to_llvm(&f.type_).as_basic_type_enum())
+                            .map(|f| self.context.type_to_llvm(&f.type_).as_basic_type_enum())
                             .collect::<Vec<_>>();
                         let llvm_type = self
                             .context
@@ -372,11 +360,11 @@ where
                             .impls
                             .iter()
                             .map(|(name, impl_)| {
-                                let llvm_function =
-                                    self.declare_function(impl_, &created_module.llvm_module);
                                 let handle = FunctionHandle {
+                                    export: impl_.export,
+                                    name: impl_.mangled_name.clone(),
+                                    return_type: impl_.return_type.clone(),
                                     arguments: impl_.arguments.clone(),
-                                    llvm_function,
                                     location: impl_.location,
                                 };
                                 (name.clone(), Value::Function(handle))
@@ -392,7 +380,7 @@ where
                             }),
                         );
                     }
-                    types::Item::ImportFunction(_) => {}
+                    types::Item::Import(_) => {}
                 };
             }
         }
@@ -406,27 +394,57 @@ where
 
             for item in file.items.values() {
                 // TODO support importing structs, and possibly other types
-                let types::Item::ImportFunction(import) = item else {
+                let types::Item::Import(import) = item else {
                     continue;
                 };
 
-                let function =
-                    global_scope.resolve_function(&import.path, &import.item, import.location)?;
+                let value = global_scope.get_value(&import.path, &import.item).unwrap();
+                match value {
+                    Value::Primitive(_, _) => todo!(),
+                    Value::Reference(_) => todo!(),
+                    Value::Function(function) => {
+                        let mangled_name = mangle_item(import.path.clone(), import.item.clone());
 
-                let imported_function = self.import_function(
-                    &function,
-                    &module.llvm_module,
-                    mangle_item(import.path.clone(), import.item.clone()),
-                );
+                        module.import_function(&function, mangled_name.clone(), &self.context);
 
-                module.set_variable(
-                    import.item.clone(),
-                    Value::Function(FunctionHandle {
-                        location: import.location,
-                        arguments: function.arguments.clone(),
-                        llvm_function: imported_function,
-                    }),
-                );
+                        let Value::Function(f) =
+                            global_scope.get_value(&import.path, &import.item).unwrap()
+                        else {
+                            todo!();
+                        };
+
+                        module.set_variable(
+                            import.item.clone(),
+                            Value::Function(FunctionHandle {
+                                export: function.export,
+                                name: mangled_name,
+                                return_type: f.return_type,
+                                location: import.location,
+                                arguments: function.arguments.clone(),
+                            }),
+                        );
+                    }
+                    Value::Struct(ref struct_) => {
+                        for (field_name, impl_) in &struct_.static_fields {
+                            match impl_ {
+                                Value::Primitive(_, _) => todo!(),
+                                Value::Reference(_) => todo!(),
+                                Value::Function(function_handle) => module.import_function(
+                                    function_handle,
+                                    mangle_field(
+                                        import.path.clone(),
+                                        import.item.clone(),
+                                        field_name.clone(),
+                                    ),
+                                    &self.context,
+                                ),
+                                Value::Struct(_) => todo!(),
+                            };
+                        }
+
+                        module.set_variable(import.item.clone(), value.clone());
+                    }
+                };
             }
 
             for item in file.items.values() {
@@ -434,7 +452,7 @@ where
                     types::Item::Function(function) => {
                         self.compile_function(module_path, module, function, None)?;
                     }
-                    types::Item::ImportFunction(_) => {}
+                    types::Item::Import(_) => {}
                     types::Item::Struct(struct_) => {
                         for impl_ in struct_.impls.values() {
                             // TODO definitely mangle the name
@@ -530,6 +548,7 @@ where
                         self_value,
                         &mut compiled_function,
                         module_path.clone(),
+                        module,
                     )?;
                 }
                 types::Statement::Let(let_) => {
@@ -538,17 +557,45 @@ where
                         self_value,
                         &mut compiled_function,
                         module_path.clone(),
+                        module,
                     )?;
 
                     compiled_function
                         .scope
                         .register(let_.binding.clone(), value.1);
                 }
+                types::Statement::Return(expression) => {
+                    let value = self.compile_expression(
+                        expression,
+                        self_value,
+                        &mut compiled_function,
+                        module_path.clone(),
+                        module,
+                    )?;
+
+                    compiled_function.set_return_value(value.1);
+                }
             }
         }
         let cleanup_label = rc_builder::build_cleanup(
             &self.context,
-            &compiled_function.rcs,
+            &compiled_function
+                .rcs
+                .iter()
+                .filter(|x| {
+                    let Some(ref return_) = compiled_function.return_value else {
+                        return true;
+                    };
+
+                    match return_ {
+                        Value::Primitive(_, _) => true,
+                        Value::Reference(rc_value) => rc_value.as_ptr() != x.as_ptr(),
+                        Value::Function(_) => true,
+                        Value::Struct(_) => true,
+                    }
+                })
+                .cloned()
+                .collect::<Vec<_>>(),
             compiled_function.end,
         )?;
         self.context
@@ -559,7 +606,37 @@ where
             .build_unconditional_branch(cleanup_label)
             .unwrap();
         self.context.builder.position_at_end(compiled_function.end);
-        compiled_function.build_return(None, &self.context, module_path.clone())?;
+        // TODO can this match be somehow removed or simplified?
+        if let Some(ref r) = compiled_function.return_value {
+            match &r.to_basic_value() {
+                BasicValueEnum::ArrayValue(v) => {
+                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                }
+                BasicValueEnum::IntValue(v) => {
+                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                }
+                BasicValueEnum::FloatValue(v) => {
+                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                }
+                BasicValueEnum::PointerValue(v) => {
+                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                }
+                BasicValueEnum::StructValue(v) => {
+                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                }
+                BasicValueEnum::VectorValue(v) => {
+                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                }
+            }
+        } else {
+            // TODO we should really just return void here, but type_to_llvm can't declare void
+            // correctly (yet)
+            compiled_function.build_return(
+                Some(&self.context.llvm_context.i8_type().const_zero()),
+                &self.context,
+                module_path.clone(),
+            )?;
+        }
         Ok(())
     }
 
@@ -569,16 +646,19 @@ where
         self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
         module_path: ModulePath,
+        module: &CompiledModule<'ctx>,
     ) -> Result<(Option<Value<'ctx>>, Value<'ctx>), CompileError> {
         let position = expression.position;
 
         match &expression.kind {
+            // TODO this should not be named FunctionCall, but just Call
             types::ExpressionKind::FunctionCall { target, arguments } => {
                 let compiled_target = self.compile_expression(
                     target,
                     self_.clone(),
                     compiled_function,
                     module_path.clone(),
+                    module,
                 )?;
                 let (self_value, Value::Function(function)) = compiled_target else {
                     todo!();
@@ -592,6 +672,7 @@ where
                             self_value.clone(),
                             compiled_function,
                             module_path.clone(),
+                            module,
                         )
                         .map(|x| x.1)
                     })
@@ -600,7 +681,7 @@ where
                 let call_arguments = compiled_arguments_iter
                     .iter_mut()
                     .map(|a| match a {
-                        Value::Primitive(v) => *v,
+                        Value::Primitive(_, v) => v.as_basic_value_enum().into(),
                         Value::Reference(rc_value) => {
                             rc_value.as_ptr().as_basic_value_enum().into()
                         }
@@ -609,15 +690,14 @@ where
                             todo!("implement passing struct definitions as arguments")
                         }
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<Vec<BasicMetadataValueEnum>>();
 
-                // todo functions can return a Reference too, we need to consider that and return
-                // the right expression result!
+                // TODO support functions that return things that aren't ints!
                 let call_result = self
                     .context
                     .builder
                     .build_call(
-                        function.llvm_function,
+                        function.get_or_create_in_module(module, &self.context),
                         &call_arguments,
                         &format!(
                             "call_result_{}_{}_{}_{}",
@@ -629,13 +709,23 @@ where
                 let call_result = call_result.as_any_value_enum().try_into().unwrap_or(
                     self.context
                         .llvm_context
-                        .i8_type()
+                        .i64_type()
                         .const_zero()
-                        .as_basic_value_enum()
-                        .into(),
+                        .as_basic_value_enum(),
                 );
 
-                Ok((None, Value::Primitive(call_result)))
+                // TODO the call result may not be void
+                Ok((
+                    None,
+                    Value::Primitive(
+                        compiled_function.scope.get_struct(
+                            &Identifier::parse("u64"),
+                            module_path,
+                            position,
+                        )?,
+                        call_result,
+                    ),
+                ))
             }
             types::ExpressionKind::Literal(literal) => match literal {
                 types::Literal::String(s) => {
@@ -683,6 +773,22 @@ where
 
                     Ok((None, Value::Reference(rc)))
                 }
+                types::Literal::UnsignedInteger(value) => Ok((
+                    None,
+                    Value::Primitive(
+                        // TODO should this be in builtins or something?
+                        compiled_function.scope.get_struct(
+                            &Identifier::parse("u64"),
+                            module_path,
+                            position,
+                        )?,
+                        self.context
+                            .llvm_context
+                            .i64_type()
+                            .const_int(*value, false)
+                            .as_basic_value_enum(),
+                    ),
+                )),
             },
             types::ExpressionKind::VariableAccess(name) => {
                 Ok((None, compiled_function.scope.get_variable(name).unwrap()))
@@ -719,48 +825,53 @@ where
                 target,
                 field: field_name,
             } => {
-                let value =
-                    self.compile_expression(target, self_, compiled_function, module_path.clone())?;
+                let (_, target_value) = self.compile_expression(
+                    target,
+                    self_,
+                    compiled_function,
+                    module_path.clone(),
+                    module,
+                )?;
 
-                let (_, Value::Reference(ref_)) = &value else {
-                    todo!();
+                let access_result = match &target_value {
+                    Value::Primitive(handle, _) => {
+                        // TODO this is duplicated between primitive and reference, the access
+                        // should probably be handled by hnandle.description
+                        if handle
+                            .description
+                            .fields
+                            .iter()
+                            .filter(|f| !f.static_)
+                            .enumerate()
+                            .any(|x| &x.1.name == field_name)
+                        {
+                            todo!()
+                        };
+
+                        handle.static_fields.get(field_name).unwrap().clone()
+                    }
+                    Value::Reference(ref_) => {
+                        if ref_
+                            .type_()
+                            .description
+                            .fields
+                            .iter()
+                            .filter(|f| !f.static_)
+                            .enumerate()
+                            .any(|x| &x.1.name == field_name)
+                        {
+                            todo!()
+                        };
+
+                        ref_.type_().static_fields.get(field_name).unwrap().clone()
+                    }
+                    Value::Function(_) => todo!(),
+                    Value::Struct(_) => todo!(),
                 };
 
-                if ref_
-                    .type_()
-                    .description
-                    .fields
-                    .iter()
-                    .filter(|f| !f.static_)
-                    .enumerate()
-                    .any(|x| &x.1.name == field_name)
-                {
-                    todo!()
-                };
-
-                Ok((
-                    Some(value.1.clone()),
-                    ref_.type_().static_fields.get(field_name).unwrap().clone(),
-                ))
+                Ok((Some(target_value), access_result))
             }
             types::ExpressionKind::SelfAccess => Ok((None, self_.unwrap())),
-        }
-    }
-
-    fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
-        match type_ {
-            types::Type::Void => panic!("Cannot pass void arguments!"),
-            // TODO arrays should be structs that have bounds, not just ptrs
-            types::Type::Array(_) => {
-                Box::new(self.context.llvm_context.ptr_type(AddressSpace::default()))
-            }
-            types::Type::Object(_) => {
-                Box::new(self.context.llvm_context.ptr_type(AddressSpace::default()))
-            }
-            types::Type::StructDescriptor(_, _) => todo!(),
-            types::Type::Callable { .. } => {
-                Box::new(self.context.llvm_context.ptr_type(AddressSpace::default()))
-            }
         }
     }
 }

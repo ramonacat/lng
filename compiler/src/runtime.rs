@@ -29,9 +29,34 @@ extern "C" fn println(arg: *const LngRc<LngString>) {
     println!("{}", arg);
 }
 
+// TODO this is a bit cursed, as the allocator here might be different from the one that's used by
+// the jitted code, so when it's freed in the jitted code, it is UB. We should find a way to move
+// the allocations to the other side! Maybe just implement the function natively? :)
+extern "C" fn u64_to_string(arg: u64) -> *const LngRc<LngString> {
+    let mut bytes = arg.to_string().into_bytes();
+    bytes.push(0);
+    let characters = Box::leak(Box::new(bytes)).as_ptr();
+    let lng_string = LngString {
+        contents: characters as *const i8,
+    };
+    let lng_rc = LngRc {
+        refcount: 1,
+        pointee: Box::leak(Box::new(lng_string)),
+    };
+
+    Box::leak(Box::new(lng_rc))
+}
+
 pub fn register_mappings(execution_engine: &ExecutionEngine, module: &Module) {
     if let Some(println_handle) = module.get_function("println_impl") {
         execution_engine
             .add_global_mapping(&println_handle, println as *const extern "C" fn() as usize);
+    }
+
+    if let Some(u64_to_string_handle) = module.get_function("u64_to_string_impl") {
+        execution_engine.add_global_mapping(
+            &u64_to_string_handle,
+            u64_to_string as *const extern "C" fn() as usize,
+        );
     }
 }

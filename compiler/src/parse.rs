@@ -255,6 +255,12 @@ fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
 
                                 statements.push(Statement::Let(declared_name, type_, expression));
                             }
+                            Rule::statement_return => {
+                                let inner = expression.into_inner().next().unwrap();
+
+                                statements
+                                    .push(Statement::Return(parse_expression(inner)?, position));
+                            }
                             _ => {
                                 return Err(ParseError::InternalError(
                                     InternalError::UnexpectedRule(expression),
@@ -332,6 +338,18 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
                         Literal::String((value[1..value.len() - 1]).to_string(), position),
                         position,
                     ))
+                }
+                Rule::expression_literal_integer => {
+                    let value = expression_inner.as_str();
+
+                    if value.starts_with("-") {
+                        todo!();
+                    } else {
+                        Ok(Expression::Literal(
+                            Literal::UnsignedInteger(value.parse().unwrap()),
+                            position,
+                        ))
+                    }
                 }
                 _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     expression_inner,

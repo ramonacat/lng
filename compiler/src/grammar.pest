@@ -12,9 +12,11 @@ keyword_extern = @{"extern"}
 keyword_export = @{"export"}
 
 expression_literal_string = @{"\"" ~ (!"\"" ~ ANY)* ~ "\""}
+expression_literal_integer = @{"-"? ~ ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*}
 
 expression_literal = {
     expression_literal_string
+    | expression_literal_integer
 }
 
 expression_function_call_arguments = _{ (expression ~ ("," ~ expression)* ~ ","?)? }
@@ -59,9 +61,14 @@ statement_let = {
     "let" ~ identifier ~ ":" ~ type_ ~ "=" ~ expression ~ ";"
 }
 
+statement_return = {
+    "return" ~ expression ~ ";"
+}
+
 statement = { 
     (expression ~ ";") 
     | statement_let
+    | statement_return
 }
 
 argument = { identifier ~ ":" ~ type_ }

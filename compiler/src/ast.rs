@@ -16,12 +16,14 @@ impl Display for SourceRange {
 #[derive(Debug, Clone)]
 pub enum Literal {
     String(String, SourceRange),
+    UnsignedInteger(u64),
 }
 
 impl Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::String(value, _) => write!(f, "\"{value}\""),
+            Literal::UnsignedInteger(value) => write!(f, "{value}"),
         }
     }
 }
@@ -89,6 +91,7 @@ pub enum Statement {
     #[allow(unused)]
     Expression(Expression, SourceRange),
     Let(String, TypeDescription, Expression),
+    Return(Expression, SourceRange),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

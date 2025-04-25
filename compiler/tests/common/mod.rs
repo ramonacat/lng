@@ -26,10 +26,12 @@ extern "C" fn test_println(arg: *const LngRc<LngString>) {
         .unwrap();
 
     results.push_str(arg);
-    results.push_str("\n");
+    results.push('\n');
 }
 
 fn register_test_mappings(engine: &ExecutionEngine, module: &Module) {
+    compiler::runtime::register_mappings(engine, module);
+
     if let Some(println_handle) = module.get_function("println_impl") {
         engine.add_global_mapping(
             &println_handle,

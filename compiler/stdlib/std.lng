@@ -1,5 +1,14 @@
 fn println_impl(value: string): void extern;
+fn u64_to_string_impl(value: u64): string extern;
 
 export fn println(value: string): void {
     println_impl(value);
+}
+
+struct u64 {}
+
+impl u64 {
+    export fn to_string(self:u64):string {
+        return u64_to_string_impl(self);
+    }
 }

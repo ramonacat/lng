@@ -1,0 +1,20 @@
+use std::collections::HashMap;
+
+mod common;
+
+#[test]
+pub fn method_call() {
+    let main = "
+        import std::println;
+
+        fn main(): void {
+            println(5.to_string());
+        }
+    ";
+
+    let mut program = HashMap::new();
+    program.insert("main", main);
+    let result = common::run(program);
+
+    assert_eq!("5\n", result);
+}
