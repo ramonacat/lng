@@ -7,8 +7,7 @@ use super::{
 };
 use crate::{
     name_mangler::{MangledIdentifier, mangle_module},
-    // TODO use types::Identifier everywhere instead of importing!
-    types::{self, Identifier},
+    types,
 };
 use inkwell::{
     module::{Linkage, Module},
@@ -98,8 +97,8 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub fn resolve_function(
         &self,
-        name: &Identifier,
-        struct_: Option<Identifier>,
+        name: &types::Identifier,
+        struct_: Option<types::Identifier>,
     ) -> Result<FunctionHandle, CompileError> {
         if let Some(struct_) = struct_ {
             let struct_handle = self.scope.get_value(&struct_).unwrap().as_struct().unwrap();
@@ -114,11 +113,11 @@ impl<'ctx> CompiledModule<'ctx> {
         Ok(self.scope.get_value(name).unwrap().as_function().unwrap())
     }
 
-    pub fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
+    pub fn set_variable(&self, name: types::Identifier, value: Value<'ctx>) {
         self.scope.set_value(name, value);
     }
 
-    pub fn get_variable(&self, name: &Identifier) -> Option<Value<'ctx>> {
+    pub fn get_variable(&self, name: &types::Identifier) -> Option<Value<'ctx>> {
         self.scope.get_value(name)
     }
 
@@ -126,7 +125,7 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         function: &types::Function,
         context: &CompilerContext<'ctx>,
-        struct_: Option<Identifier>,
+        struct_: Option<types::Identifier>,
     ) -> Result<super::CompiledFunction<'ctx>, CompileError> {
         let mut rcs = vec![];
         let handle = self.resolve_function(&function.name, struct_)?;
@@ -165,7 +164,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::Callable { .. } => todo!(),
                 types::Type::U64 => Value::Primitive(
                     self.scope
-                        .get_value(&Identifier::parse("u64"))
+                        .get_value(&types::Identifier::parse("u64"))
                         .unwrap()
                         .as_struct()
                         .unwrap(),
