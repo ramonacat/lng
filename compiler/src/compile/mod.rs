@@ -111,7 +111,7 @@ impl Display for ErrorLocation {
 #[derive(Debug)]
 pub struct CompileError {
     description: CompileErrorDescription,
-    location: ErrorLocation,
+    position: ErrorLocation,
 }
 
 #[derive(Debug)]
@@ -134,21 +134,21 @@ impl CompileErrorDescription {
     fn at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
         CompileError {
             description: self,
-            location: ErrorLocation::Position(module_path, position),
+            position: ErrorLocation::Position(module_path, position),
         }
     }
 
     fn in_module(self, name: ModulePath) -> CompileError {
         CompileError {
             description: self,
-            location: ErrorLocation::Module(name),
+            position: ErrorLocation::Module(name),
         }
     }
 
     fn at_indeterminate(self) -> CompileError {
         CompileError {
             description: self,
-            location: ErrorLocation::Indeterminate,
+            position: ErrorLocation::Indeterminate,
         }
     }
 }
@@ -181,7 +181,7 @@ impl Display for CompileError {
         write!(
             f,
             "compile error: {} at {}",
-            self.description, self.location
+            self.description, self.position
         )
     }
 }
@@ -200,7 +200,7 @@ impl IntoCompileError for BuilderError {
     fn into_compile_error_at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
         CompileError {
             description: self.into(),
-            location: ErrorLocation::Position(module_path, position),
+            position: ErrorLocation::Position(module_path, position),
         }
     }
 }
@@ -225,7 +225,7 @@ impl<'ctx> CompiledFunction<'ctx> {
         context
             .builder
             .build_return(return_value)
-            .map_err(|e| e.into_compile_error_at(module_path.clone(), self.handle.location))?;
+            .map_err(|e| e.into_compile_error_at(module_path.clone(), self.handle.position))?;
 
         Ok(())
     }
@@ -314,7 +314,7 @@ impl<'ctx> Compiler<'ctx> {
                             name: function.mangled_name.clone(),
                             return_type: function.return_type.clone(),
                             arguments: function.arguments.clone(),
-                            location: function.location,
+                            position: function.position,
                         };
 
                         created_module
@@ -330,7 +330,7 @@ impl<'ctx> Compiler<'ctx> {
                                     name: impl_.mangled_name.clone(),
                                     return_type: impl_.return_type.clone(),
                                     arguments: impl_.arguments.clone(),
-                                    location: impl_.location,
+                                    position: impl_.position,
                                 };
                                 (name.clone(), Value::Function(handle))
                             })
@@ -380,7 +380,7 @@ impl<'ctx> Compiler<'ctx> {
                                 export: function.export,
                                 name: function.name.clone(),
                                 return_type: f.return_type,
-                                location: import.location,
+                                position: import.position,
                                 arguments: function.arguments.clone(),
                             }),
                         );

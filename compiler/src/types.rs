@@ -138,7 +138,7 @@ pub struct Function {
     pub return_type: Type,
     pub body: FunctionBody,
     pub export: bool,
-    pub location: ast::SourceRange,
+    pub position: ast::SourceRange,
 }
 impl Function {
     pub(crate) fn has_self(&self) -> bool {
@@ -210,7 +210,7 @@ pub struct LetStatement {
 pub struct Import {
     pub path: ModulePath,
     pub item: Identifier,
-    pub location: ast::SourceRange,
+    pub position: ast::SourceRange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

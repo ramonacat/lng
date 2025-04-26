@@ -16,7 +16,7 @@ use super::{context::CompilerContext, module::CompiledModule, rc_builder::RcValu
 #[derive(Debug, Clone)]
 pub struct FunctionHandle {
     pub name: MangledIdentifier,
-    pub location: SourceRange,
+    pub position: SourceRange,
     pub arguments: Vec<types::Argument>,
     pub return_type: types::Type,
     pub export: bool,
@@ -175,12 +175,10 @@ impl<'ctx> StructHandle<'ctx> {
         todo!("support reading non-static fields!");
     }
 
-    // TODO remove llvm_type argument, figure out the type based on `description`
     pub(crate) fn new(description: types::Struct) -> Self {
         Self::new_with_statics(description, HashMap::new())
     }
 
-    // TODO remove llvm_type argument, figure out the type based on `description`
     pub(crate) fn new_with_statics(
         description: types::Struct,
         static_fields: HashMap<Identifier, Value<'ctx>>,

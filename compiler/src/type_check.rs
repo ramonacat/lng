@@ -627,7 +627,7 @@ pub fn type_check(
                             types::Item::Import(Import {
                                 path: from.clone(),
                                 item: item_name.clone(),
-                                location: *position,
+                                position: *position,
                             }),
                         ),
                         DeclaredItem::Import(_) => todo!(),
@@ -737,7 +737,7 @@ fn type_check_function(
         return_type: declared_function.return_type.clone(),
         body,
         export: declared_function.export,
-        location: declared_function.ast.position,
+        position: declared_function.ast.position,
         mangled_name,
         self_type: declared_function.self_type.clone(),
     })

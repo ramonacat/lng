@@ -64,7 +64,6 @@ pub enum ExpressionKind {
 
 #[derive(Debug, Clone)]
 pub struct Expression {
-    // TODO unify position/location naming
     pub position: SourceRange,
     pub kind: ExpressionKind,
 }
