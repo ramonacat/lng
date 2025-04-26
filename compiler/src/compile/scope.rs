@@ -1,10 +1,8 @@
 use std::{collections::HashMap, rc::Rc, sync::RwLock};
 
-use inkwell::module::Module;
+use crate::{name_mangler::mangle_module, types};
 
-use crate::types;
-
-use super::{Value, module::CompiledModule};
+use super::{Value, context::CompilerContext, module::CompiledModule};
 
 pub struct Scope<'ctx> {
     locals: RwLock<HashMap<types::Identifier, Value<'ctx>>>,
@@ -60,8 +58,11 @@ impl<'ctx> GlobalScope<'ctx> {
     pub fn create_module(
         &mut self,
         path: types::ModulePath,
-        llvm_module: Module<'ctx>,
+        context: &CompilerContext<'ctx>,
     ) -> &mut CompiledModule<'ctx> {
+        let llvm_module = context
+            .llvm_context
+            .create_module(mangle_module(path.clone()).as_str());
         self.modules
             .entry(path.clone())
             // TODO the llvm_module should be created by CompiledModule itself?

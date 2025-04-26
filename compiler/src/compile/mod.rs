@@ -24,7 +24,7 @@ use value::{FunctionHandle, StructHandle, Value};
 
 use crate::{
     ast::SourceRange,
-    name_mangler::{mangle_field, mangle_item, mangle_module},
+    name_mangler::{mangle_field, mangle_item},
     runtime::register_mappings,
     types::{self, Identifier, ModulePath},
 };
@@ -270,11 +270,7 @@ where
         );
 
         for (path, program_module) in &program.modules {
-            let module = self
-                .context
-                .llvm_context
-                .create_module(mangle_module(path.clone()).as_str());
-            let created_module = global_scope.create_module(path.clone(), module);
+            let created_module = global_scope.create_module(path.clone(), &self.context);
 
             for declaration in program_module.items.values() {
                 match declaration {
