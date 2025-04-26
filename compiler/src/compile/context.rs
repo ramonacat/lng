@@ -2,7 +2,7 @@ use inkwell::{AddressSpace, builder::Builder, context::Context, types::BasicType
 
 use crate::types;
 
-use super::StructHandle;
+use super::value::StructHandle;
 
 pub struct Builtins<'ctx> {
     pub rc_handle: StructHandle<'ctx>,

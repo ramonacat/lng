@@ -2,6 +2,7 @@ mod context;
 mod module;
 mod rc_builder;
 mod scope;
+mod value;
 
 use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
 
@@ -13,16 +14,17 @@ use inkwell::{
     context::Context,
     execution_engine::ExecutionEngine,
     module::Module,
-    types::{BasicType, StructType},
-    values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue},
+    types::BasicType,
+    values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum},
 };
 use module::CompiledModule;
 use rc_builder::RcValue;
 use scope::{GlobalScope, Scope};
+use value::{FunctionHandle, StructHandle, Value};
 
 use crate::{
     ast::SourceRange,
-    name_mangler::{MangledIdentifier, mangle_field, mangle_item, mangle_module},
+    name_mangler::{mangle_field, mangle_item, mangle_module},
     runtime::register_mappings,
     types::{self, Identifier, ModulePath},
 };
@@ -186,81 +188,6 @@ impl<'ctx> CompiledFunction<'ctx> {
 
     fn set_return_value(&mut self, value: Value<'ctx>) {
         self.return_value = Some(value);
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionHandle {
-    pub name: MangledIdentifier,
-    pub location: SourceRange,
-    pub arguments: Vec<types::Argument>,
-    pub return_type: types::Type,
-    pub export: bool,
-}
-
-impl<'ctx> FunctionHandle {
-    // TODO move the declare_function* methods from Compiler into CompiledModule and use them here
-    fn get_or_create_in_module(
-        &self,
-        module: &CompiledModule<'ctx>,
-        context: &CompilerContext<'ctx>,
-    ) -> FunctionValue<'ctx> {
-        module
-            .llvm_module
-            .get_function(self.name.as_str())
-            .unwrap_or_else(|| {
-                module.declare_function(
-                    self.export,
-                    self.name.clone(),
-                    &self.arguments,
-                    &self.return_type,
-                    context,
-                )
-            })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct StructHandle<'ctx> {
-    description: types::Struct,
-    // TODO static_fileds should be in types::Struct really
-    static_fields: HashMap<types::Identifier, Value<'ctx>>,
-    llvm_type: StructType<'ctx>,
-}
-
-// TODO The *Handle structs should be lightweight handles, and not copied with the vecs and all
-// that
-#[derive(Debug, Clone)]
-enum Value<'ctx> {
-    Primitive(StructHandle<'ctx>, BasicValueEnum<'ctx>),
-    Reference(RcValue<'ctx>),
-    Function(FunctionHandle),
-    Struct(StructHandle<'ctx>),
-}
-impl<'ctx> Value<'ctx> {
-    fn to_basic_value(&self) -> BasicValueEnum<'ctx> {
-        match self {
-            Value::Primitive(_, value) => *value,
-            Value::Reference(value) => value.as_ptr().as_basic_value_enum(),
-            Value::Function(_) => todo!(),
-            Value::Struct(_) => todo!(),
-        }
-    }
-
-    fn as_struct(&self) -> Option<StructHandle<'ctx>> {
-        if let Value::Struct(handle) = self {
-            Some(handle.clone())
-        } else {
-            None
-        }
-    }
-
-    fn as_function(&self) -> Option<FunctionHandle> {
-        if let Value::Function(handle) = self {
-            Some(handle.clone())
-        } else {
-            None
-        }
     }
 }
 
@@ -855,38 +782,15 @@ where
                     module,
                 )?;
 
+                // TODO Value should have a read_field_value associated function
                 let access_result = match &target_value {
-                    Value::Primitive(handle, _) => {
-                        // TODO this is duplicated between primitive and reference, the access
-                        // should probably be handled by hnandle.description
-                        if handle
-                            .description
-                            .fields
-                            .iter()
-                            .filter(|f| !f.static_)
-                            .enumerate()
-                            .any(|x| &x.1.name == field_name)
-                        {
-                            todo!()
-                        };
-
-                        handle.static_fields.get(field_name).unwrap().clone()
-                    }
-                    Value::Reference(ref_) => {
-                        if ref_
-                            .type_()
-                            .description
-                            .fields
-                            .iter()
-                            .filter(|f| !f.static_)
-                            .enumerate()
-                            .any(|x| &x.1.name == field_name)
-                        {
-                            todo!()
-                        };
-
-                        ref_.type_().static_fields.get(field_name).unwrap().clone()
-                    }
+                    Value::Primitive(handle, _) => handle
+                        .read_field_value(target_value.clone(), field_name)
+                        .unwrap(),
+                    Value::Reference(ref_) => ref_
+                        .type_()
+                        .read_field_value(target_value.clone(), field_name)
+                        .unwrap(),
                     Value::Function(_) => todo!(),
                     Value::Struct(_) => todo!(),
                 };
