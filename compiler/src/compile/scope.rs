@@ -26,19 +26,18 @@ impl<'ctx> Scope<'ctx> {
         })
     }
 
-    // TODO rename to set_value, check for overwrite!
-    pub fn register(&self, name: types::Identifier, value: Value<'ctx>) {
+    // TODO check for overwrite!
+    pub fn set_value(&self, name: types::Identifier, value: Value<'ctx>) {
         self.locals.write().unwrap().insert(name, value);
     }
 
-    // TODO rename to get_value
-    pub fn get_variable(&self, name: &types::Identifier) -> Option<Value<'ctx>> {
+    pub fn get_value(&self, name: &types::Identifier) -> Option<Value<'ctx>> {
         if let Some(variable) = self.locals.read().unwrap().get(name) {
             return Some(variable.clone());
         }
 
         if let Some(parent) = &self.parent {
-            return parent.get_variable(name);
+            return parent.get_value(name);
         }
 
         None
@@ -86,6 +85,6 @@ impl<'ctx> GlobalScope<'ctx> {
     }
 
     pub(crate) fn register(&self, id: types::Identifier, value: Value<'ctx>) {
-        self.scope.register(id, value);
+        self.scope.set_value(id, value);
     }
 }

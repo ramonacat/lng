@@ -31,7 +31,6 @@ impl<'ctx> CompiledModule<'ctx> {
         }
     }
 
-    // TODO implement name mangling to avoid collisions between functions from different modules!!!
     fn declare_function_inner(
         &self,
         name: MangledIdentifier,
@@ -90,12 +89,7 @@ impl<'ctx> CompiledModule<'ctx> {
         struct_: Option<Identifier>,
     ) -> Result<FunctionHandle, CompileError> {
         if let Some(struct_) = struct_ {
-            let struct_handle = self
-                .scope
-                .get_variable(&struct_)
-                .unwrap()
-                .as_struct()
-                .unwrap();
+            let struct_handle = self.scope.get_value(&struct_).unwrap().as_struct().unwrap();
             let function_value = struct_handle.static_fields.get(name).unwrap();
 
             return match function_value {
@@ -104,20 +98,15 @@ impl<'ctx> CompiledModule<'ctx> {
             };
         }
 
-        Ok(self
-            .scope
-            .get_variable(name)
-            .unwrap()
-            .as_function()
-            .unwrap())
+        Ok(self.scope.get_value(name).unwrap().as_function().unwrap())
     }
 
     pub fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
-        self.scope.register(name, value);
+        self.scope.set_value(name, value);
     }
 
     pub fn get_variable(&self, name: &Identifier) -> Option<Value<'ctx>> {
-        self.scope.get_variable(name)
+        self.scope.get_value(name)
     }
 
     pub(crate) fn begin_compile_function(
@@ -138,7 +127,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::Object(identifier) => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        scope.get_variable(identifier).unwrap().as_struct().unwrap(),
+                        scope.get_value(identifier).unwrap().as_struct().unwrap(),
                         context,
                     );
                     rcs.push(rc.clone());
@@ -151,7 +140,7 @@ impl<'ctx> CompiledModule<'ctx> {
                     types::Type::Void => todo!(),
                     types::Type::Object(identifier) => Value::Reference(RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        scope.get_variable(identifier).unwrap().as_struct().unwrap(),
+                        scope.get_value(identifier).unwrap().as_struct().unwrap(),
                         context,
                     )),
                     types::Type::Array(_) => todo!(),
@@ -163,7 +152,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::Callable { .. } => todo!(),
                 types::Type::U64 => Value::Primitive(
                     self.scope
-                        .get_variable(&Identifier::parse("u64"))
+                        .get_value(&Identifier::parse("u64"))
                         .unwrap()
                         .as_struct()
                         .unwrap(),
@@ -171,7 +160,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 ),
             };
 
-            scope.register(argument.name.clone(), value);
+            scope.set_value(argument.name.clone(), value);
         }
 
         let entry_block = context

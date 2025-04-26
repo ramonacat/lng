@@ -555,7 +555,7 @@ where
             let self_value = function.has_self().then(|| {
                 compiled_function
                     .scope
-                    .get_variable(&Identifier::parse("self"))
+                    .get_value(&Identifier::parse("self"))
                     .unwrap()
             });
 
@@ -580,7 +580,7 @@ where
 
                     compiled_function
                         .scope
-                        .register(let_.binding.clone(), value.1);
+                        .set_value(let_.binding.clone(), value.1);
                 }
                 types::Statement::Return(expression) => {
                     let value = self.compile_expression(
@@ -738,7 +738,7 @@ where
                     Value::Primitive(
                         compiled_function
                             .scope
-                            .get_variable(&Identifier::parse("u64"))
+                            .get_value(&Identifier::parse("u64"))
                             .unwrap()
                             .as_struct()
                             .unwrap(),
@@ -798,7 +798,7 @@ where
                         // TODO should this be in builtins or something?
                         compiled_function
                             .scope
-                            .get_variable(&Identifier::parse("u64"))
+                            .get_value(&Identifier::parse("u64"))
                             .unwrap()
                             .as_struct()
                             .unwrap(),
@@ -811,12 +811,12 @@ where
                 )),
             },
             types::ExpressionKind::VariableAccess(name) => {
-                Ok((None, compiled_function.scope.get_variable(name).unwrap()))
+                Ok((None, compiled_function.scope.get_value(name).unwrap()))
             }
             types::ExpressionKind::StructConstructor(name) => {
                 let s = compiled_function
                     .scope
-                    .get_variable(name)
+                    .get_value(name)
                     .unwrap()
                     .as_struct()
                     .unwrap();
