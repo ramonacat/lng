@@ -285,23 +285,28 @@ impl<'src> DeclaredModules<'src> {
     }
 
     // TODO Return Option<> here, if the module does not exist return None
-    fn get_declared_types(&self, module_name: &ModulePath) -> HashMap<Identifier, types::Type> {
+    fn get_declared_types(
+        &self,
+        module_name: &ModulePath,
+    ) -> Option<HashMap<Identifier, types::Type>> {
         if let Some(local) = self.local.get(module_name) {
-            return local
-                .iter()
-                .map(|(name, item)| (name.clone(), item.type_(self)))
-                .collect();
+            return Some(
+                local
+                    .iter()
+                    .map(|(name, item)| (name.clone(), item.type_(self)))
+                    .collect(),
+            );
         }
 
-        self.std
-            .unwrap()
-            .modules
-            .get(module_name)
-            .unwrap()
-            .items
-            .iter()
-            .map(|(name, item)| (name.clone(), item.type_(self)))
-            .collect()
+        Some(
+            self.std?
+                .modules
+                .get(module_name)?
+                .items
+                .iter()
+                .map(|(name, item)| (name.clone(), item.type_(self)))
+                .collect(),
+        )
     }
 }
 
@@ -500,7 +505,7 @@ pub fn type_check(
         }
 
         let module_name = ModulePath::parse(&file.name);
-        let globals = declared_modules.get_declared_types(&module_name);
+        let globals = declared_modules.get_declared_types(&module_name).unwrap();
 
         for item in &file.declarations {
             match item {
@@ -556,7 +561,7 @@ pub fn type_check(
     for (module_name, module) in &declared_modules.local {
         let mut current_module_items: HashMap<Identifier, types::Item> = HashMap::new();
 
-        let globals = declared_modules.get_declared_types(module_name);
+        let globals = declared_modules.get_declared_types(module_name).unwrap();
 
         for declared_item in module.values() {
             match declared_item {
