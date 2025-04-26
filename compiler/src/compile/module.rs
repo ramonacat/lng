@@ -6,7 +6,7 @@ use super::{
     rc_builder::{self, RcValue},
 };
 use crate::{
-    name_mangler::MangledIdentifier,
+    name_mangler::{MangledIdentifier, mangle_module},
     // TODO use types::Identifier everywhere instead of importing!
     types::{self, Identifier},
 };
@@ -22,7 +22,14 @@ pub struct CompiledModule<'ctx> {
 }
 
 impl<'ctx> CompiledModule<'ctx> {
-    pub fn new(path: types::ModulePath, llvm_module: Module<'ctx>, scope: Rc<Scope<'ctx>>) -> Self {
+    pub fn new(
+        path: types::ModulePath,
+        scope: Rc<Scope<'ctx>>,
+        context: &CompilerContext<'ctx>,
+    ) -> Self {
+        let llvm_module = context
+            .llvm_context
+            .create_module(mangle_module(path.clone()).as_str());
         Self {
             path,
             llvm_module,

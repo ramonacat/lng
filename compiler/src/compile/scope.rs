@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc, sync::RwLock};
 
-use crate::{name_mangler::mangle_module, types};
+use crate::types;
 
 use super::{Value, context::CompilerContext, module::CompiledModule};
 
@@ -60,13 +60,9 @@ impl<'ctx> GlobalScope<'ctx> {
         path: types::ModulePath,
         context: &CompilerContext<'ctx>,
     ) -> &mut CompiledModule<'ctx> {
-        let llvm_module = context
-            .llvm_context
-            .create_module(mangle_module(path.clone()).as_str());
         self.modules
             .entry(path.clone())
-            // TODO the llvm_module should be created by CompiledModule itself?
-            .or_insert_with(|| CompiledModule::new(path, llvm_module, self.scope.child()))
+            .or_insert_with(|| CompiledModule::new(path, self.scope.child(), context))
     }
 
     pub fn get_module(&self, path: &types::ModulePath) -> Option<&CompiledModule<'ctx>> {
