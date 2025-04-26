@@ -68,6 +68,10 @@ pub enum TypeCheckErrorDescription {
         assigned_type: types::Type,
     },
     CallingNotCallableItem(types::Type),
+    MismatchedReturnType {
+        actual: types::Type,
+        expected: types::Type,
+    },
 }
 
 impl TypeCheckErrorDescription {
@@ -128,6 +132,10 @@ impl Display for TypeCheckErrorDescription {
             Self::CallingNotCallableItem(identifier) => {
                 write!(f, "{identifier} cannot be called")
             }
+            Self::MismatchedReturnType { actual, expected } => write!(
+                f,
+                "Function was expected to return {expected}, but returns {actual}"
+            ),
         }
     }
 }
@@ -688,10 +696,17 @@ fn type_check_function(
                         })
                     }
                     ast::Statement::Return(expression, _) => {
-                        // TODO verify it matches the declared function type for the function!
                         // TODO verify that all paths return a value
                         let checked_expression =
                             type_check_expression(expression, &locals, module_path.clone())?;
+
+                        if checked_expression.type_ != declared_function.return_type {
+                            return Err(TypeCheckErrorDescription::MismatchedReturnType {
+                                actual: checked_expression.type_,
+                                expected: declared_function.return_type.clone(),
+                            }
+                            .at(module_path, expression.position));
+                        }
 
                         types::Statement::Return(checked_expression)
                     }
