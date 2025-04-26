@@ -8,6 +8,7 @@ use compiler::{
     compile::compile,
     parse::parse_file,
     runtime::{LngRc, LngString},
+    std::type_check_std,
     type_check::{Program, type_check},
 };
 use inkwell::{execution_engine::ExecutionEngine, module::Module};
@@ -47,7 +48,8 @@ pub fn run(program: HashMap<&str, &str>) -> String {
         .collect::<Vec<_>>();
 
     let program = Program(asts);
-    let type_check_result = type_check(program).unwrap();
+    let std_program = type_check_std().unwrap();
+    let type_check_result = type_check(program, Some(&std_program)).unwrap();
 
     TEST_RESUTLS
         .get_or_init(|| Mutex::new(String::new()))
@@ -55,7 +57,12 @@ pub fn run(program: HashMap<&str, &str>) -> String {
         .unwrap()
         .clear();
 
-    compile(type_check_result, Some(Box::new(register_test_mappings))).unwrap();
+    compile(
+        type_check_result,
+        std_program,
+        Some(Box::new(register_test_mappings)),
+    )
+    .unwrap();
 
     TEST_RESUTLS
         .get_or_init(|| Mutex::new(String::new()))

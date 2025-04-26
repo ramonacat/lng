@@ -47,6 +47,12 @@ pub struct GlobalScope<'ctx> {
     scope: Rc<Scope<'ctx>>,
 }
 
+impl Default for GlobalScope<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'ctx> GlobalScope<'ctx> {
     pub fn new() -> Self {
         Self {

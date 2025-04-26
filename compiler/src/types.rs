@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
+    str,
 };
 
 use itertools::Itertools as _;
@@ -133,6 +134,7 @@ pub struct Function {
     pub name: Identifier,
     pub mangled_name: MangledIdentifier,
     pub arguments: Vec<Argument>,
+    pub self_type: Option<Identifier>,
     pub return_type: Type,
     pub body: FunctionBody,
     pub export: bool,
@@ -140,14 +142,19 @@ pub struct Function {
 }
 impl Function {
     pub(crate) fn has_self(&self) -> bool {
-        self.arguments
-            .first()
-            .map(|a| a.name.0 == "self")
-            .unwrap_or(false)
+        self.self_type.is_some()
     }
 
     pub(crate) fn is_exported(&self) -> bool {
         self.name.0 == "main" || matches!(self.body, FunctionBody::Extern) || self.export
+    }
+
+    pub(crate) fn type_(&self) -> Type {
+        Type::Callable {
+            self_type: self.self_type.clone(),
+            arguments: self.arguments.clone(),
+            return_type: Box::new(self.return_type.clone()),
+        }
     }
 }
 
@@ -199,7 +206,7 @@ pub struct LetStatement {
     pub value: Expression,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Import {
     pub path: ModulePath,
     pub item: Identifier,
@@ -216,6 +223,8 @@ pub struct StructField {
 
 #[derive(Debug, Clone)]
 pub struct Struct {
+    // TODO the exports should really be handled at module level
+    pub export: bool,
     pub name: Identifier,
     #[allow(unused)]
     pub mangled_name: MangledIdentifier,
@@ -223,7 +232,7 @@ pub struct Struct {
     pub impls: HashMap<Identifier, Function>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Item {
     Function(Function),
     Struct(Struct),
@@ -236,6 +245,7 @@ pub struct Module {
 }
 
 #[derive(Debug)]
+// this should have a different name because this can be a program OR a library
 pub struct Program {
     pub modules: HashMap<ModulePath, Module>,
 }

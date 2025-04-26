@@ -1,7 +1,7 @@
 mod context;
 mod module;
 mod rc_builder;
-mod scope;
+pub(crate) mod scope;
 mod value;
 
 use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
@@ -24,23 +24,69 @@ use crate::{
     ast::SourceRange,
     name_mangler::{mangle_field, mangle_item},
     runtime::register_mappings,
+    std::compile_std,
     types::{self, Identifier, ModulePath},
 };
 
 pub fn compile(
     program: types::Program,
+    std_program: types::Program,
     register_global_mappings: RegisterGlobalMappings,
 ) -> Result<(), CompileError> {
     let context = Context::create();
-    let compiler = Compiler::new(&context);
+    let std = compile_std(std_program, &context)?;
 
-    compiler.compile(&program, register_global_mappings)
+    let compiler = Compiler::new(&context, Some(std));
+
+    let global_scope = compiler.compile(program)?;
+    let root_module = context.create_module("root");
+    for module in global_scope.into_modules() {
+        println!("{}", module.to_ir());
+
+        let module_path = module.path();
+        let finalized = module.finalize();
+
+        root_module.link_in_module(finalized).map_err(|e| {
+            CompileErrorDescription::InternalError(e.to_string()).in_module(module_path)
+        })?;
+    }
+
+    root_module.verify().unwrap();
+    println!(
+        "{}",
+        root_module
+            .print_to_string()
+            .to_string()
+            .replace("\\n", "\n")
+    );
+
+    let execution_engine = root_module
+        .create_jit_execution_engine(inkwell::OptimizationLevel::Default)
+        .unwrap();
+
+    (register_global_mappings.unwrap_or(Box::new(register_mappings)))(
+        &execution_engine,
+        &root_module,
+    );
+
+    unsafe {
+        let main = execution_engine
+            // TODO we should allow for main to be in any module, not just "main"
+            .get_function::<unsafe extern "C" fn()>(
+                mangle_item(ModulePath::parse("main"), Identifier::parse("main")).as_str(),
+            )
+            .unwrap();
+        main.call();
+    }
+
+    Ok(())
 }
 
 type RegisterGlobalMappings = Option<Box<dyn FnOnce(&ExecutionEngine, &Module)>>;
 
-struct Compiler<'ctx> {
+pub(crate) struct Compiler<'ctx> {
     context: CompilerContext<'ctx>,
+    std: Option<GlobalScope<'ctx>>,
 }
 
 #[derive(Debug)]
@@ -159,7 +205,7 @@ impl IntoCompileError for BuilderError {
     }
 }
 
-struct CompiledFunction<'ctx> {
+pub(crate) struct CompiledFunction<'ctx> {
     handle: FunctionHandle,
 
     entry: BasicBlock<'ctx>,
@@ -189,13 +235,11 @@ impl<'ctx> CompiledFunction<'ctx> {
     }
 }
 
-impl<'src, 'ctx> Compiler<'ctx>
-where
-    'src: 'ctx,
-{
-    pub fn new(context: &'ctx Context) -> Self {
+impl<'ctx> Compiler<'ctx> {
+    pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
         let builtins = Builtins {
             string_handle: StructHandle::new(types::Struct {
+                export: true,
                 name: types::Identifier::parse("string"),
                 mangled_name: mangle_item(ModulePath::parse("std"), Identifier::parse("string")),
                 fields: vec![types::StructField {
@@ -210,6 +254,7 @@ where
                 impls: HashMap::new(),
             }),
             rc_handle: StructHandle::new(types::Struct {
+                export: true,
                 name: types::Identifier::parse("rc"),
                 mangled_name: mangle_item(ModulePath::parse("std"), Identifier::parse("rc")),
                 fields: vec![
@@ -244,17 +289,14 @@ where
                 builder: context.create_builder(),
                 builtins,
             },
+            std,
         }
     }
 
     // TODO instead of executing the code, this should return some object that exposes the
     // executable code with a safe interface
-    pub fn compile(
-        self,
-        program: &'src types::Program,
-        register_global_mappings: RegisterGlobalMappings,
-    ) -> Result<(), CompileError> {
-        let mut global_scope = GlobalScope::new();
+    pub fn compile(mut self, program: types::Program) -> Result<GlobalScope<'ctx>, CompileError> {
+        let mut global_scope = self.std.take().unwrap_or_default();
 
         global_scope.register(
             Identifier::parse("string"),
@@ -370,47 +412,7 @@ where
             }
         }
 
-        let root_module = self.context.llvm_context.create_module("root");
-        for module in global_scope.into_modules() {
-            println!("{}", module.to_ir());
-
-            let module_path = module.path();
-            let finalized = module.finalize();
-
-            root_module.link_in_module(finalized).map_err(|e| {
-                CompileErrorDescription::InternalError(e.to_string()).in_module(module_path)
-            })?;
-        }
-
-        root_module.verify().unwrap();
-        println!(
-            "{}",
-            root_module
-                .print_to_string()
-                .to_string()
-                .replace("\\n", "\n")
-        );
-
-        let execution_engine = root_module
-            .create_jit_execution_engine(inkwell::OptimizationLevel::Default)
-            .unwrap();
-
-        (register_global_mappings.unwrap_or(Box::new(register_mappings)))(
-            &execution_engine,
-            &root_module,
-        );
-
-        unsafe {
-            let main = execution_engine
-                // TODO we should allow for main to be in any module, not just "main"
-                .get_function::<unsafe extern "C" fn()>(
-                    mangle_item(ModulePath::parse("main"), Identifier::parse("main")).as_str(),
-                )
-                .unwrap();
-            main.call();
-        }
-
-        Ok(())
+        Ok(global_scope)
     }
 
     fn compile_function(
