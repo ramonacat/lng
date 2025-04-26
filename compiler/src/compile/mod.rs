@@ -83,6 +83,8 @@ pub enum CompileErrorDescription {
 }
 
 impl CompileErrorDescription {
+    // TODO clean up all the unwraps so that this actually will be used :)
+    #[allow(unused)]
     fn at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
         CompileError {
             description: self,
@@ -242,6 +244,22 @@ impl<'ctx> Value<'ctx> {
             Value::Reference(value) => value.as_ptr().as_basic_value_enum(),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
+        }
+    }
+
+    fn as_struct(&self) -> Option<StructHandle<'ctx>> {
+        if let Value::Struct(handle) = self {
+            Some(handle.clone())
+        } else {
+            None
+        }
+    }
+
+    fn as_function(&self) -> Option<FunctionHandle> {
+        if let Value::Function(handle) = self {
+            Some(handle.clone())
+        } else {
+            None
         }
     }
 }
@@ -718,11 +736,12 @@ where
                 Ok((
                     None,
                     Value::Primitive(
-                        compiled_function.scope.get_struct(
-                            &Identifier::parse("u64"),
-                            module_path,
-                            position,
-                        )?,
+                        compiled_function
+                            .scope
+                            .get_variable(&Identifier::parse("u64"))
+                            .unwrap()
+                            .as_struct()
+                            .unwrap(),
                         call_result,
                     ),
                 ))
@@ -777,11 +796,12 @@ where
                     None,
                     Value::Primitive(
                         // TODO should this be in builtins or something?
-                        compiled_function.scope.get_struct(
-                            &Identifier::parse("u64"),
-                            module_path,
-                            position,
-                        )?,
+                        compiled_function
+                            .scope
+                            .get_variable(&Identifier::parse("u64"))
+                            .unwrap()
+                            .as_struct()
+                            .unwrap(),
                         self.context
                             .llvm_context
                             .i64_type()
@@ -796,7 +816,9 @@ where
             types::ExpressionKind::StructConstructor(name) => {
                 let s = compiled_function
                     .scope
-                    .get_struct(name, module_path.clone(), position)
+                    .get_variable(name)
+                    .unwrap()
+                    .as_struct()
                     .unwrap();
 
                 let value = self

@@ -2,12 +2,9 @@ use std::{collections::HashMap, rc::Rc, sync::RwLock};
 
 use inkwell::module::Module;
 
-use crate::{ast::SourceRange, types};
+use crate::types;
 
-use super::{
-    CompileError, CompileErrorDescription, FunctionHandle, StructHandle, Value,
-    module::CompiledModule,
-};
+use super::{Value, module::CompiledModule};
 
 pub struct Scope<'ctx> {
     locals: RwLock<HashMap<types::Identifier, Value<'ctx>>>,
@@ -29,10 +26,12 @@ impl<'ctx> Scope<'ctx> {
         })
     }
 
+    // TODO rename to set_value, check for overwrite!
     pub fn register(&self, name: types::Identifier, value: Value<'ctx>) {
         self.locals.write().unwrap().insert(name, value);
     }
 
+    // TODO rename to get_value
     pub fn get_variable(&self, name: &types::Identifier) -> Option<Value<'ctx>> {
         if let Some(variable) = self.locals.read().unwrap().get(name) {
             return Some(variable.clone());
@@ -43,51 +42,6 @@ impl<'ctx> Scope<'ctx> {
         }
 
         None
-    }
-
-    // TODO make (ModulePath, SourceLocation) an instance of ErrorLocation
-    // TODO make this get_callable, and handle other types of callables when they exist
-    // TODO instead of the get_* methods, there should be into_ on Value
-    pub fn get_function(
-        &self,
-        name: &types::Identifier,
-        module_path: types::ModulePath,
-        location: SourceRange,
-    ) -> Result<FunctionHandle, CompileError> {
-        let called_item = self.get_variable(name).ok_or_else(|| {
-            CompileErrorDescription::FunctionNotFound {
-                module_name: module_path.clone(),
-                function_name: name.clone(),
-            }
-            .at(module_path.clone(), location)
-        })?;
-
-        let Value::Function(function) = called_item else {
-            todo!();
-        };
-
-        Ok(function.clone())
-    }
-
-    pub fn get_struct(
-        &self,
-        name: &types::Identifier,
-        module_path: types::ModulePath,
-        location: SourceRange,
-    ) -> Result<StructHandle<'ctx>, CompileError> {
-        let called_item = self.get_variable(name).ok_or_else(|| {
-            CompileErrorDescription::StructNotFound {
-                module_name: module_path.clone(),
-                struct_name: name.clone(),
-            }
-            .at(module_path.clone(), location)
-        })?;
-
-        let Value::Struct(struct_) = called_item else {
-            todo!();
-        };
-
-        Ok(struct_.clone())
     }
 }
 

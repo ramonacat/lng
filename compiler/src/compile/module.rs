@@ -6,7 +6,6 @@ use super::{
     rc_builder::{self, RcValue},
 };
 use crate::{
-    ast::SourceRange,
     name_mangler::MangledIdentifier,
     // TODO use types::Identifier everywhere instead of importing!
     types::{self, Identifier},
@@ -88,13 +87,14 @@ impl<'ctx> CompiledModule<'ctx> {
     pub fn resolve_function(
         &self,
         name: &Identifier,
-        location: SourceRange,
         struct_: Option<Identifier>,
     ) -> Result<FunctionHandle, CompileError> {
         if let Some(struct_) = struct_ {
             let struct_handle = self
                 .scope
-                .get_struct(&struct_, self.path.clone(), location)
+                .get_variable(&struct_)
+                .unwrap()
+                .as_struct()
                 .unwrap();
             let function_value = struct_handle.static_fields.get(name).unwrap();
 
@@ -103,7 +103,13 @@ impl<'ctx> CompiledModule<'ctx> {
                 _ => todo!(),
             };
         }
-        self.scope.get_function(name, self.path.clone(), location)
+
+        Ok(self
+            .scope
+            .get_variable(name)
+            .unwrap()
+            .as_function()
+            .unwrap())
     }
 
     pub fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
@@ -121,7 +127,7 @@ impl<'ctx> CompiledModule<'ctx> {
         struct_: Option<Identifier>,
     ) -> Result<super::CompiledFunction<'ctx>, CompileError> {
         let mut rcs = vec![];
-        let handle = self.resolve_function(&function.name, function.location, struct_)?;
+        let handle = self.resolve_function(&function.name, struct_)?;
         let scope = self.scope.child();
 
         let llvm_function = handle.get_or_create_in_module(self, context);
@@ -132,7 +138,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::Object(identifier) => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        scope.get_struct(identifier, self.path.clone(), argument.position)?,
+                        scope.get_variable(identifier).unwrap().as_struct().unwrap(),
                         context,
                     );
                     rcs.push(rc.clone());
@@ -145,7 +151,7 @@ impl<'ctx> CompiledModule<'ctx> {
                     types::Type::Void => todo!(),
                     types::Type::Object(identifier) => Value::Reference(RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        scope.get_struct(identifier, self.path.clone(), argument.position)?,
+                        scope.get_variable(identifier).unwrap().as_struct().unwrap(),
                         context,
                     )),
                     types::Type::Array(_) => todo!(),
@@ -157,11 +163,9 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::Callable { .. } => todo!(),
                 types::Type::U64 => Value::Primitive(
                     self.scope
-                        .get_struct(
-                            &Identifier::parse("u64"),
-                            self.path.clone(),
-                            argument.position,
-                        )
+                        .get_variable(&Identifier::parse("u64"))
+                        .unwrap()
+                        .as_struct()
                         .unwrap(),
                     argument_value,
                 ),
