@@ -248,7 +248,7 @@ impl<'ctx> Compiler<'ctx> {
                         ModulePath::parse("std"),
                         Identifier::parse("characters"),
                     ),
-                    type_: types::Type::Pointer,
+                    type_: types::Type::Pointer(Box::new(types::Type::U8)),
                     static_: false,
                 }],
                 impls: HashMap::new(),
@@ -275,7 +275,9 @@ impl<'ctx> Compiler<'ctx> {
                             Identifier::parse("rc"),
                             Identifier::parse("pointee"),
                         ),
-                        type_: types::Type::Pointer,
+                        // TODO this is not the right type, but righttyping this requires that we
+                        // have generics (because pointee is dependant on the type here)
+                        type_: types::Type::Pointer(Box::new(types::Type::U8)),
                         static_: false,
                     },
                 ],

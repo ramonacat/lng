@@ -124,7 +124,6 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn begin_compile_function(
         &self,
-        // TODO this should be FunctionHandle instead? then remove resolve_function
         function: &types::Function,
         context: &CompilerContext<'ctx>,
         struct_: Option<Identifier>,
@@ -159,7 +158,8 @@ impl<'ctx> CompiledModule<'ctx> {
                     types::Type::StructDescriptor(_, _) => todo!(),
                     types::Type::Callable { .. } => todo!(),
                     types::Type::U64 => todo!(),
-                    types::Type::Pointer => todo!(),
+                    types::Type::Pointer(_) => todo!(),
+                    types::Type::U8 => todo!(),
                 },
                 types::Type::StructDescriptor(_, _) => todo!(),
                 types::Type::Callable { .. } => todo!(),
@@ -171,7 +171,8 @@ impl<'ctx> CompiledModule<'ctx> {
                         .unwrap(),
                     argument_value,
                 ),
-                types::Type::Pointer => todo!(),
+                types::Type::Pointer(_) => todo!(),
+                types::Type::U8 => todo!(),
             };
 
             scope.set_value(argument.name.clone(), value);

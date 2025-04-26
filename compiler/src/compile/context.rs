@@ -27,8 +27,11 @@ impl<'ctx> CompilerContext<'ctx> {
             types::Type::Callable { .. } => {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
+            types::Type::U8 => Box::new(self.llvm_context.i8_type()),
             types::Type::U64 => Box::new(self.llvm_context.i64_type()),
-            types::Type::Pointer => Box::new(self.llvm_context.ptr_type(AddressSpace::default())),
+            types::Type::Pointer(_) => {
+                Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
+            }
         }
     }
 }

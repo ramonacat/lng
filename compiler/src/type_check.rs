@@ -943,7 +943,8 @@ fn type_check_expression(
                 types::Type::StructDescriptor(_, _) => todo!(),
                 types::Type::Callable { .. } => todo!(),
                 types::Type::U64 => &Identifier::parse("u64"),
-                types::Type::Pointer => todo!(),
+                types::Type::Pointer(_) => todo!(),
+                types::Type::U8 => todo!(),
             };
 
             let types::Type::StructDescriptor(_, fields) = locals.get(type_name).unwrap() else {

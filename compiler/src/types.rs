@@ -74,9 +74,10 @@ pub enum Type {
     // TODO add bool
     // TODO add float
     U64,
+    U8,
     // TODO do we want this exposed to userland in an unsafe mode?
     // TODO this should have the target type as its value
-    Pointer,
+    Pointer(Box<Type>),
 }
 
 impl Display for Type {
@@ -103,8 +104,9 @@ impl Display for Type {
                     .collect::<Vec<_>>()
                     .join(",")
             ),
+            Type::U8 => write!(f, "u8"),
             Type::U64 => write!(f, "u64"),
-            Type::Pointer => write!(f, "pointer"),
+            Type::Pointer(to) => write!(f, "*{to}"),
         }
     }
 }
