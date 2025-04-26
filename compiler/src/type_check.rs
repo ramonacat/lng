@@ -595,7 +595,7 @@ fn type_check_function(
                                 variable_type: type_,
                                 assigned_type: checked_expression.type_,
                             }
-                            .at(module_path, expression.position()));
+                            .at(module_path, expression.position));
                         }
 
                         locals.insert(types::Identifier::parse(name), type_);
@@ -698,11 +698,12 @@ fn type_check_expression(
     locals: &HashMap<Identifier, types::Type>,
     module_path: ModulePath,
 ) -> Result<types::Expression, TypeCheckError> {
-    match expression {
-        ast::Expression::FunctionCall {
+    let position = expression.position;
+
+    match &expression.kind {
+        ast::ExpressionKind::FunctionCall {
             target,
             arguments: passed_arguments,
-            position,
         } => {
             let checked_target = type_check_expression(target, locals, module_path.clone())?;
 
@@ -715,7 +716,7 @@ fn type_check_expression(
                 return Err(TypeCheckErrorDescription::CallingNotCallableItem(
                     checked_target.type_.clone(),
                 )
-                .at(module_path, *position));
+                .at(module_path, position));
             };
             let mut callable_arguments = callable_arguments.clone();
 
@@ -725,7 +726,7 @@ fn type_check_expression(
                 return Err(TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(
                     checked_target.type_.clone(),
                 )
-                .at(module_path.clone(), *position));
+                .at(module_path.clone(), position));
             }
 
             let mut checked_arguments = vec![];
@@ -755,7 +756,7 @@ fn type_check_expression(
                                 target: *target.clone(),
                                 argument_name: self_argument.name,
                             }
-                            .at(module_path.clone(), *position),
+                            .at(module_path.clone(), position),
                         );
                     }
 
@@ -780,7 +781,7 @@ fn type_check_expression(
                             target: *target.clone(),
                             argument_name: called_function_argument.name,
                         }
-                        .at(module_path.clone(), argument.position()),
+                        .at(module_path.clone(), argument.position),
                     );
                 }
 
@@ -788,7 +789,7 @@ fn type_check_expression(
             }
 
             Ok(types::Expression {
-                position: *position,
+                position,
                 type_: *return_type.clone(),
                 kind: types::ExpressionKind::FunctionCall {
                     target: Box::new(checked_target),
@@ -796,43 +797,43 @@ fn type_check_expression(
                 },
             })
         }
-        ast::Expression::Literal(literal, position) => match literal {
+        ast::ExpressionKind::Literal(literal) => match literal {
             ast::Literal::String(value, _) => Ok(types::Expression {
-                position: *position,
+                position,
                 type_: types::Type::Object(types::Identifier::parse("string")),
                 kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
             }),
             ast::Literal::UnsignedInteger(value) => Ok(types::Expression {
-                position: *position,
+                position,
                 type_: types::Type::U64,
                 kind: types::ExpressionKind::Literal(types::Literal::UnsignedInteger(*value)),
             }),
         },
-        ast::Expression::VariableReference(name, position) => {
+        ast::ExpressionKind::VariableReference(name) => {
             let id = Identifier::parse(name);
 
             let value_type = locals
                 .get(&id)
                 .ok_or_else(|| {
                     TypeCheckErrorDescription::UndeclaredVariable(id.clone())
-                        .at(module_path.clone(), *position)
+                        .at(module_path.clone(), position)
                 })
                 .cloned()?;
 
             Ok(types::Expression {
-                position: *position,
+                position,
                 type_: value_type,
                 kind: types::ExpressionKind::VariableAccess(id),
             })
         }
-        ast::Expression::StructConstructor(struct_name, position) => {
+        ast::ExpressionKind::StructConstructor(struct_name) => {
             let id = Identifier::parse(struct_name);
 
             let types::Type::StructDescriptor(name, _) = locals
                 .get(&id)
                 .ok_or_else(|| {
                     TypeCheckErrorDescription::UndeclaredVariable(id.clone())
-                        .at(module_path.clone(), *position)
+                        .at(module_path.clone(), position)
                 })
                 .cloned()
                 .unwrap()
@@ -841,16 +842,12 @@ fn type_check_expression(
             };
 
             Ok(types::Expression {
-                position: *position,
+                position,
                 type_: types::Type::Object(name),
                 kind: types::ExpressionKind::StructConstructor(id),
             })
         }
-        ast::Expression::FieldAccess {
-            target,
-            field_name,
-            position,
-        } => {
+        ast::ExpressionKind::FieldAccess { target, field_name } => {
             let target = type_check_expression(target, locals, module_path.clone())?;
 
             let type_name = match &target.type_ {
@@ -877,7 +874,7 @@ fn type_check_expression(
                 .clone();
 
             Ok(types::Expression {
-                position: *position,
+                position,
                 type_: field_type,
                 kind: types::ExpressionKind::FieldAccess {
                     target: Box::new(target),

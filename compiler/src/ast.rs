@@ -30,42 +30,31 @@ impl Display for Literal {
 
 #[derive(Debug, Clone)]
 // TODO this should be wrapped in a struct, so position does not have to be repeated
-pub enum Expression {
+pub enum ExpressionKind {
     FunctionCall {
         target: Box<Expression>,
         arguments: Vec<Expression>,
-        position: SourceRange,
     },
-    Literal(Literal, SourceRange),
-    VariableReference(String, SourceRange),
-    StructConstructor(String, SourceRange),
+    Literal(Literal),
+    VariableReference(String),
+    StructConstructor(String),
     FieldAccess {
         target: Box<Expression>,
         field_name: String,
-        position: SourceRange,
     },
 }
 
-impl Expression {
-    pub fn position(&self) -> SourceRange {
-        match self {
-            Expression::FunctionCall { position, .. } => *position,
-            Expression::Literal(_, position) => *position,
-            Expression::VariableReference(_, position) => *position,
-            Expression::StructConstructor(_, position) => *position,
-            Expression::FieldAccess { position, .. } => *position,
-        }
-    }
+#[derive(Debug, Clone)]
+pub struct Expression {
+    // TODO unify position/location naming
+    pub position: SourceRange,
+    pub kind: ExpressionKind,
 }
 
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Expression::FunctionCall {
-                target,
-                arguments,
-                position: _,
-            } => write!(
+        match &self.kind {
+            ExpressionKind::FunctionCall { target, arguments } => write!(
                 f,
                 "{target}({})",
                 arguments
@@ -74,14 +63,12 @@ impl Display for Expression {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-            Expression::Literal(literal, _) => write!(f, "{literal}"),
-            Expression::VariableReference(name, _) => write!(f, "{name}"),
-            Expression::StructConstructor(name, _) => write!(f, "{name} {{}}"),
-            Expression::FieldAccess {
-                target,
-                field_name,
-                position: _,
-            } => write!(f, "{target}.{field_name}"),
+            ExpressionKind::Literal(literal) => write!(f, "{literal}"),
+            ExpressionKind::VariableReference(name) => write!(f, "{name}"),
+            ExpressionKind::StructConstructor(name) => write!(f, "{name} {{}}"),
+            ExpressionKind::FieldAccess { target, field_name } => {
+                write!(f, "{target}.{field_name}")
+            }
         }
     }
 }

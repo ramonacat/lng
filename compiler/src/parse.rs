@@ -5,8 +5,8 @@ use pest_derive::Parser;
 use thiserror::Error;
 
 use crate::ast::{
-    Argument, Declaration, Expression, Function, FunctionBody, Impl, Import, Literal, SourceFile,
-    SourceRange, Statement, Struct, StructField, TypeDescription,
+    Argument, Declaration, Expression, ExpressionKind, Function, FunctionBody, Impl, Import,
+    Literal, SourceFile, SourceRange, Statement, Struct, StructField, TypeDescription,
 };
 
 #[derive(Parser)]
@@ -318,9 +318,11 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
                 arguments.push(parse_expression(argument)?);
             }
 
-            Ok(Expression::FunctionCall {
-                target: Box::new(target_expression),
-                arguments,
+            Ok(Expression {
+                kind: ExpressionKind::FunctionCall {
+                    target: Box::new(target_expression),
+                    arguments,
+                },
                 position,
             })
         }
@@ -334,10 +336,13 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
                 Rule::expression_literal_string => {
                     let value = expression_inner.as_str();
 
-                    Ok(Expression::Literal(
-                        Literal::String((value[1..value.len() - 1]).to_string(), position),
+                    Ok(Expression {
+                        kind: ExpressionKind::Literal(Literal::String(
+                            (value[1..value.len() - 1]).to_string(),
+                            position,
+                        )),
                         position,
-                    ))
+                    })
                 }
                 Rule::expression_literal_integer => {
                     let value = expression_inner.as_str();
@@ -345,10 +350,12 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
                     if value.starts_with("-") {
                         todo!();
                     } else {
-                        Ok(Expression::Literal(
-                            Literal::UnsignedInteger(value.parse().unwrap()),
+                        Ok(Expression {
+                            kind: ExpressionKind::Literal(Literal::UnsignedInteger(
+                                value.parse().unwrap(),
+                            )),
                             position,
-                        ))
+                        })
                     }
                 }
                 _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
@@ -363,10 +370,10 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
                 ));
             };
 
-            Ok(Expression::VariableReference(
-                expression_inner.as_str().to_string(),
-                find_source_position(&expression_inner),
-            ))
+            Ok(Expression {
+                kind: ExpressionKind::VariableReference(expression_inner.as_str().to_string()),
+                position: find_source_position(&expression_inner),
+            })
         }
         Rule::expression_struct_constructor => {
             let position = find_source_position(&expression);
@@ -377,10 +384,10 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
                 ));
             };
 
-            Ok(Expression::StructConstructor(
-                struct_name.as_str().to_string(),
+            Ok(Expression {
+                kind: ExpressionKind::StructConstructor(struct_name.as_str().to_string()),
                 position,
-            ))
+            })
         }
         Rule::expression_field_access => {
             let position = find_source_position(&expression);
@@ -388,9 +395,11 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
             let target = parse_expression(expression_inner.next().unwrap().clone())?;
             let field_name = expression_inner.next().unwrap().as_str().to_string();
 
-            Ok(Expression::FieldAccess {
-                target: Box::new(target),
-                field_name,
+            Ok(Expression {
+                kind: ExpressionKind::FieldAccess {
+                    target: Box::new(target),
+                    field_name,
+                },
                 position,
             })
         }
