@@ -416,24 +416,14 @@ where
 
         let root_module = self.context.llvm_context.create_module("root");
         for module in global_scope.into_modules() {
-            println!("{}", module.path);
+            println!("{}", module.to_ir());
 
-            println!(
-                "{}",
-                module
-                    .llvm_module
-                    .print_to_string()
-                    .to_string()
-                    .replace("\\n", "\n")
-            );
+            let module_path = module.path();
+            let finalized = module.finalize();
 
-            module.llvm_module.verify().unwrap();
-
-            root_module
-                .link_in_module(module.llvm_module)
-                .map_err(|e| {
-                    CompileErrorDescription::InternalError(e.to_string()).in_module(module.path)
-                })?;
+            root_module.link_in_module(finalized).map_err(|e| {
+                CompileErrorDescription::InternalError(e.to_string()).in_module(module_path)
+            })?;
         }
 
         root_module.verify().unwrap();

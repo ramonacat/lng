@@ -16,9 +16,8 @@ use inkwell::{
 };
 
 pub struct CompiledModule<'ctx> {
-    // TODO make all fields private
-    pub path: types::ModulePath,
-    pub llvm_module: Module<'ctx>,
+    path: types::ModulePath,
+    llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
 }
 
@@ -29,6 +28,13 @@ impl<'ctx> CompiledModule<'ctx> {
             llvm_module,
             scope,
         }
+    }
+
+    pub fn to_ir(&self) -> String {
+        self.llvm_module
+            .print_to_string()
+            .to_string()
+            .replace("\\n", "\n")
     }
 
     fn declare_function_inner(
@@ -84,6 +90,7 @@ impl<'ctx> CompiledModule<'ctx> {
             context,
         )
     }
+
     pub fn resolve_function(
         &self,
         name: &Identifier,
@@ -185,5 +192,21 @@ impl<'ctx> CompiledModule<'ctx> {
             rcs,
             return_value: None,
         })
+    }
+
+    pub(crate) fn finalize(self) -> Module<'ctx> {
+        self.llvm_module.verify().unwrap();
+
+        self.llvm_module
+    }
+
+    pub(crate) fn path(&self) -> types::ModulePath {
+        self.path.clone()
+    }
+
+    // TODO this is a kinda weird API, FunctionHandle should manage the FunctionValue by itself
+    // probably?
+    pub(crate) fn get_llvm_function(&self, name: &str) -> Option<FunctionValue<'ctx>> {
+        self.llvm_module.get_function(name)
     }
 }

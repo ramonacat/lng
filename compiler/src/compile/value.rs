@@ -29,8 +29,7 @@ impl<'ctx> FunctionHandle {
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         module
-            .llvm_module
-            .get_function(self.name.as_str())
+            .get_llvm_function(self.name.as_str())
             .unwrap_or_else(|| {
                 module.declare_function(
                     self.export,
