@@ -33,7 +33,7 @@ impl<'ctx> FunctionHandle {
             .unwrap_or_else(|| {
                 module.declare_function(
                     self.export,
-                    self.name.clone(),
+                    &self.name,
                     &self.arguments,
                     &self.return_type,
                     context,
@@ -55,7 +55,7 @@ impl<'ctx> StructHandle<'ctx> {
         &self,
         context: &CompilerContext<'ctx>,
         binding_name: &str,
-        field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
+        mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
         let instance = context
             .builder
@@ -66,12 +66,12 @@ impl<'ctx> StructHandle<'ctx> {
             .unwrap();
 
         for field in self.description.fields.iter().filter(|x| !x.static_) {
-            let field_value = field_values.get(&field.name).unwrap();
+            let field_value = field_values.remove(&field.name).unwrap();
             let (_, field_pointer) = self.field_pointer(&field.name, instance, context);
 
             context
                 .builder
-                .build_store(field_pointer, *field_value)
+                .build_store(field_pointer, field_value)
                 .unwrap();
         }
 
@@ -80,12 +80,12 @@ impl<'ctx> StructHandle<'ctx> {
 
     pub fn build_field_load(
         &self,
-        field: Identifier,
+        field: &Identifier,
         instance: PointerValue<'ctx>,
         binding_name: &str,
         context: &CompilerContext<'ctx>,
     ) -> BasicValueEnum<'ctx> {
-        let (field_type, field_pointer) = self.field_pointer(&field, instance, context);
+        let (field_type, field_pointer) = self.field_pointer(field, instance, context);
 
         context
             .builder
@@ -95,12 +95,12 @@ impl<'ctx> StructHandle<'ctx> {
 
     pub fn build_field_store(
         &self,
-        field_name: Identifier,
+        field_name: &Identifier,
         instance: PointerValue<'ctx>,
         value: BasicValueEnum<'ctx>,
         context: &CompilerContext<'ctx>,
     ) {
-        let (_, field_pointer) = self.field_pointer(&field_name, instance, context);
+        let (_, field_pointer) = self.field_pointer(field_name, instance, context);
 
         context.builder.build_store(field_pointer, value).unwrap();
     }
@@ -179,10 +179,10 @@ impl<'ctx> StructHandle<'ctx> {
         Self::new_with_statics(description, HashMap::new())
     }
 
-    pub(crate) fn new_with_statics(
+    pub(crate) const fn new_with_statics(
         description: types::Struct,
         static_fields: HashMap<Identifier, Value<'ctx>>,
-    ) -> StructHandle<'ctx> {
+    ) -> Self {
         Self {
             description,
             static_fields,
@@ -220,7 +220,7 @@ impl<'ctx> Value<'ctx> {
         }
     }
 
-    pub fn read_field_value(&self, field_name: &Identifier) -> Option<Value<'ctx>> {
+    pub fn read_field_value(&self, field_name: &Identifier) -> Option<Self> {
         match self {
             Value::Primitive(handle, _) => handle.read_field_value(self.clone(), field_name),
             Value::Reference(ref_) => ref_.type_().read_field_value(self.clone(), field_name),

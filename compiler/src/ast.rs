@@ -7,16 +7,16 @@ pub enum SourceRange {
 }
 
 impl SourceRange {
-    pub fn new(start: (usize, usize), end: (usize, usize)) -> Self {
+    pub const fn new(start: (usize, usize), end: (usize, usize)) -> Self {
         Self::Visible(start, end)
     }
 
     pub fn as_id(&self) -> String {
         match self {
-            SourceRange::Visible(start, end) => {
+            Self::Visible(start, end) => {
                 format!("{}_{}__{}_{}", start.0, start.1, end.0, end.1)
             }
-            SourceRange::Internal => "__internal__".to_string(),
+            Self::Internal => "__internal__".to_string(),
         }
     }
 }
@@ -24,10 +24,10 @@ impl SourceRange {
 impl Display for SourceRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SourceRange::Visible(start, end) => {
+            Self::Visible(start, end) => {
                 write!(f, "({}, {}) to ({}, {})", start.0, start.1, end.0, end.1)
             }
-            SourceRange::Internal => write!(f, "(internal)"),
+            Self::Internal => write!(f, "(internal)"),
         }
     }
 }
@@ -41,8 +41,8 @@ pub enum Literal {
 impl Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Literal::String(value, _) => write!(f, "\"{value}\""),
-            Literal::UnsignedInteger(value) => write!(f, "{value}"),
+            Self::String(value, _) => write!(f, "\"{value}\""),
+            Self::UnsignedInteger(value) => write!(f, "{value}"),
         }
     }
 }
@@ -76,7 +76,7 @@ impl Display for Expression {
                 "{target}({})",
                 arguments
                     .iter()
-                    .map(|a| format!("{}", a))
+                    .map(|a| format!("{a}"))
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
@@ -161,11 +161,11 @@ pub enum Declaration {
 }
 
 impl Declaration {
-    pub fn position(&self) -> SourceRange {
+    pub const fn position(&self) -> SourceRange {
         match self {
-            Declaration::Function(function) => function.position,
-            Declaration::Struct(struct_) => struct_.position,
-            Declaration::Impl(impl_) => impl_.position,
+            Self::Function(function) => function.position,
+            Self::Struct(struct_) => struct_.position,
+            Self::Impl(impl_) => impl_.position,
         }
     }
 }

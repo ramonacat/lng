@@ -18,18 +18,15 @@ pub struct CompilerContext<'ctx> {
 impl<'ctx> CompilerContext<'ctx> {
     pub fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
         match type_ {
-            types::Type::Void => Box::new(self.llvm_context.i8_type()), // TODO look into using
-            // void_type here
-            // TODO arrays should be structs that have bounds, not just ptrs
-            types::Type::Array(_) => Box::new(self.llvm_context.ptr_type(AddressSpace::default())),
-            types::Type::Object(_) => Box::new(self.llvm_context.ptr_type(AddressSpace::default())),
+            // TODO use the actual void type for void
+            types::Type::U8 | types::Type::Void => Box::new(self.llvm_context.i8_type()),
             types::Type::StructDescriptor(_, _) => todo!(),
-            types::Type::Callable { .. } => {
-                Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
-            }
-            types::Type::U8 => Box::new(self.llvm_context.i8_type()),
             types::Type::U64 => Box::new(self.llvm_context.i64_type()),
-            types::Type::Pointer(_) => {
+            // TODO arrays should be structs that have bounds, not just ptrs
+            types::Type::Callable { .. }
+            | types::Type::Pointer(_)
+            | types::Type::Array(_)
+            | types::Type::Object(_) => {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
         }

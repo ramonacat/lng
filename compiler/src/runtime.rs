@@ -26,7 +26,7 @@ extern "C" fn println(arg: *const LngRc<LngString>) {
         .to_str()
         .unwrap();
 
-    println!("{}", arg);
+    println!("{arg}");
 }
 
 // TODO this is a bit cursed, as the allocator here might be different from the one that's used by
@@ -37,7 +37,7 @@ extern "C" fn u64_to_string(arg: u64) -> *const LngRc<LngString> {
     bytes.push(0);
     let characters = Box::leak(Box::new(bytes)).as_ptr();
     let lng_string = LngString {
-        contents: characters as *const i8,
+        contents: characters.cast(),
     };
     let lng_rc = LngRc {
         refcount: 1,

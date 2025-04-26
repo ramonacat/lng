@@ -28,7 +28,7 @@ impl<'ctx> CompiledModule<'ctx> {
     ) -> Self {
         let llvm_module = context
             .llvm_context
-            .create_module(mangle_module(path.clone()).as_str());
+            .create_module(mangle_module(&path).as_str());
         Self {
             path,
             llvm_module,
@@ -45,7 +45,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
     fn declare_function_inner(
         &self,
-        name: MangledIdentifier,
+        name: &MangledIdentifier,
         arguments: &[types::Argument],
         return_type: &types::Type,
         linkage: Linkage,
@@ -67,7 +67,7 @@ impl<'ctx> CompiledModule<'ctx> {
     pub fn declare_function(
         &self,
         export: bool,
-        name: MangledIdentifier,
+        name: &MangledIdentifier,
         arguments: &[types::Argument],
         return_type: &types::Type,
         context: &CompilerContext<'ctx>,
@@ -87,7 +87,7 @@ impl<'ctx> CompiledModule<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.declare_function_inner(
-            function.name.clone(),
+            &function.name,
             &function.arguments,
             &function.return_type,
             Linkage::External,
@@ -105,7 +105,7 @@ impl<'ctx> CompiledModule<'ctx> {
             let function_value = struct_handle.read_static_field(name).unwrap();
 
             return match function_value {
-                Value::Function(function_handle) => Ok(function_handle.clone()),
+                Value::Function(function_handle) => Ok(function_handle),
                 _ => todo!(),
             };
         }

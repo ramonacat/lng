@@ -20,7 +20,7 @@ impl Identifier {
     }
 
     pub(crate) fn raw(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -37,7 +37,7 @@ pub struct ModulePath(Vec<Identifier>);
 
 impl ModulePath {
     pub fn parse(raw: &str) -> Self {
-        Self(raw.split(".").map(Identifier::parse).collect())
+        Self(raw.split('.').map(Identifier::parse).collect())
     }
 
     pub fn from_parts<'a>(path: impl Iterator<Item = &'a str>) -> Self {
@@ -45,13 +45,13 @@ impl ModulePath {
     }
 
     pub fn parts(&self) -> &[Identifier] {
-        &self.0
+        self.0.as_slice()
     }
 }
 
 impl Display for ModulePath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = self.0.iter().map(|id| id.raw()).join(".");
+        let name = self.0.iter().map(Identifier::raw).join(".");
 
         write!(f, "{name}")
     }
@@ -83,11 +83,11 @@ pub enum Type {
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Void => write!(f, "void"),
-            Type::Object(identifier) => write!(f, "{}", identifier),
-            Type::Array(inner) => write!(f, "{}[]", inner),
-            Type::StructDescriptor(name, _) => write!(f, "StructDescriptor<{}>", name),
-            Type::Callable {
+            Self::Void => write!(f, "void"),
+            Self::Object(identifier) => write!(f, "{identifier}"),
+            Self::Array(inner) => write!(f, "{inner}[]"),
+            Self::StructDescriptor(name, _) => write!(f, "StructDescriptor<{name}>"),
+            Self::Callable {
                 self_type,
                 arguments,
                 return_type,
@@ -96,17 +96,16 @@ impl Display for Type {
                 "({}{}): {return_type}",
                 self_type
                     .as_ref()
-                    .map(|x| format!("self: {x}"))
-                    .unwrap_or_else(String::new),
+                    .map_or_else(String::new, |x| format!("self: {x}")),
                 arguments
                     .iter()
-                    .map(|a| format!("{}", a))
+                    .map(|a| format!("{a}"))
                     .collect::<Vec<_>>()
                     .join(",")
             ),
-            Type::U8 => write!(f, "u8"),
-            Type::U64 => write!(f, "u64"),
-            Type::Pointer(to) => write!(f, "*{to}"),
+            Self::U8 => write!(f, "u8"),
+            Self::U64 => write!(f, "u64"),
+            Self::Pointer(to) => write!(f, "*{to}"),
         }
     }
 }
@@ -143,7 +142,7 @@ pub struct Function {
     pub position: ast::SourceRange,
 }
 impl Function {
-    pub(crate) fn has_self(&self) -> bool {
+    pub(crate) const fn has_self(&self) -> bool {
         self.self_type.is_some()
     }
 

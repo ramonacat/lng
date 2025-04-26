@@ -6,7 +6,7 @@ use crate::types::{Identifier, ModulePath};
 pub struct MangledIdentifier(String);
 impl MangledIdentifier {
     pub(crate) fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -14,21 +14,21 @@ impl MangledIdentifier {
 pub struct MangledModulePath(String);
 impl MangledModulePath {
     pub(crate) fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
-pub fn mangle_module(module: ModulePath) -> MangledModulePath {
-    let mangled_module_path = module.parts().iter().map(|id| id.raw()).join("$");
+pub fn mangle_module(module: &ModulePath) -> MangledModulePath {
+    let mangled_module_path = module.parts().iter().map(Identifier::raw).join("$");
 
     MangledModulePath(mangled_module_path)
 }
 
-pub fn nomangle_item(identifier: Identifier) -> MangledIdentifier {
+pub fn nomangle_item(identifier: &Identifier) -> MangledIdentifier {
     MangledIdentifier(identifier.raw().to_string())
 }
 
-pub fn mangle_item(module: ModulePath, identifier: Identifier) -> MangledIdentifier {
+pub fn mangle_item(module: &ModulePath, identifier: &Identifier) -> MangledIdentifier {
     let mangled_module_path = mangle_module(module);
     let mangled_identifier = identifier.raw();
 
@@ -39,9 +39,9 @@ pub fn mangle_item(module: ModulePath, identifier: Identifier) -> MangledIdentif
 }
 
 pub fn mangle_field(
-    module: ModulePath,
-    struct_name: Identifier,
-    item: Identifier,
+    module: &ModulePath,
+    struct_name: &Identifier,
+    item: &Identifier,
 ) -> MangledIdentifier {
     let mangled_module_path = mangle_module(module);
     let mangled_struct_name = struct_name.raw();

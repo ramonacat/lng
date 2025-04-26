@@ -41,7 +41,7 @@ fn main() {
 
     let program = Program(vec![program_ast, greeter_ast]);
     let std_program = type_check_std().unwrap();
-    let type_check_result = type_check(program, Some(&std_program)).unwrap();
+    let type_check_result = type_check(&program, Some(&std_program)).unwrap();
 
-    compile(type_check_result, std_program, None).unwrap();
+    compile(&type_check_result, &std_program, None).unwrap();
 }

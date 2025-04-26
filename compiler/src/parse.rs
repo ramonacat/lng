@@ -60,7 +60,7 @@ pub fn parse_file<'parser>(
                         InternalError::MissingExpectedRule(item),
                     ));
                 };
-                declarations.push(parse_declaration(inner_declaration)?)
+                declarations.push(parse_declaration(inner_declaration)?);
             }
             Rule::import => imports.push(parse_import(item)?),
             Rule::EOI => {}
@@ -266,7 +266,7 @@ fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
                                     InternalError::UnexpectedRule(expression),
                                 ));
                             }
-                        };
+                        }
                     }
                 }
                 body = Some(FunctionBody::Statements(statements, position));
@@ -292,6 +292,8 @@ fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
     })
 }
 
+// TODO split into smaller functions and remove the allow
+#[allow(clippy::too_many_lines)]
 fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>> {
     let Some(expression) = expression.clone().into_inner().next() else {
         return Err(ParseError::InternalError(
@@ -347,7 +349,7 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
                 Rule::expression_literal_integer => {
                     let value = expression_inner.as_str();
 
-                    if value.starts_with("-") {
+                    if value.starts_with('-') {
                         todo!();
                     } else {
                         Ok(Expression {

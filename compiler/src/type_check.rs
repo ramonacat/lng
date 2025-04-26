@@ -9,15 +9,15 @@ use crate::{
 impl types::Item {
     fn type_(&self, declared_modules: &DeclaredModules<'_>) -> types::Type {
         match self {
-            types::Item::Function(function) => types::Type::Callable {
+            Self::Function(function) => types::Type::Callable {
                 self_type: function.self_type.clone(),
                 arguments: function.arguments.clone(),
                 return_type: Box::new(function.return_type.clone()),
             },
-            types::Item::Struct(struct_) => {
+            Self::Struct(struct_) => {
                 types::Type::StructDescriptor(struct_.name.clone(), struct_.fields.clone())
             }
-            types::Item::Import(import) => declared_modules
+            Self::Import(import) => declared_modules
                 .find_struct(&import.path, &import.item)
                 .unwrap()
                 .type_(declared_modules),
@@ -71,7 +71,7 @@ pub enum TypeCheckErrorDescription {
 }
 
 impl TypeCheckErrorDescription {
-    fn at(self, module: types::ModulePath, position: ast::SourceRange) -> TypeCheckError {
+    const fn at(self, module: types::ModulePath, position: ast::SourceRange) -> TypeCheckError {
         TypeCheckError {
             description: self,
             module,
@@ -83,41 +83,41 @@ impl TypeCheckErrorDescription {
 impl Display for TypeCheckErrorDescription {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeCheckErrorDescription::UnexpectedArgumentTypeInFunctionCall {
+            Self::UnexpectedArgumentTypeInFunctionCall {
                 target,
                 argument_name,
             } => write!(
                 f,
                 "Incorrect argument type for argument {argument_name} in a call to {target}"
             ),
-            TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(name) => {
+            Self::IncorrectNumberOfArgumentsPassed(name) => {
                 write!(f, "Incorrect number of arguments passed to {name}")
             }
-            TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
+            Self::FunctionArgumentCannotBeVoid {
                 function_name,
                 argument_name,
             } => write!(
                 f,
                 "Argument {argument_name} in the declaration of {function_name} cannot be of type void"
             ),
-            TypeCheckErrorDescription::ModuleDoesNotExist(module_path) => {
+            Self::ModuleDoesNotExist(module_path) => {
                 write!(f, "Module {module_path} does not exist")
             }
-            TypeCheckErrorDescription::ItemDoesNotExist(module_path, identifier) => write!(
+            Self::ItemDoesNotExist(module_path, identifier) => write!(
                 f,
                 "Item {identifier} does not exist in module {module_path}"
             ),
-            TypeCheckErrorDescription::ItemNotExported(module_path, identifier) => write!(
+            Self::ItemNotExported(module_path, identifier) => write!(
                 f,
                 "Item {identifier} exists in module {module_path}, but is not exported"
             ),
-            TypeCheckErrorDescription::UndeclaredVariable(identifier) => {
+            Self::UndeclaredVariable(identifier) => {
                 write!(f, "Variable {identifier} does not exist")
             }
-            TypeCheckErrorDescription::ImplNotOnStruct(identifier) => {
+            Self::ImplNotOnStruct(identifier) => {
                 write!(f, "{identifier} is not a struct, impl is not allowed")
             }
-            TypeCheckErrorDescription::MismatchedAssignmentType {
+            Self::MismatchedAssignmentType {
                 target_variable,
                 variable_type,
                 assigned_type,
@@ -125,7 +125,7 @@ impl Display for TypeCheckErrorDescription {
                 f,
                 "Cannot assign value of type {assigned_type} to variiable {target_variable} of typee {variable_type}"
             ),
-            TypeCheckErrorDescription::CallingNotCallableItem(identifier) => {
+            Self::CallingNotCallableItem(identifier) => {
                 write!(f, "{identifier} cannot be called")
             }
         }
@@ -193,7 +193,7 @@ enum DeclaredItem {
 impl DeclaredItem {
     fn type_(&self, declared_modules: &DeclaredModules) -> types::Type {
         match self {
-            DeclaredItem::Function(declared_function) => types::Type::Callable {
+            Self::Function(declared_function) => types::Type::Callable {
                 self_type: declared_function.self_type.clone(),
                 arguments: declared_function
                     .arguments
@@ -206,7 +206,7 @@ impl DeclaredItem {
                     .collect(),
                 return_type: Box::new(declared_function.return_type.clone()),
             },
-            DeclaredItem::Struct {
+            Self::Struct {
                 name: struct_name,
                 module,
                 fields,
@@ -217,21 +217,17 @@ impl DeclaredItem {
                     .iter()
                     .map(|(field_name, declaration)| types::StructField {
                         name: field_name.clone(),
-                        mangled_name: mangle_field(
-                            module.clone(),
-                            struct_name.clone(),
-                            field_name.clone(),
-                        ),
+                        mangled_name: mangle_field(module, struct_name, field_name),
                         type_: declaration.type_.clone(),
                         static_: declaration.static_,
                     })
                     .collect(),
             ),
-            DeclaredItem::Import(DeclaredImport { from, item, .. }) => declared_modules
+            Self::Import(DeclaredImport { from, item, .. }) => declared_modules
                 .find_struct(from, item)
                 .unwrap()
                 .type_(declared_modules),
-            DeclaredItem::Checked(item) => item.type_(declared_modules),
+            Self::Checked(item) => item.type_(declared_modules),
         }
     }
 }
@@ -309,8 +305,10 @@ impl<'src> DeclaredModules<'src> {
     }
 }
 
+// TODO split into smaller functions
+#[allow(clippy::too_many_lines)]
 pub fn type_check(
-    program: Program,
+    program: &Program,
     std: Option<&types::Program>,
 ) -> Result<types::Program, TypeCheckError> {
     let mut declared_modules = DeclaredModules::new(std);
@@ -359,7 +357,7 @@ pub fn type_check(
                     );
                 }
                 ast::Declaration::Impl(_) => {}
-            };
+            }
         }
 
         let path = types::ModulePath::parse(&file.name.clone());
@@ -375,11 +373,10 @@ pub fn type_check(
             let position = declaration.position();
 
             match declaration {
-                ast::Declaration::Function(_) => {}
-                ast::Declaration::Struct(_) => {}
-                ast::Declaration::Impl(impl_) => {
-                    let struct_name = types::Identifier::parse(&impl_.struct_name);
-                    let functions = impl_
+                ast::Declaration::Function(_) | ast::Declaration::Struct(_) => {}
+                ast::Declaration::Impl(impl_declaration) => {
+                    let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
+                    let functions = impl_declaration
                         .functions
                         .iter()
                         .map(|f| {
@@ -470,10 +467,10 @@ pub fn type_check(
             match item {
                 DeclaredItem::Function(DeclaredFunction { export, .. })
                 | DeclaredItem::Struct { export, .. }
-                | DeclaredItem::Checked(types::Item::Function(types::Function {
-                    export, ..
-                }))
-                | DeclaredItem::Checked(types::Item::Struct(types::Struct { export, .. })) => {
+                | DeclaredItem::Checked(
+                    types::Item::Function(types::Function { export, .. })
+                    | types::Item::Struct(types::Struct { export, .. }),
+                ) => {
                     if !export {
                         return Err(TypeCheckErrorDescription::ItemNotExported(
                             exporting_module_name,
@@ -507,11 +504,10 @@ pub fn type_check(
 
         for item in &file.declarations {
             match item {
-                ast::Declaration::Function(_) => {}
-                ast::Declaration::Struct(_) => {}
-                ast::Declaration::Impl(impl_) => {
+                ast::Declaration::Function(_) | ast::Declaration::Struct(_) => {}
+                ast::Declaration::Impl(impl_declaration) => {
                     let position = item.position();
-                    let struct_name = types::Identifier::parse(&impl_.struct_name);
+                    let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
                     let declared_impl: &HashMap<Identifier, DeclaredFunction> = declared_impls
                         .get(&(module_path.clone(), struct_name.clone()))
                         .unwrap();
@@ -582,18 +578,14 @@ pub fn type_check(
                         types::Item::Struct(types::Struct {
                             export: *export,
                             name: struct_name.clone(),
-                            mangled_name: mangle_item(module.clone(), struct_name.clone()),
+                            mangled_name: mangle_item(module, struct_name),
                             fields: fields
                                 .iter()
                                 .map(|(field_name, declaration)| types::StructField {
                                     name: field_name.clone(),
                                     type_: declaration.type_.clone(),
                                     static_: declaration.static_,
-                                    mangled_name: mangle_field(
-                                        module.clone(),
-                                        struct_name.clone(),
-                                        field_name.clone(),
-                                    ),
+                                    mangled_name: mangle_field(module, struct_name, field_name),
                                 })
                                 .collect(),
                             impls: impls
@@ -615,14 +607,14 @@ pub fn type_check(
                         | DeclaredItem::Function(DeclaredFunction {
                             name: item_name, ..
                         })
-                        | DeclaredItem::Checked(types::Item::Function(types::Function {
-                            name: item_name,
-                            ..
-                        }))
-                        | DeclaredItem::Checked(types::Item::Struct(types::Struct {
-                            name: item_name,
-                            ..
-                        })) => current_module_items.insert(
+                        | DeclaredItem::Checked(
+                            types::Item::Function(types::Function {
+                                name: item_name, ..
+                            })
+                            | types::Item::Struct(types::Struct {
+                                name: item_name, ..
+                            }),
+                        ) => current_module_items.insert(
                             item_name.clone(),
                             types::Item::Import(Import {
                                 path: from.clone(),
@@ -663,7 +655,7 @@ fn type_check_function(
         ast::FunctionBody::Statements(body_statements, _) => {
             let mut checked_statements = vec![];
 
-            for statement in body_statements.iter() {
+            for statement in body_statements {
                 let checked_statement = match statement {
                     ast::Statement::Expression(expression, _) => types::Statement::Expression(
                         type_check_expression(expression, &locals, module_path.clone())?,
@@ -710,16 +702,12 @@ fn type_check_function(
 
     let mangled_name = {
         if matches!(body, types::FunctionBody::Extern) {
-            nomangle_item(declared_function.name.clone())
+            nomangle_item(&declared_function.name)
         } else {
-            match &declared_function.self_type {
-                Some(self_type) => mangle_field(
-                    module_path.clone(),
-                    self_type.clone(),
-                    declared_function.name.clone(),
-                ),
-                None => mangle_item(module_path.clone(), declared_function.name.clone()),
-            }
+            declared_function.self_type.as_ref().map_or_else(
+                || mangle_item(&module_path, &declared_function.name),
+                |self_type| mangle_field(&module_path, self_type, &declared_function.name),
+            )
         }
     };
 
@@ -756,7 +744,7 @@ fn type_check_function_declaration(
 
         if type_ == types::Type::Void {
             return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
-                function_name: name.clone(),
+                function_name: name,
                 argument_name: types::Identifier::parse(&arg.name),
             }
             .at(module_path, arg.position));
@@ -779,6 +767,8 @@ fn type_check_function_declaration(
     })
 }
 
+// TODO split it into smaller functions
+#[allow(clippy::too_many_lines)]
 fn type_check_expression(
     expression: &ast::Expression,
     locals: &HashMap<Identifier, types::Type>,
@@ -800,19 +790,19 @@ fn type_check_expression(
             } = checked_target.type_
             else {
                 return Err(TypeCheckErrorDescription::CallingNotCallableItem(
-                    checked_target.type_.clone(),
+                    checked_target.type_,
                 )
                 .at(module_path, position));
             };
             let mut callable_arguments = callable_arguments.clone();
 
-            let self_adjustment = if self_type.is_some() { 1 } else { 0 };
+            let self_adjustment = usize::from(self_type.is_some());
 
             if passed_arguments.len() + self_adjustment != callable_arguments.len() {
                 return Err(TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(
                     checked_target.type_.clone(),
                 )
-                .at(module_path.clone(), position));
+                .at(module_path, position));
             }
 
             let mut checked_arguments = vec![];
@@ -842,7 +832,7 @@ fn type_check_expression(
                                 target: *target.clone(),
                                 argument_name: self_argument.name,
                             }
-                            .at(module_path.clone(), position),
+                            .at(module_path, position),
                         );
                     }
 
@@ -867,7 +857,7 @@ fn type_check_expression(
                             target: *target.clone(),
                             argument_name: called_function_argument.name,
                         }
-                        .at(module_path.clone(), argument.position),
+                        .at(module_path, argument.position),
                     );
                 }
 
@@ -934,7 +924,7 @@ fn type_check_expression(
             })
         }
         ast::ExpressionKind::FieldAccess { target, field_name } => {
-            let target = type_check_expression(target, locals, module_path.clone())?;
+            let target = type_check_expression(target, locals, module_path)?;
 
             let type_name = match &target.type_ {
                 types::Type::Void => todo!(),

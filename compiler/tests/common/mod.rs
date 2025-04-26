@@ -49,7 +49,7 @@ pub fn run(program: HashMap<&str, &str>) -> String {
 
     let program = Program(asts);
     let std_program = type_check_std().unwrap();
-    let type_check_result = type_check(program, Some(&std_program)).unwrap();
+    let type_check_result = type_check(&program, Some(&std_program)).unwrap();
 
     TEST_RESUTLS
         .get_or_init(|| Mutex::new(String::new()))
@@ -58,8 +58,8 @@ pub fn run(program: HashMap<&str, &str>) -> String {
         .clear();
 
     compile(
-        type_check_result,
-        std_program,
+        &type_check_result,
+        &std_program,
         Some(Box::new(register_test_mappings)),
     )
     .unwrap();

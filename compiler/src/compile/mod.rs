@@ -28,9 +28,11 @@ use crate::{
     types::{self, Identifier, ModulePath},
 };
 
+// TODO instead of executing the code, this should return some object that exposes the
+// executable code with a safe interface
 pub fn compile(
-    program: types::Program,
-    std_program: types::Program,
+    program: &types::Program,
+    std_program: &types::Program,
     register_global_mappings: RegisterGlobalMappings,
 ) -> Result<(), CompileError> {
     let context = Context::create();
@@ -64,7 +66,7 @@ pub fn compile(
         .create_jit_execution_engine(inkwell::OptimizationLevel::Default)
         .unwrap();
 
-    (register_global_mappings.unwrap_or(Box::new(register_mappings)))(
+    (register_global_mappings.unwrap_or_else(|| Box::new(register_mappings)))(
         &execution_engine,
         &root_module,
     );
@@ -73,7 +75,7 @@ pub fn compile(
         let main = execution_engine
             // TODO we should allow for main to be in any module, not just "main"
             .get_function::<unsafe extern "C" fn()>(
-                mangle_item(ModulePath::parse("main"), Identifier::parse("main")).as_str(),
+                mangle_item(&ModulePath::parse("main"), &Identifier::parse("main")).as_str(),
             )
             .unwrap();
         main.call();
@@ -99,11 +101,11 @@ pub enum ErrorLocation {
 impl Display for ErrorLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ErrorLocation::Position(module_path, source_range) => {
+            Self::Position(module_path, source_range) => {
                 write!(f, "{source_range} in module {module_path}")
             }
-            ErrorLocation::Module(name) => write!(f, "module {name}"),
-            ErrorLocation::Indeterminate => write!(f, "indeterminate"),
+            Self::Module(name) => write!(f, "module {name}"),
+            Self::Indeterminate => write!(f, "indeterminate"),
         }
     }
 }
@@ -131,21 +133,21 @@ pub enum CompileErrorDescription {
 impl CompileErrorDescription {
     // TODO clean up all the unwraps so that this actually will be used :)
     #[allow(unused)]
-    fn at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
+    const fn at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
         CompileError {
             description: self,
             position: ErrorLocation::Position(module_path, position),
         }
     }
 
-    fn in_module(self, name: ModulePath) -> CompileError {
+    const fn in_module(self, name: ModulePath) -> CompileError {
         CompileError {
             description: self,
             position: ErrorLocation::Module(name),
         }
     }
 
-    fn at_indeterminate(self) -> CompileError {
+    const fn at_indeterminate(self) -> CompileError {
         CompileError {
             description: self,
             position: ErrorLocation::Indeterminate,
@@ -156,18 +158,18 @@ impl CompileErrorDescription {
 impl Display for CompileErrorDescription {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompileErrorDescription::ModuleNotFound(name) => write!(f, "Module {name} not found"),
-            CompileErrorDescription::FunctionNotFound {
+            Self::ModuleNotFound(name) => write!(f, "Module {name} not found"),
+            Self::FunctionNotFound {
                 module_name,
                 function_name,
             } => write!(
                 f,
                 "Function {function_name} was not found in module {module_name}"
             ),
-            CompileErrorDescription::InternalError(message) => {
+            Self::InternalError(message) => {
                 write!(f, "Internal error: {message}")
             }
-            CompileErrorDescription::StructNotFound {
+            Self::StructNotFound {
                 module_name,
                 struct_name: function_name,
             } => write!(f, "Struct {function_name} not found in {module_name}"),
@@ -188,7 +190,7 @@ impl Display for CompileError {
 
 impl From<BuilderError> for CompileErrorDescription {
     fn from(value: BuilderError) -> Self {
-        Self::InternalError(format!("{}", value))
+        Self::InternalError(format!("{value}"))
     }
 }
 
@@ -220,7 +222,7 @@ impl<'ctx> CompiledFunction<'ctx> {
         &self,
         return_value: Option<&dyn BasicValue<'ctx>>,
         context: &CompilerContext<'ctx>,
-        module_path: ModulePath,
+        module_path: &ModulePath,
     ) -> Result<(), CompileError> {
         context
             .builder
@@ -241,12 +243,12 @@ impl<'ctx> Compiler<'ctx> {
             string_handle: StructHandle::new(types::Struct {
                 export: true,
                 name: types::Identifier::parse("string"),
-                mangled_name: mangle_item(ModulePath::parse("std"), Identifier::parse("string")),
+                mangled_name: mangle_item(&ModulePath::parse("std"), &Identifier::parse("string")),
                 fields: vec![types::StructField {
                     name: Identifier::parse("characters"),
                     mangled_name: mangle_item(
-                        ModulePath::parse("std"),
-                        Identifier::parse("characters"),
+                        &ModulePath::parse("std"),
+                        &Identifier::parse("characters"),
                     ),
                     type_: types::Type::Pointer(Box::new(types::Type::U8)),
                     static_: false,
@@ -256,14 +258,14 @@ impl<'ctx> Compiler<'ctx> {
             rc_handle: StructHandle::new(types::Struct {
                 export: true,
                 name: types::Identifier::parse("rc"),
-                mangled_name: mangle_item(ModulePath::parse("std"), Identifier::parse("rc")),
+                mangled_name: mangle_item(&ModulePath::parse("std"), &Identifier::parse("rc")),
                 fields: vec![
                     types::StructField {
                         name: Identifier::parse("refcount"),
                         mangled_name: mangle_field(
-                            ModulePath::parse("std"),
-                            Identifier::parse("rc"),
-                            Identifier::parse("refcount"),
+                            &ModulePath::parse("std"),
+                            &Identifier::parse("rc"),
+                            &Identifier::parse("refcount"),
                         ),
                         type_: types::Type::U64,
                         static_: false,
@@ -271,9 +273,9 @@ impl<'ctx> Compiler<'ctx> {
                     types::StructField {
                         name: Identifier::parse("pointee"),
                         mangled_name: mangle_field(
-                            ModulePath::parse("std"),
-                            Identifier::parse("rc"),
-                            Identifier::parse("pointee"),
+                            &ModulePath::parse("std"),
+                            &Identifier::parse("rc"),
+                            &Identifier::parse("pointee"),
                         ),
                         // TODO this is not the right type, but righttyping this requires that we
                         // have generics (because pointee is dependant on the type here)
@@ -295,9 +297,9 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    // TODO instead of executing the code, this should return some object that exposes the
-    // executable code with a safe interface
-    pub fn compile(mut self, program: types::Program) -> Result<GlobalScope<'ctx>, CompileError> {
+    // TODO split into smaller functions and remove the allow
+    #[allow(clippy::too_many_lines)]
+    pub fn compile(mut self, program: &types::Program) -> Result<GlobalScope<'ctx>, CompileError> {
         self.global_scope.register(
             Identifier::parse("string"),
             Value::Struct(self.context.builtins.string_handle.clone()),
@@ -345,7 +347,7 @@ impl<'ctx> Compiler<'ctx> {
                         );
                     }
                     types::Item::Import(_) => {}
-                };
+                }
             }
         }
 
@@ -393,7 +395,7 @@ impl<'ctx> Compiler<'ctx> {
                     Value::Struct(ref struct_) => {
                         struct_.import(module, &self.context);
                     }
-                };
+                }
             }
 
             for item in file.items.values() {
@@ -420,6 +422,8 @@ impl<'ctx> Compiler<'ctx> {
         Ok(self.global_scope)
     }
 
+    // TODO split into smaller functions, remove the allow
+    #[allow(clippy::too_many_lines)]
     fn compile_function(
         &self,
         module_path: &ModulePath,
@@ -487,16 +491,14 @@ impl<'ctx> Compiler<'ctx> {
                     };
 
                     match return_ {
-                        Value::Primitive(_, _) => true,
                         Value::Reference(rc_value) => rc_value.as_ptr() != x.as_ptr(),
-                        Value::Function(_) => true,
-                        Value::Struct(_) => true,
+                        Value::Primitive(_, _) | Value::Function(_) | Value::Struct(_) => true,
                     }
                 })
                 .cloned()
                 .collect::<Vec<_>>(),
             compiled_function.end,
-        )?;
+        );
         self.context
             .builder
             .position_at_end(compiled_function.entry);
@@ -509,22 +511,22 @@ impl<'ctx> Compiler<'ctx> {
         if let Some(ref r) = compiled_function.return_value {
             match &r.as_basic_value() {
                 BasicValueEnum::ArrayValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                    compiled_function.build_return(Some(v), &self.context, module_path)?;
                 }
                 BasicValueEnum::IntValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                    compiled_function.build_return(Some(v), &self.context, module_path)?;
                 }
                 BasicValueEnum::FloatValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                    compiled_function.build_return(Some(v), &self.context, module_path)?;
                 }
                 BasicValueEnum::PointerValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                    compiled_function.build_return(Some(v), &self.context, module_path)?;
                 }
                 BasicValueEnum::StructValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                    compiled_function.build_return(Some(v), &self.context, module_path)?;
                 }
                 BasicValueEnum::VectorValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
+                    compiled_function.build_return(Some(v), &self.context, module_path)?;
                 }
             }
         } else {
@@ -533,12 +535,14 @@ impl<'ctx> Compiler<'ctx> {
             compiled_function.build_return(
                 Some(&self.context.llvm_context.i8_type().const_zero()),
                 &self.context,
-                module_path.clone(),
+                module_path,
             )?;
         }
         Ok(())
     }
 
+    // TODO: split into smaller functions and remove the allow
+    #[allow(clippy::too_many_lines)]
     fn compile_expression(
         &self,
         expression: &types::Expression,
@@ -602,13 +606,16 @@ impl<'ctx> Compiler<'ctx> {
                     )
                     .map_err(|e| e.into_compile_error_at(module_path.clone(), position))?;
 
-                let call_result = call_result.as_any_value_enum().try_into().unwrap_or(
-                    self.context
-                        .llvm_context
-                        .i64_type()
-                        .const_zero()
-                        .as_basic_value_enum(),
-                );
+                let call_result = call_result
+                    .as_any_value_enum()
+                    .try_into()
+                    .unwrap_or_else(|()| {
+                        self.context
+                            .llvm_context
+                            .i64_type()
+                            .const_zero()
+                            .as_basic_value_enum()
+                    });
 
                 // TODO the call result may not be void
                 Ok((
@@ -650,7 +657,7 @@ impl<'ctx> Compiler<'ctx> {
                         literal_value,
                         self.context.builtins.string_handle.clone(),
                         &self.context,
-                    )?;
+                    );
                     compiled_function.rcs.push(rc.clone());
 
                     Ok((None, Value::Reference(rc)))
@@ -697,7 +704,7 @@ impl<'ctx> Compiler<'ctx> {
                     value,
                     s.clone(),
                     &self.context,
-                )?;
+                );
                 compiled_function.rcs.push(rc.clone());
 
                 Ok((None, Value::Reference(rc)))
@@ -706,13 +713,8 @@ impl<'ctx> Compiler<'ctx> {
                 target,
                 field: field_name,
             } => {
-                let (_, target_value) = self.compile_expression(
-                    target,
-                    self_,
-                    compiled_function,
-                    module_path.clone(),
-                    module,
-                )?;
+                let (_, target_value) =
+                    self.compile_expression(target, self_, compiled_function, module_path, module)?;
 
                 let access_result = target_value.read_field_value(field_name).unwrap();
 

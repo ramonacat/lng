@@ -7,7 +7,7 @@ use inkwell::{
 
 use crate::types::Identifier;
 
-use super::{CompileError, StructHandle, context::CompilerContext};
+use super::{StructHandle, context::CompilerContext};
 
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
@@ -21,7 +21,7 @@ impl<'ctx> RcValue<'ctx> {
         value: PointerValue<'ctx>,
         value_type: StructHandle<'ctx>,
         context: &CompilerContext<'ctx>,
-    ) -> Result<Self, CompileError>
+    ) -> Self
     where
         'src: 'ctx,
     {
@@ -40,27 +40,24 @@ impl<'ctx> RcValue<'ctx> {
             .rc_handle
             .build_heap_instance(context, name, field_values);
 
-        Ok(Self {
+        Self {
             pointer: rc,
             value_type,
-        })
+        }
     }
 
-    pub fn as_ptr(&self) -> PointerValue<'ctx> {
+    pub const fn as_ptr(&self) -> PointerValue<'ctx> {
         self.pointer
     }
 
-    pub fn from_pointer(
-        pointer: PointerValue<'ctx>,
-        value_type: StructHandle<'ctx>,
-    ) -> RcValue<'ctx> {
+    pub const fn from_pointer(pointer: PointerValue<'ctx>, value_type: StructHandle<'ctx>) -> Self {
         RcValue {
             pointer,
             value_type,
         }
     }
 
-    pub(crate) fn type_(&self) -> &StructHandle<'ctx> {
+    pub(crate) const fn type_(&self) -> &StructHandle<'ctx> {
         &self.value_type
     }
 }
@@ -69,12 +66,12 @@ pub fn build_cleanup<'ctx>(
     context: &CompilerContext<'ctx>,
     rcs: &[RcValue<'ctx>],
     before: BasicBlock<'ctx>,
-) -> Result<BasicBlock<'ctx>, CompileError> {
+) -> BasicBlock<'ctx> {
     let mut before = before;
     let mut first_block = before;
 
     for (i, rc) in rcs.iter().enumerate() {
-        let name = format!("rc{}", i);
+        let name = format!("rc{i}");
         let previous_before = before;
 
         before = context.llvm_context.prepend_basic_block(before, &name);
@@ -87,7 +84,7 @@ pub fn build_cleanup<'ctx>(
             .builtins
             .rc_handle
             .build_field_load(
-                Identifier::parse("refcount"),
+                &Identifier::parse("refcount"),
                 rc.pointer,
                 &(name.to_string() + "refcount_old"),
                 context,
@@ -133,7 +130,7 @@ pub fn build_cleanup<'ctx>(
             .builtins
             .rc_handle
             .build_field_load(
-                Identifier::parse("pointee"),
+                &Identifier::parse("pointee"),
                 rc.pointer,
                 &(name.to_string() + "free_rc_pointee_value"),
                 context,
@@ -149,7 +146,7 @@ pub fn build_cleanup<'ctx>(
 
         context.builder.position_at_end(do_not_free_rc_block);
         context.builtins.rc_handle.build_field_store(
-            Identifier::parse("refcount"),
+            &Identifier::parse("refcount"),
             rc.pointer,
             new_refcount.as_basic_value_enum(),
             context,
@@ -169,14 +166,15 @@ pub fn build_cleanup<'ctx>(
 
         context.builder.position_at_end(previous_before);
     }
-    Ok(first_block)
+
+    first_block
 }
 
-pub(crate) fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
+pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
     for (i, rc) in rcs.iter().enumerate() {
-        let name = format!("rc{}", i);
+        let name = format!("rc{i}");
         let init_refcount = context.builtins.rc_handle.build_field_load(
-            Identifier::parse("refcount"),
+            &Identifier::parse("refcount"),
             rc.pointer,
             &format!("{name}_init_refcount"),
             context,
@@ -192,7 +190,7 @@ pub(crate) fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerCont
             .unwrap();
 
         context.builtins.rc_handle.build_field_store(
-            Identifier::parse("refcount"),
+            &Identifier::parse("refcount"),
             rc.pointer,
             incremented_refcount.as_basic_value_enum(),
             context,
