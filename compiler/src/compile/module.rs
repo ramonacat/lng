@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::rc::Rc;
 
 use super::{
     CompileError, CompiledFunction, FunctionHandle, Scope, Value,
@@ -8,7 +8,8 @@ use super::{
 use crate::{
     ast::SourceRange,
     name_mangler::MangledIdentifier,
-    types::{self, Identifier, ModulePath},
+    // TODO use types::Identifier everywhere instead of importing!
+    types::{self, Identifier},
 };
 use inkwell::{
     module::{Linkage, Module},
@@ -16,12 +17,21 @@ use inkwell::{
 };
 
 pub struct CompiledModule<'ctx> {
+    // TODO make all fields private
     pub path: types::ModulePath,
     pub llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
 }
 
 impl<'ctx> CompiledModule<'ctx> {
+    pub fn new(path: types::ModulePath, llvm_module: Module<'ctx>, scope: Rc<Scope<'ctx>>) -> Self {
+        Self {
+            path,
+            llvm_module,
+            scope,
+        }
+    }
+
     // TODO implement name mangling to avoid collisions between functions from different modules!!!
     fn declare_function_inner(
         &self,
@@ -180,54 +190,5 @@ impl<'ctx> CompiledModule<'ctx> {
             rcs,
             return_value: None,
         })
-    }
-}
-
-pub struct GlobalScope<'ctx> {
-    modules: HashMap<ModulePath, CompiledModule<'ctx>>,
-    scope: Rc<Scope<'ctx>>,
-}
-
-impl<'ctx> GlobalScope<'ctx> {
-    pub fn new() -> Self {
-        Self {
-            modules: HashMap::new(),
-            scope: Scope::root(),
-        }
-    }
-
-    pub fn create_module(
-        &mut self,
-        path: types::ModulePath,
-        llvm_module: Module<'ctx>,
-    ) -> &mut CompiledModule<'ctx> {
-        self.modules
-            .entry(path.clone())
-            .or_insert_with(|| CompiledModule {
-                path,
-                llvm_module,
-                scope: self.scope.child(),
-            })
-    }
-
-    // TODO rename to get_module
-    pub fn get(&self, path: &types::ModulePath) -> Option<&CompiledModule<'ctx>> {
-        self.modules.get(path)
-    }
-
-    pub fn get_value(
-        &self,
-        module: &types::ModulePath,
-        name: &types::Identifier,
-    ) -> Option<Value<'ctx>> {
-        self.modules.get(module).and_then(|x| x.get_variable(name))
-    }
-
-    pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
-        self.modules.into_values()
-    }
-
-    pub(crate) fn register(&self, id: Identifier, value: Value<'ctx>) {
-        self.scope.register(id, value);
     }
 }

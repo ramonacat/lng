@@ -1,7 +1,7 @@
 use compiler::{
     compile::compile,
     parse::parse_file,
-    type_check::{type_check, Program},
+    type_check::{Program, type_check},
 };
 
 fn main() {

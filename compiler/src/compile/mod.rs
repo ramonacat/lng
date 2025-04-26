@@ -16,9 +16,9 @@ use inkwell::{
     types::{BasicType, StructType},
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum, FunctionValue},
 };
-use module::{CompiledModule, GlobalScope};
+use module::CompiledModule;
 use rc_builder::RcValue;
-use scope::Scope;
+use scope::{GlobalScope, Scope};
 
 use crate::{
     ast::SourceRange,
@@ -386,7 +386,7 @@ where
         }
 
         for (module_path, file) in &program.modules {
-            let Some(module) = global_scope.get(module_path) else {
+            let Some(module) = global_scope.get_module(module_path) else {
                 return Err(
                     CompileErrorDescription::ModuleNotFound(module_path.clone()).at_indeterminate()
                 );

@@ -1,11 +1,13 @@
 use std::{collections::HashMap, rc::Rc, sync::RwLock};
 
-use crate::{
-    ast::SourceRange,
-    types::{self, ModulePath},
-};
+use inkwell::module::Module;
 
-use super::{CompileError, CompileErrorDescription, FunctionHandle, StructHandle, Value};
+use crate::{ast::SourceRange, types};
+
+use super::{
+    CompileError, CompileErrorDescription, FunctionHandle, StructHandle, Value,
+    module::CompiledModule,
+};
 
 pub struct Scope<'ctx> {
     locals: RwLock<HashMap<types::Identifier, Value<'ctx>>>,
@@ -49,7 +51,7 @@ impl<'ctx> Scope<'ctx> {
     pub fn get_function(
         &self,
         name: &types::Identifier,
-        module_path: ModulePath,
+        module_path: types::ModulePath,
         location: SourceRange,
     ) -> Result<FunctionHandle, CompileError> {
         let called_item = self.get_variable(name).ok_or_else(|| {
@@ -70,7 +72,7 @@ impl<'ctx> Scope<'ctx> {
     pub fn get_struct(
         &self,
         name: &types::Identifier,
-        module_path: ModulePath,
+        module_path: types::ModulePath,
         location: SourceRange,
     ) -> Result<StructHandle<'ctx>, CompileError> {
         let called_item = self.get_variable(name).ok_or_else(|| {
@@ -86,5 +88,50 @@ impl<'ctx> Scope<'ctx> {
         };
 
         Ok(struct_.clone())
+    }
+}
+
+pub struct GlobalScope<'ctx> {
+    modules: HashMap<types::ModulePath, CompiledModule<'ctx>>,
+    scope: Rc<Scope<'ctx>>,
+}
+
+impl<'ctx> GlobalScope<'ctx> {
+    pub fn new() -> Self {
+        Self {
+            modules: HashMap::new(),
+            scope: Scope::root(),
+        }
+    }
+
+    pub fn create_module(
+        &mut self,
+        path: types::ModulePath,
+        llvm_module: Module<'ctx>,
+    ) -> &mut CompiledModule<'ctx> {
+        self.modules
+            .entry(path.clone())
+            // TODO the llvm_module should be created by CompiledModule itself?
+            .or_insert_with(|| CompiledModule::new(path, llvm_module, self.scope.child()))
+    }
+
+    pub fn get_module(&self, path: &types::ModulePath) -> Option<&CompiledModule<'ctx>> {
+        self.modules.get(path)
+    }
+
+    pub fn get_value(
+        &self,
+        module: &types::ModulePath,
+        name: &types::Identifier,
+    ) -> Option<Value<'ctx>> {
+        self.modules.get(module).and_then(|x| x.get_variable(name))
+    }
+
+    pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
+        self.modules.into_values()
+    }
+
+    pub(crate) fn register(&self, id: types::Identifier, value: Value<'ctx>) {
+        self.scope.register(id, value);
     }
 }
