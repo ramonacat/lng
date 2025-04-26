@@ -86,7 +86,7 @@ type RegisterGlobalMappings = Option<Box<dyn FnOnce(&ExecutionEngine, &Module)>>
 
 pub(crate) struct Compiler<'ctx> {
     context: CompilerContext<'ctx>,
-    std: Option<GlobalScope<'ctx>>,
+    global_scope: GlobalScope<'ctx>,
 }
 
 #[derive(Debug)]
@@ -291,22 +291,20 @@ impl<'ctx> Compiler<'ctx> {
                 builder: context.create_builder(),
                 builtins,
             },
-            std,
+            global_scope: std.unwrap_or_default(),
         }
     }
 
     // TODO instead of executing the code, this should return some object that exposes the
     // executable code with a safe interface
     pub fn compile(mut self, program: types::Program) -> Result<GlobalScope<'ctx>, CompileError> {
-        let mut global_scope = self.std.take().unwrap_or_default();
-
-        global_scope.register(
+        self.global_scope.register(
             Identifier::parse("string"),
             Value::Struct(self.context.builtins.string_handle.clone()),
         );
 
         for (path, program_module) in &program.modules {
-            let created_module = global_scope.create_module(path.clone(), &self.context);
+            let created_module = self.global_scope.create_module(path.clone(), &self.context);
 
             for declaration in program_module.items.values() {
                 match declaration {
@@ -352,7 +350,7 @@ impl<'ctx> Compiler<'ctx> {
         }
 
         for (module_path, file) in &program.modules {
-            let Some(module) = global_scope.get_module(module_path) else {
+            let Some(module) = self.global_scope.get_module(module_path) else {
                 return Err(
                     CompileErrorDescription::ModuleNotFound(module_path.clone()).at_indeterminate()
                 );
@@ -363,15 +361,20 @@ impl<'ctx> Compiler<'ctx> {
                     continue;
                 };
 
-                let value = global_scope.get_value(&import.path, &import.item).unwrap();
+                let value = self
+                    .global_scope
+                    .get_value(&import.path, &import.item)
+                    .unwrap();
                 match value {
                     Value::Primitive(_, _) => todo!(),
                     Value::Reference(_) => todo!(),
                     Value::Function(function) => {
                         module.import_function(&function, &self.context);
 
-                        let Value::Function(f) =
-                            global_scope.get_value(&import.path, &import.item).unwrap()
+                        let Value::Function(f) = self
+                            .global_scope
+                            .get_value(&import.path, &import.item)
+                            .unwrap()
                         else {
                             todo!();
                         };
@@ -414,7 +417,7 @@ impl<'ctx> Compiler<'ctx> {
             }
         }
 
-        Ok(global_scope)
+        Ok(self.global_scope)
     }
 
     fn compile_function(
@@ -655,10 +658,9 @@ impl<'ctx> Compiler<'ctx> {
                 types::Literal::UnsignedInteger(value) => Ok((
                     None,
                     Value::Primitive(
-                        // TODO should this be in builtins or something?
-                        compiled_function
-                            .scope
-                            .get_value(&Identifier::parse("u64"))
+                        // TODO create `self.get_primitive_type()` or something along these lines
+                        self.global_scope
+                            .get_value(&ModulePath::parse("std"), &Identifier::parse("u64"))
                             .unwrap()
                             .as_struct()
                             .unwrap(),
