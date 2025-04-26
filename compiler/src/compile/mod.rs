@@ -366,9 +366,7 @@ where
                     Value::Primitive(_, _) => todo!(),
                     Value::Reference(_) => todo!(),
                     Value::Function(function) => {
-                        let mangled_name = mangle_item(import.path.clone(), import.item.clone());
-
-                        module.import_function(&function, mangled_name.clone(), &self.context);
+                        module.import_function(&function, &self.context);
 
                         let Value::Function(f) =
                             global_scope.get_value(&import.path, &import.item).unwrap()
@@ -380,7 +378,7 @@ where
                             import.item.clone(),
                             Value::Function(FunctionHandle {
                                 export: function.export,
-                                name: mangled_name,
+                                name: function.name.clone(),
                                 return_type: f.return_type,
                                 location: import.location,
                                 arguments: function.arguments.clone(),

@@ -145,11 +145,9 @@ impl<'ctx> StructHandle<'ctx> {
             match impl_ {
                 Value::Primitive(_, _) => todo!(),
                 Value::Reference(_) => todo!(),
-                Value::Function(function_handle) => importing_module.import_function(
-                    function_handle,
-                    function_handle.name.clone(),
-                    context,
-                ),
+                Value::Function(function_handle) => {
+                    importing_module.import_function(function_handle, context)
+                }
                 Value::Struct(_) => todo!(),
             };
         }

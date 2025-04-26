@@ -78,12 +78,10 @@ impl<'ctx> CompiledModule<'ctx> {
     pub fn import_function(
         &self,
         function: &FunctionHandle,
-        // TODO get the name from the handle, remove this argument
-        name: MangledIdentifier,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.declare_function_inner(
-            name,
+            function.name.clone(),
             &function.arguments,
             &function.return_type,
             Linkage::External,
