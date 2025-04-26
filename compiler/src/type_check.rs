@@ -356,12 +356,11 @@ pub fn type_check(mut program: Program) -> Result<types::Program, TypeCheckError
 
         // TODO the system imports should be defined somewhere else so they're in one obvious
         // place
-        // TODO SourceRange should become an enum with ::Builtin type here
         let mut system_imports = vec![];
         if file.name != "std" {
             system_imports.push(ast::Import {
                 path: vec!["std".to_string(), "u64".to_string()],
-                position: SourceRange((0, 0), (0, 0)),
+                position: SourceRange::Internal,
             });
         }
 

@@ -591,10 +591,7 @@ where
                     .build_call(
                         function.get_or_create_in_module(module, &self.context),
                         &call_arguments,
-                        &format!(
-                            "call_result_{}_{}_{}_{}",
-                            position.0.0, position.0.1, position.1.0, position.1.1
-                        ),
+                        &format!("call_result_{}", position.as_id()),
                     )
                     .map_err(|e| e.into_compile_error_at(module_path.clone(), position))?;
 
@@ -622,10 +619,7 @@ where
             }
             types::ExpressionKind::Literal(literal) => match literal {
                 types::Literal::String(s) => {
-                    let name = format!(
-                        "literal_{}_{}_{}_{}",
-                        position.0.0, position.0.1, position.1.0, position.1.1
-                    );
+                    let name = format!("literal_{}", position.as_id());
                     let characters_value = self
                         .context
                         .builder
@@ -688,18 +682,12 @@ where
 
                 let value = s.build_heap_instance(
                     &self.context,
-                    &format!(
-                        "{}_{}_{}_{}_{}",
-                        name, position.0.0, position.0.1, position.1.0, position.1.1
-                    ),
+                    &format!("{}_{}", name, position.as_id()),
                     field_values,
                 );
 
                 let rc = RcValue::build_init(
-                    &format!(
-                        "{}_rc_{}_{}_{}_{}",
-                        name, position.0.0, position.0.1, position.1.0, position.1.1
-                    ),
+                    &format!("{}_rc_{}", name, position.as_id()),
                     value,
                     s.clone(),
                     &self.context,

@@ -1,15 +1,34 @@
 use std::fmt::Display;
 
 #[derive(Debug, Clone, Copy)]
-pub struct SourceRange(pub (usize, usize), pub (usize, usize));
+pub enum SourceRange {
+    Visible((usize, usize), (usize, usize)),
+    Internal,
+}
+
+impl SourceRange {
+    pub fn new(start: (usize, usize), end: (usize, usize)) -> Self {
+        Self::Visible(start, end)
+    }
+
+    pub fn as_id(&self) -> String {
+        match self {
+            SourceRange::Visible(start, end) => {
+                format!("{}_{}__{}_{}", start.0, start.1, end.0, end.1)
+            }
+            SourceRange::Internal => "__internal__".to_string(),
+        }
+    }
+}
 
 impl Display for SourceRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({}, {}) to ({}, {})",
-            self.0.0, self.0.1, self.1.0, self.1.1
-        )
+        match self {
+            SourceRange::Visible(start, end) => {
+                write!(f, "({}, {}) to ({}, {})", start.0, start.1, end.0, end.1)
+            }
+            SourceRange::Internal => write!(f, "(internal)"),
+        }
     }
 }
 

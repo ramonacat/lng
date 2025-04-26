@@ -82,7 +82,7 @@ pub fn parse_file<'parser>(
 fn find_source_position(pair: &Pair<Rule>) -> SourceRange {
     let span = pair.as_span();
 
-    SourceRange(span.start_pos().line_col(), span.end_pos().line_col())
+    SourceRange::new(span.start_pos().line_col(), span.end_pos().line_col())
 }
 
 fn parse_declaration(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
