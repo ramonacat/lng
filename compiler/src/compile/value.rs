@@ -48,7 +48,6 @@ pub struct StructHandle<'ctx> {
     // TODO rename to static_values?
     // TODO ensure that this object can only be created when all values are set
     static_fields: HashMap<types::Identifier, Value<'ctx>>,
-    llvm_type: StructType<'ctx>,
 }
 
 impl<'ctx> StructHandle<'ctx> {
@@ -60,7 +59,10 @@ impl<'ctx> StructHandle<'ctx> {
     ) -> PointerValue<'ctx> {
         let instance = context
             .builder
-            .build_malloc(self.llvm_type, &(binding_name.to_string() + "_ptr"))
+            .build_malloc(
+                self.llvm_type(context),
+                &(binding_name.to_string() + "_ptr"),
+            )
             .unwrap();
 
         for field in self.description.fields.iter().filter(|x| !x.static_) {
@@ -120,7 +122,7 @@ impl<'ctx> StructHandle<'ctx> {
         // TODO why does const_gep not work here?
         let pointer = unsafe {
             context.builder.build_gep(
-                self.llvm_type,
+                self.llvm_type(context),
                 instance,
                 &[
                     context.llvm_context.i32_type().const_int(0, false),
@@ -174,21 +176,29 @@ impl<'ctx> StructHandle<'ctx> {
     }
 
     // TODO remove llvm_type argument, figure out the type based on `description`
-    pub(crate) fn new(description: types::Struct, llvm_type: StructType<'ctx>) -> Self {
-        Self::new_with_statics(description, llvm_type, HashMap::new())
+    pub(crate) fn new(description: types::Struct) -> Self {
+        Self::new_with_statics(description, HashMap::new())
     }
 
     // TODO remove llvm_type argument, figure out the type based on `description`
     pub(crate) fn new_with_statics(
         description: types::Struct,
-        llvm_type: StructType<'ctx>,
         static_fields: HashMap<Identifier, Value<'ctx>>,
     ) -> StructHandle<'ctx> {
         Self {
             description,
             static_fields,
-            llvm_type,
         }
+    }
+
+    fn llvm_type(&self, context: &CompilerContext<'ctx>) -> StructType<'ctx> {
+        let mut field_types = vec![];
+
+        for field in &self.description.fields {
+            field_types.push(context.type_to_llvm(&field.type_).as_basic_type_enum());
+        }
+
+        context.llvm_context.struct_type(&field_types, false)
     }
 }
 

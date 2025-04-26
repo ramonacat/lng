@@ -8,13 +8,11 @@ use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
 
 use context::{Builtins, CompilerContext};
 use inkwell::{
-    AddressSpace,
     basic_block::BasicBlock,
     builder::BuilderError,
     context::Context,
     execution_engine::ExecutionEngine,
     module::Module,
-    types::BasicType,
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum},
 };
 use module::CompiledModule;
@@ -196,77 +194,48 @@ where
     'src: 'ctx,
 {
     pub fn new(context: &'ctx Context) -> Self {
-        // TODO the StructHandle should figure out the struct_types by itself
-        let rc_type = context.struct_type(
-            &[
-                context.i64_type().as_basic_type_enum(), // refcount
-                context
-                    .ptr_type(AddressSpace::default())
-                    .as_basic_type_enum(), // target object
-            ],
-            false,
-        );
-
-        let string_type = context.struct_type(
-            &[
-                context
-                    .ptr_type(AddressSpace::default())
-                    .as_basic_type_enum(), //characters
-            ],
-            false,
-        );
-
         let builtins = Builtins {
-            string_handle: StructHandle::new(
-                types::Struct {
-                    name: types::Identifier::parse("string"),
+            string_handle: StructHandle::new(types::Struct {
+                name: types::Identifier::parse("string"),
+                mangled_name: mangle_item(ModulePath::parse("std"), Identifier::parse("string")),
+                fields: vec![types::StructField {
+                    name: Identifier::parse("characters"),
                     mangled_name: mangle_item(
                         ModulePath::parse("std"),
-                        Identifier::parse("string"),
+                        Identifier::parse("characters"),
                     ),
-                    fields: vec![types::StructField {
-                        name: Identifier::parse("characters"),
-                        mangled_name: mangle_item(
+                    type_: types::Type::Pointer,
+                    static_: false,
+                }],
+                impls: HashMap::new(),
+            }),
+            rc_handle: StructHandle::new(types::Struct {
+                name: types::Identifier::parse("rc"),
+                mangled_name: mangle_item(ModulePath::parse("std"), Identifier::parse("rc")),
+                fields: vec![
+                    types::StructField {
+                        name: Identifier::parse("refcount"),
+                        mangled_name: mangle_field(
                             ModulePath::parse("std"),
-                            Identifier::parse("characters"),
+                            Identifier::parse("rc"),
+                            Identifier::parse("refcount"),
+                        ),
+                        type_: types::Type::U64,
+                        static_: false,
+                    },
+                    types::StructField {
+                        name: Identifier::parse("pointee"),
+                        mangled_name: mangle_field(
+                            ModulePath::parse("std"),
+                            Identifier::parse("rc"),
+                            Identifier::parse("pointee"),
                         ),
                         type_: types::Type::Pointer,
                         static_: false,
-                    }],
-                    impls: HashMap::new(),
-                },
-                string_type,
-            ),
-            rc_handle: StructHandle::new(
-                types::Struct {
-                    name: types::Identifier::parse("rc"),
-                    mangled_name: mangle_item(ModulePath::parse("std"), Identifier::parse("rc")),
-                    fields: vec![
-                        types::StructField {
-                            name: Identifier::parse("refcount"),
-                            mangled_name: mangle_field(
-                                ModulePath::parse("std"),
-                                Identifier::parse("rc"),
-                                Identifier::parse("refcount"),
-                            ),
-                            type_: types::Type::U64,
-                            static_: false,
-                        },
-                        types::StructField {
-                            name: Identifier::parse("pointee"),
-                            mangled_name: mangle_field(
-                                ModulePath::parse("std"),
-                                Identifier::parse("rc"),
-                                Identifier::parse("pointee"),
-                            ),
-                            type_: types::Type::Pointer,
-                            static_: false,
-                        },
-                    ],
-                    impls: HashMap::new(),
-                },
-                rc_type,
-            ),
+                    },
+                ],
+                impls: HashMap::new(),
+            }),
         };
 
         Self {
@@ -310,16 +279,6 @@ where
                             .set_variable(function.name.clone(), Value::Function(function_handle));
                     }
                     types::Item::Struct(struct_) => {
-                        let field_types = struct_
-                            .fields
-                            .iter()
-                            .map(|f| self.context.type_to_llvm(&f.type_).as_basic_type_enum())
-                            .collect::<Vec<_>>();
-                        let llvm_type = self
-                            .context
-                            .llvm_context
-                            .struct_type(&field_types[..], false);
-
                         let static_fields = struct_
                             .impls
                             .iter()
@@ -339,7 +298,6 @@ where
                             struct_.name.clone(),
                             Value::Struct(StructHandle::new_with_statics(
                                 struct_.clone(),
-                                llvm_type,
                                 static_fields,
                             )),
                         );
