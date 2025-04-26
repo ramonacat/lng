@@ -73,6 +73,9 @@ pub enum Type {
     // TODO add bool
     // TODO add float
     U64,
+    // TODO do we want this exposed to userland in an unsafe mode?
+    // TODO this should have the target type as its value
+    Pointer,
 }
 
 impl Display for Type {
@@ -100,6 +103,7 @@ impl Display for Type {
                     .join(",")
             ),
             Type::U64 => write!(f, "u64"),
+            Type::Pointer => write!(f, "pointer"),
         }
     }
 }

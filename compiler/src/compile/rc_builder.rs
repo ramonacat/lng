@@ -1,22 +1,23 @@
-use inkwell::{AddressSpace, basic_block::BasicBlock, values::PointerValue};
+use std::collections::HashMap;
 
-use crate::name_mangler::MangledIdentifier;
+use inkwell::{
+    basic_block::BasicBlock,
+    values::{BasicValue, PointerValue},
+};
+
+use crate::types::Identifier;
 
 use super::{CompileError, StructHandle, context::CompilerContext};
 
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
-
-    refcount: PointerValue<'ctx>,
-    pointee: PointerValue<'ctx>,
-
     value_type: StructHandle<'ctx>,
 }
 
 impl<'ctx> RcValue<'ctx> {
     pub fn build_init<'src>(
-        name: MangledIdentifier,
+        name: &str,
         value: PointerValue<'ctx>,
         value_type: StructHandle<'ctx>,
         context: &CompilerContext<'ctx>,
@@ -24,54 +25,23 @@ impl<'ctx> RcValue<'ctx> {
     where
         'src: 'ctx,
     {
+        let mut field_values = HashMap::new();
+        field_values.insert(
+            Identifier::parse("refcount"),
+            context
+                .llvm_context
+                .i64_type()
+                .const_int(1, false)
+                .as_basic_value_enum(),
+        );
+        field_values.insert(Identifier::parse("pointee"), value.as_basic_value_enum());
         let rc = context
-            .builder
-            .build_malloc(context.builtins.rc_handle.llvm_type, name.as_str())
-            .unwrap();
-
-        let rc_refcount = unsafe {
-            context
-                .builder
-                .build_gep(
-                    context.builtins.rc_handle.llvm_type,
-                    rc,
-                    &[
-                        context.llvm_context.i32_type().const_int(0, false),
-                        context.llvm_context.i32_type().const_int(0, false),
-                    ],
-                    &(name.as_str().to_string() + "refcount"),
-                )
-                .unwrap()
-        };
-        let rc_pointee = unsafe {
-            context
-                .builder
-                .build_gep(
-                    context.builtins.rc_handle.llvm_type,
-                    rc,
-                    &[
-                        context.llvm_context.i32_type().const_int(0, false),
-                        context.llvm_context.i32_type().const_int(1, false),
-                    ],
-                    &(name.as_str().to_string() + "pointee"),
-                )
-                .unwrap()
-        };
-
-        context
-            .builder
-            .build_store(
-                rc_refcount,
-                context.llvm_context.i64_type().const_int(1, false),
-            )
-            .unwrap();
-        context.builder.build_store(rc_pointee, value).unwrap();
+            .builtins
+            .rc_handle
+            .build_heap_instance(context, name, field_values);
 
         Ok(Self {
             pointer: rc,
-            refcount: rc_refcount,
-            pointee: rc_pointee,
-
             value_type,
         })
     }
@@ -83,30 +53,9 @@ impl<'ctx> RcValue<'ctx> {
     pub fn from_pointer(
         pointer: PointerValue<'ctx>,
         value_type: StructHandle<'ctx>,
-        context: &CompilerContext<'ctx>,
     ) -> RcValue<'ctx> {
-        let refcount = unsafe {
-            pointer.const_gep(
-                context.builtins.rc_handle.llvm_type,
-                &[
-                    context.llvm_context.i32_type().const_int(0, false),
-                    context.llvm_context.i32_type().const_int(0, false),
-                ],
-            )
-        };
-        let pointee = unsafe {
-            pointer.const_gep(
-                context.builtins.rc_handle.llvm_type,
-                &[
-                    context.llvm_context.i32_type().const_int(0, false),
-                    context.llvm_context.i32_type().const_int(1, false),
-                ],
-            )
-        };
         RcValue {
             pointer,
-            refcount,
-            pointee,
             value_type,
         }
     }
@@ -135,13 +84,14 @@ pub fn build_cleanup<'ctx>(
         context.builder.position_at_end(before);
 
         let old_refcount = context
-            .builder
-            .build_load(
-                context.llvm_context.i64_type(),
-                rc.refcount,
+            .builtins
+            .rc_handle
+            .build_field_load(
+                Identifier::parse("refcount"),
+                rc.pointer,
                 &(name.to_string() + "refcount_old"),
+                context,
             )
-            .unwrap()
             .into_int_value();
         let new_refcount = context
             .builder
@@ -180,13 +130,14 @@ pub fn build_cleanup<'ctx>(
         context.builder.position_at_end(free_rc_block);
 
         let rc_pointee_value = context
-            .builder
-            .build_load(
-                context.llvm_context.ptr_type(AddressSpace::default()),
-                rc.pointee,
+            .builtins
+            .rc_handle
+            .build_field_load(
+                Identifier::parse("pointee"),
+                rc.pointer,
                 &(name.to_string() + "free_rc_pointee_value"),
+                context,
             )
-            .unwrap()
             .into_pointer_value();
         context.builder.build_free(rc_pointee_value).unwrap();
         context.builder.build_free(rc.pointer).unwrap();
@@ -197,10 +148,12 @@ pub fn build_cleanup<'ctx>(
             .unwrap();
 
         context.builder.position_at_end(do_not_free_rc_block);
-        context
-            .builder
-            .build_store(rc.refcount, new_refcount)
-            .unwrap();
+        context.builtins.rc_handle.build_field_store(
+            Identifier::parse("refcount"),
+            rc.pointer,
+            new_refcount.as_basic_value_enum(),
+            context,
+        );
 
         context
             .builder
@@ -222,14 +175,13 @@ pub fn build_cleanup<'ctx>(
 pub(crate) fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{}", i);
-        let init_refcount = context
-            .builder
-            .build_load(
-                context.llvm_context.i64_type(),
-                rc.refcount,
-                &format!("{name}_init_refcount"),
-            )
-            .unwrap();
+        let init_refcount = context.builtins.rc_handle.build_field_load(
+            Identifier::parse("refcount"),
+            rc.pointer,
+            &format!("{name}_init_refcount"),
+            context,
+        );
+
         let incremented_refcount = context
             .builder
             .build_int_add(
@@ -239,9 +191,11 @@ pub(crate) fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerCont
             )
             .unwrap();
 
-        context
-            .builder
-            .build_store(rc.refcount, incremented_refcount)
-            .unwrap();
+        context.builtins.rc_handle.build_field_store(
+            Identifier::parse("refcount"),
+            rc.pointer,
+            incremented_refcount.as_basic_value_enum(),
+            context,
+        );
     }
 }

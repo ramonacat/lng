@@ -28,6 +28,7 @@ impl<'ctx> CompilerContext<'ctx> {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
             types::Type::U64 => Box::new(self.llvm_context.i64_type()),
+            types::Type::Pointer => Box::new(self.llvm_context.ptr_type(AddressSpace::default())),
         }
     }
 }

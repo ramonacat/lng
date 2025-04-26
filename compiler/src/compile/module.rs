@@ -72,6 +72,7 @@ impl<'ctx> CompiledModule<'ctx> {
     pub fn import_function(
         &self,
         function: &FunctionHandle,
+        // TODO get the name from the handle, remove this argument
         name: MangledIdentifier,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
@@ -90,7 +91,7 @@ impl<'ctx> CompiledModule<'ctx> {
     ) -> Result<FunctionHandle, CompileError> {
         if let Some(struct_) = struct_ {
             let struct_handle = self.scope.get_value(&struct_).unwrap().as_struct().unwrap();
-            let function_value = struct_handle.static_fields.get(name).unwrap();
+            let function_value = struct_handle.read_static_field(name).unwrap();
 
             return match function_value {
                 Value::Function(function_handle) => Ok(function_handle.clone()),
@@ -111,6 +112,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn begin_compile_function(
         &self,
+        // TODO this should be FunctionHandle instead? then remove resolve_function
         function: &types::Function,
         context: &CompilerContext<'ctx>,
         struct_: Option<Identifier>,
@@ -128,7 +130,6 @@ impl<'ctx> CompiledModule<'ctx> {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
                         scope.get_value(identifier).unwrap().as_struct().unwrap(),
-                        context,
                     );
                     rcs.push(rc.clone());
 
@@ -141,12 +142,12 @@ impl<'ctx> CompiledModule<'ctx> {
                     types::Type::Object(identifier) => Value::Reference(RcValue::from_pointer(
                         argument_value.into_pointer_value(),
                         scope.get_value(identifier).unwrap().as_struct().unwrap(),
-                        context,
                     )),
                     types::Type::Array(_) => todo!(),
                     types::Type::StructDescriptor(_, _) => todo!(),
                     types::Type::Callable { .. } => todo!(),
                     types::Type::U64 => todo!(),
+                    types::Type::Pointer => todo!(),
                 },
                 types::Type::StructDescriptor(_, _) => todo!(),
                 types::Type::Callable { .. } => todo!(),
@@ -158,6 +159,7 @@ impl<'ctx> CompiledModule<'ctx> {
                         .unwrap(),
                     argument_value,
                 ),
+                types::Type::Pointer => todo!(),
             };
 
             scope.set_value(argument.name.clone(), value);

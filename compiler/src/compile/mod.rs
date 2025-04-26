@@ -196,6 +196,7 @@ where
     'src: 'ctx,
 {
     pub fn new(context: &'ctx Context) -> Self {
+        // TODO the StructHandle should figure out the struct_types by itself
         let rc_type = context.struct_type(
             &[
                 context.i64_type().as_basic_type_enum(), // refcount
@@ -216,34 +217,56 @@ where
         );
 
         let builtins = Builtins {
-            // TODO we skip the field so it is not accessible, in the future we should somehow add
-            // impls from stdlib which will be methods of the strings
-            // TODO StructHandle should have a ::new() to ensure description.impls are in sync
-            // with static_fields
-            string_handle: StructHandle {
-                description: types::Struct {
+            string_handle: StructHandle::new(
+                types::Struct {
                     name: types::Identifier::parse("string"),
                     mangled_name: mangle_item(
                         ModulePath::parse("std"),
                         Identifier::parse("string"),
                     ),
-                    fields: vec![],
+                    fields: vec![types::StructField {
+                        name: Identifier::parse("characters"),
+                        mangled_name: mangle_item(
+                            ModulePath::parse("std"),
+                            Identifier::parse("characters"),
+                        ),
+                        type_: types::Type::Pointer,
+                        static_: false,
+                    }],
                     impls: HashMap::new(),
                 },
-                llvm_type: string_type,
-                static_fields: HashMap::new(),
-            },
-            // TODO do we need the handle here? this is not exposed to userland anyway
-            rc_handle: StructHandle {
-                description: types::Struct {
+                string_type,
+            ),
+            rc_handle: StructHandle::new(
+                types::Struct {
                     name: types::Identifier::parse("rc"),
                     mangled_name: mangle_item(ModulePath::parse("std"), Identifier::parse("rc")),
-                    fields: vec![],
+                    fields: vec![
+                        types::StructField {
+                            name: Identifier::parse("refcount"),
+                            mangled_name: mangle_field(
+                                ModulePath::parse("std"),
+                                Identifier::parse("rc"),
+                                Identifier::parse("refcount"),
+                            ),
+                            type_: types::Type::U64,
+                            static_: false,
+                        },
+                        types::StructField {
+                            name: Identifier::parse("pointee"),
+                            mangled_name: mangle_field(
+                                ModulePath::parse("std"),
+                                Identifier::parse("rc"),
+                                Identifier::parse("pointee"),
+                            ),
+                            type_: types::Type::Pointer,
+                            static_: false,
+                        },
+                    ],
                     impls: HashMap::new(),
                 },
-                llvm_type: rc_type,
-                static_fields: HashMap::new(),
-            },
+                rc_type,
+            ),
         };
 
         Self {
@@ -314,11 +337,11 @@ where
 
                         created_module.set_variable(
                             struct_.name.clone(),
-                            Value::Struct(StructHandle {
-                                description: struct_.clone(),
+                            Value::Struct(StructHandle::new_with_statics(
+                                struct_.clone(),
                                 llvm_type,
                                 static_fields,
-                            }),
+                            )),
                         );
                     }
                     types::Item::Import(_) => {}
@@ -334,7 +357,6 @@ where
             };
 
             for item in file.items.values() {
-                // TODO support importing structs, and possibly other types
                 let types::Item::Import(import) = item else {
                     continue;
                 };
@@ -366,24 +388,7 @@ where
                         );
                     }
                     Value::Struct(ref struct_) => {
-                        for (field_name, impl_) in &struct_.static_fields {
-                            match impl_ {
-                                Value::Primitive(_, _) => todo!(),
-                                Value::Reference(_) => todo!(),
-                                Value::Function(function_handle) => module.import_function(
-                                    function_handle,
-                                    mangle_field(
-                                        import.path.clone(),
-                                        import.item.clone(),
-                                        field_name.clone(),
-                                    ),
-                                    &self.context,
-                                ),
-                                Value::Struct(_) => todo!(),
-                            };
-                        }
-
-                        module.set_variable(import.item.clone(), value.clone());
+                        struct_.import(module, &self.context);
                     }
                 };
             }
@@ -549,7 +554,7 @@ where
         self.context.builder.position_at_end(compiled_function.end);
         // TODO can this match be somehow removed or simplified?
         if let Some(ref r) = compiled_function.return_value {
-            match &r.to_basic_value() {
+            match &r.as_basic_value() {
                 BasicValueEnum::ArrayValue(v) => {
                     compiled_function.build_return(Some(v), &self.context, module_path.clone())?;
                 }
@@ -681,32 +686,20 @@ where
                         .build_global_string_ptr(s, &(name.clone() + "_global"))
                         .unwrap();
 
-                    let literal_value = self
-                        .context
-                        .builder
-                        .build_malloc(
-                            self.context.builtins.string_handle.llvm_type,
-                            &(name.clone() + "_value"),
-                        )
-                        .unwrap();
-                    let literal_value_characters = unsafe {
-                        self.context
-                            .builder
-                            .build_gep(
-                                self.context.builtins.string_handle.llvm_type,
-                                literal_value,
-                                &[self.context.llvm_context.i64_type().const_int(0, false)],
-                                &(name.clone() + "_value_characters"),
-                            )
-                            .unwrap()
-                    };
-                    self.context
-                        .builder
-                        .build_store(literal_value_characters, characters_value)
-                        .unwrap();
+                    let mut field_values = HashMap::new();
+                    field_values.insert(
+                        Identifier::parse("characters"),
+                        characters_value.as_basic_value_enum(),
+                    );
+
+                    let literal_value = self.context.builtins.string_handle.build_heap_instance(
+                        &self.context,
+                        &(name.clone() + "_value"),
+                        field_values,
+                    );
 
                     let rc = RcValue::build_init(
-                        mangle_item(module_path.clone(), Identifier::parse(&name)),
+                        &name,
                         literal_value,
                         self.context.builtins.string_handle.clone(),
                         &self.context,
@@ -744,20 +737,23 @@ where
                     .as_struct()
                     .unwrap();
 
-                let value = self
-                    .context
-                    .builder
-                    .build_malloc(
-                        s.llvm_type,
-                        &format!(
-                            "{}_{}_{}_{}_{}",
-                            name, position.0.0, position.0.1, position.1.0, position.1.1
-                        ),
-                    )
-                    .unwrap();
+                let field_values = HashMap::new();
+                // TODO actually set the field values!
+
+                let value = s.build_heap_instance(
+                    &self.context,
+                    &format!(
+                        "{}_{}_{}_{}_{}",
+                        name, position.0.0, position.0.1, position.1.0, position.1.1
+                    ),
+                    field_values,
+                );
 
                 let rc = RcValue::build_init(
-                    mangle_item(module_path.clone(), name.clone()),
+                    &format!(
+                        "{}_rc_{}_{}_{}_{}",
+                        name, position.0.0, position.0.1, position.1.0, position.1.1
+                    ),
                     value,
                     s.clone(),
                     &self.context,

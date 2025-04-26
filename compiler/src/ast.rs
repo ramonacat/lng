@@ -29,7 +29,6 @@ impl Display for Literal {
 }
 
 #[derive(Debug, Clone)]
-// TODO this should be wrapped in a struct, so position does not have to be repeated
 pub enum ExpressionKind {
     FunctionCall {
         target: Box<Expression>,
