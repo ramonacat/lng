@@ -5,7 +5,11 @@ use inkwell::{
     values::{BasicValue as _, BasicValueEnum, FunctionValue},
 };
 
-use crate::{ast::SourceRange, name_mangler::MangledIdentifier, types};
+use crate::{
+    ast::SourceRange,
+    name_mangler::MangledIdentifier,
+    types::{self, Identifier},
+};
 
 use super::{context::CompilerContext, module::CompiledModule, rc_builder::RcValue};
 
@@ -73,11 +77,21 @@ pub enum Value<'ctx> {
     Function(FunctionHandle),
     Struct(StructHandle<'ctx>),
 }
+
 impl<'ctx> Value<'ctx> {
     pub fn to_basic_value(&self) -> BasicValueEnum<'ctx> {
         match self {
             Value::Primitive(_, value) => *value,
             Value::Reference(value) => value.as_ptr().as_basic_value_enum(),
+            Value::Function(_) => todo!(),
+            Value::Struct(_) => todo!(),
+        }
+    }
+
+    pub fn read_field_value(&self, field_name: &Identifier) -> Option<Value<'ctx>> {
+        match self {
+            Value::Primitive(handle, _) => handle.read_field_value(self.clone(), field_name),
+            Value::Reference(ref_) => ref_.type_().read_field_value(self.clone(), field_name),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
         }

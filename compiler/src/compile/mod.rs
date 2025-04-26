@@ -778,18 +778,7 @@ where
                     module,
                 )?;
 
-                // TODO Value should have a read_field_value associated function
-                let access_result = match &target_value {
-                    Value::Primitive(handle, _) => handle
-                        .read_field_value(target_value.clone(), field_name)
-                        .unwrap(),
-                    Value::Reference(ref_) => ref_
-                        .type_()
-                        .read_field_value(target_value.clone(), field_name)
-                        .unwrap(),
-                    Value::Function(_) => todo!(),
-                    Value::Struct(_) => todo!(),
-                };
+                let access_result = target_value.read_field_value(field_name).unwrap();
 
                 Ok((Some(target_value), access_result))
             }
