@@ -22,7 +22,7 @@ use value::{FunctionHandle, StructHandle, Value};
 
 use crate::{
     ast::SourceRange,
-    name_mangler::{mangle_field, mangle_item},
+    name_mangler::mangle_item,
     runtime::register_mappings,
     std::compile_std,
     types::{self, Identifier, ModulePath, Visibility},
@@ -42,6 +42,7 @@ pub fn compile(
 
     let global_scope = compiler.compile(program)?;
     let root_module = context.create_module("root");
+
     for module in global_scope.into_modules() {
         println!("{}", module.to_ir());
 
@@ -239,42 +240,31 @@ impl<'ctx> CompiledFunction<'ctx> {
 
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
+        let std_module_path = types::ModulePath::parse("std");
+        let string_name =
+            types::ItemPath::new(std_module_path.clone(), types::Identifier::parse("string"));
+        let rc_name = types::ItemPath::new(std_module_path, types::Identifier::parse("rc"));
+
         let builtins = Builtins {
             string_handle: StructHandle::new(types::Struct {
-                name: types::Identifier::parse("string"),
-                mangled_name: mangle_item(&ModulePath::parse("std"), &Identifier::parse("string")),
+                name: string_name.clone(),
                 fields: vec![types::StructField {
-                    name: Identifier::parse("characters"),
-                    mangled_name: mangle_item(
-                        &ModulePath::parse("std"),
-                        &Identifier::parse("characters"),
-                    ),
+                    name: types::FieldPath::new(string_name, Identifier::parse("characters")),
                     type_: types::Type::Pointer(Box::new(types::Type::U8)),
                     static_: false,
                 }],
                 impls: HashMap::new(),
             }),
             rc_handle: StructHandle::new(types::Struct {
-                name: types::Identifier::parse("rc"),
-                mangled_name: mangle_item(&ModulePath::parse("std"), &Identifier::parse("rc")),
+                name: rc_name.clone(),
                 fields: vec![
                     types::StructField {
-                        name: Identifier::parse("refcount"),
-                        mangled_name: mangle_field(
-                            &ModulePath::parse("std"),
-                            &Identifier::parse("rc"),
-                            &Identifier::parse("refcount"),
-                        ),
+                        name: types::FieldPath::new(rc_name.clone(), Identifier::parse("refcount")),
                         type_: types::Type::U64,
                         static_: false,
                     },
                     types::StructField {
-                        name: Identifier::parse("pointee"),
-                        mangled_name: mangle_field(
-                            &ModulePath::parse("std"),
-                            &Identifier::parse("rc"),
-                            &Identifier::parse("pointee"),
-                        ),
+                        name: types::FieldPath::new(rc_name, Identifier::parse("pointee")),
                         // TODO this is not the right type, but righttyping this requires that we
                         // have generics (because pointee is dependant on the type here)
                         type_: types::Type::Pointer(Box::new(types::Type::U8)),
@@ -315,14 +305,17 @@ impl<'ctx> Compiler<'ctx> {
                             } else {
                                 declaration.visibility
                             },
-                            name: function.mangled_name.clone(),
+                            name: function.mangled_name(),
                             return_type: function.return_type.clone(),
                             arguments: function.arguments.clone(),
                             position: function.position,
                         };
 
-                        created_module
-                            .set_variable(function.name.clone(), Value::Function(function_handle));
+                        match &function.kind {
+                            types::CallableKind::Free { name } => created_module
+                                .set_variable(name.item.clone(), Value::Function(function_handle)),
+                            types::CallableKind::Associated { .. } => todo!(),
+                        }
                     }
                     types::ItemKind::Struct(struct_) => {
                         let static_fields = struct_
@@ -331,7 +324,7 @@ impl<'ctx> Compiler<'ctx> {
                             .map(|(name, impl_)| {
                                 let handle = FunctionHandle {
                                     visibility: declaration.visibility,
-                                    name: impl_.mangled_name.clone(),
+                                    name: impl_.mangled_name(),
                                     return_type: impl_.return_type.clone(),
                                     arguments: impl_.arguments.clone(),
                                     position: impl_.position,
@@ -341,7 +334,7 @@ impl<'ctx> Compiler<'ctx> {
                             .collect();
 
                         created_module.set_variable(
-                            struct_.name.clone(),
+                            struct_.name.item.clone(),
                             Value::Struct(StructHandle::new_with_statics(
                                 struct_.clone(),
                                 static_fields,
@@ -365,34 +358,22 @@ impl<'ctx> Compiler<'ctx> {
                     continue;
                 };
 
-                let value = self
-                    .global_scope
-                    .get_value(&import.path, &import.item)
-                    .unwrap();
+                let value = self.global_scope.get_value(&import.imported_item).unwrap();
                 match value {
                     Value::Primitive(_, _) => todo!(),
                     Value::Reference(_) => todo!(),
                     Value::Function(function) => {
                         module.import_function(&function, &self.context);
 
-                        let Value::Function(f) = self
-                            .global_scope
-                            .get_value(&import.path, &import.item)
-                            .unwrap()
-                        else {
-                            todo!();
-                        };
-
-                        module.set_variable(
-                            import.item.clone(),
-                            Value::Function(FunctionHandle {
-                                visibility: function.visibility,
-                                name: function.name.clone(),
-                                return_type: f.return_type,
-                                position: import.position,
-                                arguments: function.arguments.clone(),
-                            }),
-                        );
+                        let function_value = Value::Function(FunctionHandle {
+                            visibility: function.visibility,
+                            name: function.name.clone(),
+                            return_type: function.return_type,
+                            position: import.position,
+                            arguments: function.arguments.clone(),
+                        });
+                        module
+                            .set_variable(dbg!(import.imported_item.item.clone()), function_value);
                     }
                     Value::Struct(ref struct_) => {
                         struct_.import(module, &self.context);
@@ -403,17 +384,12 @@ impl<'ctx> Compiler<'ctx> {
             for item in file.items.values() {
                 match &item.kind {
                     types::ItemKind::Function(function) => {
-                        self.compile_function(module_path, module, function, None)?;
+                        self.compile_function(module_path, module, function)?;
                     }
                     types::ItemKind::Import(_) => {}
                     types::ItemKind::Struct(struct_) => {
                         for impl_ in struct_.impls.values() {
-                            self.compile_function(
-                                module_path,
-                                module,
-                                impl_,
-                                Some(struct_.name.clone()),
-                            )?;
+                            self.compile_function(module_path, module, impl_)?;
                         }
                     }
                 }
@@ -431,13 +407,11 @@ impl<'ctx> Compiler<'ctx> {
         module_path: &ModulePath,
         module: &module::CompiledModule<'ctx>,
         function: &types::Function,
-        struct_: Option<Identifier>,
     ) -> Result<(), CompileError> {
         let types::FunctionBody::Statements(statements) = &function.body else {
             return Ok(());
         };
-        let mut compiled_function =
-            module.begin_compile_function(function, &self.context, struct_)?;
+        let mut compiled_function = module.begin_compile_function(function, &self.context);
         for statement in statements {
             let self_value = function.has_self().then(|| {
                 compiled_function
@@ -617,9 +591,11 @@ impl<'ctx> Compiler<'ctx> {
                 Ok((
                     None,
                     Value::Primitive(
-                        compiled_function
-                            .scope
-                            .get_value(&Identifier::parse("u64"))
+                        self.global_scope
+                            .get_value(&types::ItemPath::new(
+                                types::ModulePath::parse("std"),
+                                types::Identifier::parse("u64"),
+                            ))
                             .unwrap()
                             .as_struct()
                             .unwrap(),
@@ -663,7 +639,10 @@ impl<'ctx> Compiler<'ctx> {
                     Value::Primitive(
                         // TODO create `self.get_primitive_type()` or something along these lines
                         self.global_scope
-                            .get_value(&ModulePath::parse("std"), &Identifier::parse("u64"))
+                            .get_value(&types::ItemPath::new(
+                                ModulePath::parse("std"),
+                                Identifier::parse("u64"),
+                            ))
                             .unwrap()
                             .as_struct()
                             .unwrap(),
@@ -712,7 +691,12 @@ impl<'ctx> Compiler<'ctx> {
                 let (_, target_value) =
                     self.compile_expression(target, self_, compiled_function, module_path, module)?;
 
-                let access_result = target_value.read_field_value(field_name).unwrap();
+                let access_result = target_value
+                    .read_field_value(&types::FieldPath::new(
+                        target.type_.name(),
+                        field_name.clone(),
+                    ))
+                    .unwrap();
 
                 Ok((Some(target_value), access_result))
             }

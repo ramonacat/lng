@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use super::{
-    CompileError, CompiledFunction, FunctionHandle, Scope, Value,
+    CompiledFunction, FunctionHandle, Scope, Value,
     context::CompilerContext,
     rc_builder::{self, RcValue},
 };
@@ -18,6 +18,12 @@ pub struct CompiledModule<'ctx> {
     path: types::ModulePath,
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
+}
+
+impl std::fmt::Debug for CompiledModule<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.debug_print(f, 0)
+    }
 }
 
 impl<'ctx> CompiledModule<'ctx> {
@@ -88,22 +94,28 @@ impl<'ctx> CompiledModule<'ctx> {
         )
     }
 
-    pub fn resolve_function(
-        &self,
-        name: &types::Identifier,
-        struct_: Option<types::Identifier>,
-    ) -> Result<FunctionHandle, CompileError> {
-        if let Some(struct_) = struct_ {
-            let struct_handle = self.scope.get_value(&struct_).unwrap().as_struct().unwrap();
-            let function_value = struct_handle.read_static_field(name).unwrap();
-
-            return match function_value {
-                Value::Function(function_handle) => Ok(function_handle),
-                _ => todo!(),
-            };
+    // TODO make this return an Option and remove unwraps
+    pub fn resolve_function(&self, kind: &types::CallableKind) -> FunctionHandle {
+        match kind {
+            // TODO name here is a FQDN, we should be consulting the global scope here, not local
+            // and ignoring the module!
+            types::CallableKind::Free { name } => self
+                .scope
+                .get_value(&name.item)
+                .unwrap()
+                .as_function()
+                .unwrap(),
+            types::CallableKind::Associated { self_type: _, name } => self
+                .scope
+                .get_value(&name.struct_.item)
+                .unwrap()
+                .as_struct()
+                .unwrap()
+                .read_static_field(name)
+                .unwrap()
+                .as_function()
+                .unwrap(),
         }
-
-        Ok(self.scope.get_value(name).unwrap().as_function().unwrap())
     }
 
     pub fn set_variable(&self, name: types::Identifier, value: Value<'ctx>) {
@@ -118,10 +130,9 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         function: &types::Function,
         context: &CompilerContext<'ctx>,
-        struct_: Option<types::Identifier>,
-    ) -> Result<super::CompiledFunction<'ctx>, CompileError> {
+    ) -> super::CompiledFunction<'ctx> {
         let mut rcs = vec![];
-        let handle = self.resolve_function(&function.name, struct_)?;
+        let handle = self.resolve_function(&function.kind);
         let scope = self.scope.child();
 
         let llvm_function = handle.get_or_create_in_module(self, context);
@@ -132,7 +143,12 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::Object(identifier) => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        scope.get_value(identifier).unwrap().as_struct().unwrap(),
+                        // TODO don't ignore identifier's module!
+                        scope
+                            .get_value(&identifier.item)
+                            .unwrap()
+                            .as_struct()
+                            .unwrap(),
                     );
                     rcs.push(rc.clone());
 
@@ -144,7 +160,12 @@ impl<'ctx> CompiledModule<'ctx> {
                     types::Type::Void => todo!(),
                     types::Type::Object(identifier) => Value::Reference(RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        scope.get_value(identifier).unwrap().as_struct().unwrap(),
+                        // TODO don't ignore identifier's module!
+                        scope
+                            .get_value(&identifier.item)
+                            .unwrap()
+                            .as_struct()
+                            .unwrap(),
                     )),
                     types::Type::Array(_) => todo!(),
                     types::Type::StructDescriptor(_, _) => todo!(),
@@ -182,14 +203,14 @@ impl<'ctx> CompiledModule<'ctx> {
 
         rc_builder::build_prologue(&rcs, context);
 
-        Ok(CompiledFunction {
+        CompiledFunction {
             handle,
             scope,
             entry: entry_block,
             end: end_block,
             rcs,
             return_value: None,
-        })
+        }
     }
 
     pub(crate) fn finalize(self) -> Module<'ctx> {
@@ -206,5 +227,13 @@ impl<'ctx> CompiledModule<'ctx> {
     // probably?
     pub(crate) fn get_llvm_function(&self, name: &str) -> Option<FunctionValue<'ctx>> {
         self.llvm_module.get_function(name)
+    }
+
+    pub(crate) fn debug_print(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        nesting_level: usize,
+    ) -> std::fmt::Result {
+        self.scope.debug_print(f, nesting_level)
     }
 }

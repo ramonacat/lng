@@ -1,19 +1,20 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use inkwell::{
     types::StructType,
     values::{BasicValue as _, BasicValueEnum, FunctionValue, PointerValue},
 };
+use itertools::Itertools;
 
 use crate::{
     ast::SourceRange,
     name_mangler::MangledIdentifier,
-    types::{self, Identifier, Visibility},
+    types::{self, FieldPath, Identifier, Visibility},
 };
 
 use super::{context::CompilerContext, module::CompiledModule, rc_builder::RcValue};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FunctionHandle {
     pub name: MangledIdentifier,
     pub position: SourceRange,
@@ -21,6 +22,18 @@ pub struct FunctionHandle {
     pub return_type: types::Type,
     // TODO this should be handled in Scope
     pub visibility: Visibility,
+}
+
+impl Debug for FunctionHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let arguments = self
+            .arguments
+            .iter()
+            .map(|a| format!("{}:{}", a.name, a.type_))
+            .join(", ");
+
+        write!(f, "Fn<{}({})>", self.name.as_str(), arguments)
+    }
 }
 
 impl<'ctx> FunctionHandle {
@@ -43,12 +56,25 @@ impl<'ctx> FunctionHandle {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StructHandle<'ctx> {
     description: types::Struct,
     // TODO rename to static_values?
     // TODO ensure that this object can only be created when all values are set
-    static_fields: HashMap<types::Identifier, Value<'ctx>>,
+    static_fields: HashMap<types::FieldPath, Value<'ctx>>,
+}
+
+impl Debug for StructHandle<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let fields = self
+            .description
+            .fields
+            .iter()
+            .map(|f| format!("{}:{}", f.name, f.type_.debug_name()))
+            .join(", ");
+
+        write!(f, "Struct<{}({})>", self.description.name, fields)
+    }
 }
 
 impl<'ctx> StructHandle<'ctx> {
@@ -67,8 +93,8 @@ impl<'ctx> StructHandle<'ctx> {
             .unwrap();
 
         for field in self.description.fields.iter().filter(|x| !x.static_) {
-            let field_value = field_values.remove(&field.name).unwrap();
-            let (_, field_pointer) = self.field_pointer(&field.name, instance, context);
+            let field_value = field_values.remove(&field.name.field).unwrap();
+            let (_, field_pointer) = self.field_pointer(&field.name.field, instance, context);
 
             context
                 .builder
@@ -117,7 +143,7 @@ impl<'ctx> StructHandle<'ctx> {
             .fields
             .iter()
             .enumerate()
-            .find(|x| &x.1.name == name)
+            .find(|x| &x.1.name.field == name)
             .unwrap();
 
         // TODO why does const_gep not work here?
@@ -155,17 +181,20 @@ impl<'ctx> StructHandle<'ctx> {
             };
         }
 
-        importing_module.set_variable(self.description.name.clone(), Value::Struct(self.clone()));
+        importing_module.set_variable(
+            self.description.name.item.clone(),
+            Value::Struct(self.clone()),
+        );
     }
 
-    pub fn read_static_field(&self, name: &types::Identifier) -> Option<Value<'ctx>> {
+    pub fn read_static_field(&self, name: &types::FieldPath) -> Option<Value<'ctx>> {
         self.static_fields.get(name).cloned()
     }
 
     pub fn read_field_value(
         &self,
         _instance: Value<'ctx>,
-        name: &types::Identifier,
+        name: &types::FieldPath,
     ) -> Option<Value<'ctx>> {
         let field = self.description.fields.iter().find(|f| &f.name == name)?;
 
@@ -182,7 +211,7 @@ impl<'ctx> StructHandle<'ctx> {
 
     pub(crate) const fn new_with_statics(
         description: types::Struct,
-        static_fields: HashMap<Identifier, Value<'ctx>>,
+        static_fields: HashMap<FieldPath, Value<'ctx>>,
     ) -> Self {
         Self {
             description,
@@ -203,12 +232,27 @@ impl<'ctx> StructHandle<'ctx> {
 
 // TODO The *Handle structs should be lightweight handles, and not copied with the vecs and all
 // that
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Value<'ctx> {
     Primitive(StructHandle<'ctx>, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     Function(FunctionHandle),
     Struct(StructHandle<'ctx>),
+}
+
+impl Debug for Value<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Primitive(struct_handle, basic_value_enum) => {
+                write!(f, "{struct_handle:?}({basic_value_enum})")
+            }
+            Value::Reference(rc_value) => {
+                write!(f, "Rc<{:?}>({})", rc_value.type_(), rc_value.as_ptr())
+            }
+            Value::Function(function_handle) => write!(f, "{function_handle:?}"),
+            Value::Struct(struct_handle) => write!(f, "{struct_handle:?}"),
+        }
+    }
 }
 
 impl<'ctx> Value<'ctx> {
@@ -221,10 +265,10 @@ impl<'ctx> Value<'ctx> {
         }
     }
 
-    pub fn read_field_value(&self, field_name: &Identifier) -> Option<Self> {
+    pub fn read_field_value(&self, field_path: &FieldPath) -> Option<Self> {
         match self {
-            Value::Primitive(handle, _) => handle.read_field_value(self.clone(), field_name),
-            Value::Reference(ref_) => ref_.type_().read_field_value(self.clone(), field_name),
+            Value::Primitive(handle, _) => handle.read_field_value(self.clone(), field_path),
+            Value::Reference(ref_) => ref_.type_().read_field_value(self.clone(), field_path),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
         }

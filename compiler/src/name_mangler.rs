@@ -2,6 +2,7 @@ use itertools::Itertools;
 
 use crate::types::{Identifier, ModulePath};
 
+// TODO MangledIdentifier should keep the original name, for debugging, etc.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MangledIdentifier(String);
 impl MangledIdentifier {

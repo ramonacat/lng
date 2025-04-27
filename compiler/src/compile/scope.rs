@@ -1,6 +1,6 @@
-use std::{collections::HashMap, rc::Rc, sync::RwLock};
+use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::RwLock};
 
-use crate::types;
+use crate::types::{self, ItemPath};
 
 use super::{Value, context::CompilerContext, module::CompiledModule};
 
@@ -9,7 +9,38 @@ pub struct Scope<'ctx> {
     parent: Option<Rc<Scope<'ctx>>>,
 }
 
+impl Debug for Scope<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.debug_print(f, 0)
+    }
+}
+
 impl<'ctx> Scope<'ctx> {
+    pub(crate) fn debug_print(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        nesting_level: usize,
+    ) -> std::fmt::Result {
+        let indentation = "  ".repeat(nesting_level);
+        write!(f, "{indentation}")?;
+        writeln!(f, "{{")?;
+
+        for local in self.locals.read().unwrap().iter() {
+            write!(f, "{indentation}{indentation}")?;
+            writeln!(f, "{}: {:?}", local.0, local.1)?;
+        }
+
+        if let Some(parent) = &self.parent {
+            write!(f, "{indentation}{indentation}")?;
+            writeln!(f, "=== PARENT ===")?;
+            parent.debug_print(f, nesting_level + 1)?;
+        }
+
+        write!(f, "{indentation}")?;
+        writeln!(f, "}}")?;
+
+        Ok(())
+    }
     pub fn root() -> Rc<Self> {
         Rc::new(Self {
             locals: RwLock::new(HashMap::new()),
@@ -47,6 +78,25 @@ pub struct GlobalScope<'ctx> {
     scope: Rc<Scope<'ctx>>,
 }
 
+impl Debug for GlobalScope<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{{")?;
+
+        for module in &self.modules {
+            writeln!(f, "  {}: ", module.0)?;
+            module.1.debug_print(f, 1)?;
+        }
+
+        writeln!(f, "===SCOPE===")?;
+
+        self.scope.debug_print(f, 1)?;
+
+        writeln!(f, "}}")?;
+
+        Ok(())
+    }
+}
+
 impl Default for GlobalScope<'_> {
     fn default() -> Self {
         Self::new()
@@ -75,12 +125,10 @@ impl<'ctx> GlobalScope<'ctx> {
         self.modules.get(path)
     }
 
-    pub fn get_value(
-        &self,
-        module: &types::ModulePath,
-        name: &types::Identifier,
-    ) -> Option<Value<'ctx>> {
-        self.modules.get(module).and_then(|x| x.get_variable(name))
+    pub fn get_value(&self, item_path: &ItemPath) -> Option<Value<'ctx>> {
+        self.modules
+            .get(&item_path.module)
+            .and_then(|x| x.get_variable(&item_path.item))
     }
 
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
