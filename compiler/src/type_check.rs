@@ -182,14 +182,18 @@ struct DeclaredImport {
 }
 
 #[derive(Debug, Clone)]
+struct DeclaredStruct {
+    // TODO add a higher-level type that is a pair of name & module or triple of name, struct name
+    // and module to hold all the IDs everywhere
+    name: Identifier,
+    module: ModulePath,
+    fields: HashMap<Identifier, DeclaredStructField>,
+}
+
+#[derive(Debug, Clone)]
 enum DeclaredItemKind {
     Function(DeclaredFunction),
-    // TODO create DeclaredStruct so all the variants look the same
-    Struct {
-        name: Identifier,
-        module: ModulePath,
-        fields: HashMap<Identifier, DeclaredStructField>,
-    },
+    Struct(DeclaredStruct),
     Import(DeclaredImport),
     Checked(types::Item),
 }
@@ -216,18 +220,18 @@ impl DeclaredItem {
                     .collect(),
                 return_type: Box::new(declared_function.return_type.clone()),
             },
-            DeclaredItemKind::Struct {
-                name: struct_name,
-                module,
-                fields,
-                ..
-            } => types::Type::StructDescriptor(
-                struct_name.clone(),
-                fields
+            DeclaredItemKind::Struct(declared_struct) => types::Type::StructDescriptor(
+                declared_struct.name.clone(),
+                declared_struct
+                    .fields
                     .iter()
                     .map(|(field_name, declaration)| types::StructField {
                         name: field_name.clone(),
-                        mangled_name: mangle_field(module, struct_name, field_name),
+                        mangled_name: mangle_field(
+                            &declared_struct.module,
+                            &declared_struct.name,
+                            field_name,
+                        ),
                         type_: declaration.type_.clone(),
                         static_: declaration.static_,
                     })
@@ -373,11 +377,11 @@ pub fn type_check(
                     items.insert(
                         name.clone(),
                         DeclaredItem {
-                            kind: DeclaredItemKind::Struct {
+                            kind: DeclaredItemKind::Struct(DeclaredStruct {
                                 name,
                                 module: module_path.clone(),
                                 fields,
-                            },
+                            }),
                             // TODO structs should have configurable visibilty
                             visibility: Visibility::Export,
                         },
@@ -426,9 +430,9 @@ pub fn type_check(
 
                     let DeclaredItem {
                         kind:
-                            DeclaredItemKind::Struct {
+                            DeclaredItemKind::Struct(DeclaredStruct {
                                 mut fields, name, ..
-                            },
+                            }),
                         ..
                     } = struct_
                     else {
@@ -568,7 +572,7 @@ pub fn type_check(
 
                     // TODO DeclaredItem should have a is_struct method for this!
                     let DeclaredItem {
-                        kind: DeclaredItemKind::Struct { fields, .. },
+                        kind: DeclaredItemKind::Struct(DeclaredStruct { fields, .. }),
                         ..
                     } = struct_
                     else {
@@ -616,11 +620,11 @@ pub fn type_check(
                         },
                     );
                 }
-                DeclaredItemKind::Struct {
+                DeclaredItemKind::Struct(DeclaredStruct {
                     name: struct_name,
                     fields,
                     module,
-                } => {
+                }) => {
                     current_module_items.insert(
                         struct_name.clone(),
                         types::Item {
@@ -652,9 +656,9 @@ pub fn type_check(
                 }) => {
                     let imported_item = declared_modules.find_struct(from, item).unwrap();
                     match &imported_item.kind {
-                        DeclaredItemKind::Struct {
+                        DeclaredItemKind::Struct(DeclaredStruct {
                             name: item_name, ..
-                        }
+                        })
                         | DeclaredItemKind::Function(DeclaredFunction {
                             name: item_name, ..
                         })

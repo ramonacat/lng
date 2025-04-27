@@ -408,7 +408,6 @@ impl<'ctx> Compiler<'ctx> {
                     types::ItemKind::Import(_) => {}
                     types::ItemKind::Struct(struct_) => {
                         for impl_ in struct_.impls.values() {
-                            // TODO definitely mangle the name
                             self.compile_function(
                                 module_path,
                                 module,
@@ -428,6 +427,7 @@ impl<'ctx> Compiler<'ctx> {
     #[allow(clippy::too_many_lines)]
     fn compile_function(
         &self,
+        // TODO remove this argument, get this from module when needed
         module_path: &ModulePath,
         module: &module::CompiledModule<'ctx>,
         function: &types::Function,
