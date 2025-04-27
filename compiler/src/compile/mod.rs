@@ -25,7 +25,7 @@ use crate::{
     name_mangler::mangle_item,
     runtime::register_mappings,
     std::compile_std,
-    types::{self, Identifier, ModulePath, Visibility},
+    types::{self, FieldPath, Identifier, ItemPath, ModulePath, Visibility},
 };
 
 // TODO instead of executing the code, this should return some object that exposes the
@@ -92,9 +92,11 @@ pub(crate) struct Compiler<'ctx> {
     global_scope: GlobalScope<'ctx>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ErrorLocation {
     Position(ModulePath, SourceRange),
+    Item(ItemPath, SourceRange),
+    Field(FieldPath, SourceRange),
     Module(ModulePath),
     Indeterminate,
 }
@@ -107,6 +109,12 @@ impl Display for ErrorLocation {
             }
             Self::Module(name) => write!(f, "module {name}"),
             Self::Indeterminate => write!(f, "indeterminate"),
+            Self::Item(item_path, source_range) => {
+                write!(f, "{source_range} in {item_path}")
+            }
+            Self::Field(field_path, source_range) => {
+                write!(f, "{source_range} in {field_path}")
+            }
         }
     }
 }
@@ -114,7 +122,7 @@ impl Display for ErrorLocation {
 #[derive(Debug)]
 pub struct CompileError {
     description: CompileErrorDescription,
-    position: ErrorLocation,
+    position: Box<ErrorLocation>,
 }
 
 #[derive(Debug)]
@@ -134,24 +142,24 @@ pub enum CompileErrorDescription {
 impl CompileErrorDescription {
     // TODO clean up all the unwraps so that this actually will be used :)
     #[allow(unused)]
-    const fn at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
+    fn at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
         CompileError {
             description: self,
-            position: ErrorLocation::Position(module_path, position),
+            position: Box::new(ErrorLocation::Position(module_path, position)),
         }
     }
 
-    const fn in_module(self, name: ModulePath) -> CompileError {
+    fn in_module(self, name: ModulePath) -> CompileError {
         CompileError {
             description: self,
-            position: ErrorLocation::Module(name),
+            position: Box::new(ErrorLocation::Module(name)),
         }
     }
 
-    const fn at_indeterminate(self) -> CompileError {
+    fn at_indeterminate(self) -> CompileError {
         CompileError {
             description: self,
-            position: ErrorLocation::Indeterminate,
+            position: Box::new(ErrorLocation::Indeterminate),
         }
     }
 }
@@ -203,7 +211,7 @@ impl IntoCompileError for BuilderError {
     fn into_compile_error_at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
         CompileError {
             description: self.into(),
-            position: ErrorLocation::Position(module_path, position),
+            position: Box::new(ErrorLocation::Position(module_path, position)),
         }
     }
 }
@@ -306,16 +314,15 @@ impl<'ctx> Compiler<'ctx> {
                                 declaration.visibility
                             },
                             name: function.mangled_name(),
-                            return_type: function.return_type.clone(),
-                            arguments: function.arguments.clone(),
-                            position: function.position,
+                            return_type: function.definition.return_type.clone(),
+                            arguments: function.definition.arguments.clone(),
+                            position: function.definition.position,
                         };
 
-                        match &function.kind {
-                            types::CallableKind::Free { name } => created_module
-                                .set_variable(name.item.clone(), Value::Function(function_handle)),
-                            types::CallableKind::Associated { .. } => todo!(),
-                        }
+                        created_module.set_variable(
+                            function.name.item.clone(),
+                            Value::Function(function_handle),
+                        );
                     }
                     types::ItemKind::Struct(struct_) => {
                         let static_fields = struct_
@@ -325,9 +332,9 @@ impl<'ctx> Compiler<'ctx> {
                                 let handle = FunctionHandle {
                                     visibility: declaration.visibility,
                                     name: impl_.mangled_name(),
-                                    return_type: impl_.return_type.clone(),
-                                    arguments: impl_.arguments.clone(),
-                                    position: impl_.position,
+                                    return_type: impl_.definition.return_type.clone(),
+                                    arguments: impl_.definition.arguments.clone(),
+                                    position: impl_.definition.position,
                                 };
                                 (name.clone(), Value::Function(handle))
                             })
@@ -372,8 +379,8 @@ impl<'ctx> Compiler<'ctx> {
                             position: import.position,
                             arguments: function.arguments.clone(),
                         });
-                        module
-                            .set_variable(dbg!(import.imported_item.item.clone()), function_value);
+
+                        module.set_variable(import.imported_item.item.clone(), function_value);
                     }
                     Value::Struct(ref struct_) => {
                         struct_.import(module, &self.context);
@@ -381,15 +388,37 @@ impl<'ctx> Compiler<'ctx> {
                 }
             }
 
-            for item in file.items.values() {
+            for (item_name, item) in &file.items {
                 match &item.kind {
                     types::ItemKind::Function(function) => {
-                        self.compile_function(module_path, module, function)?;
+                        self.compile_function(
+                            module
+                                .get_variable(&item_name.item)
+                                .unwrap()
+                                .as_function()
+                                .unwrap(),
+                            module_path,
+                            module,
+                            &function.definition,
+                        )?;
                     }
                     types::ItemKind::Import(_) => {}
                     types::ItemKind::Struct(struct_) => {
-                        for impl_ in struct_.impls.values() {
-                            self.compile_function(module_path, module, impl_)?;
+                        for (impl_name, impl_) in &struct_.impls {
+                            self.compile_function(
+                                module
+                                    .get_variable(&item_name.item)
+                                    .unwrap()
+                                    .as_struct()
+                                    .unwrap()
+                                    .read_static_field(impl_name)
+                                    .unwrap()
+                                    .as_function()
+                                    .unwrap(),
+                                module_path,
+                                module,
+                                &impl_.definition,
+                            )?;
                         }
                     }
                 }
@@ -403,22 +432,21 @@ impl<'ctx> Compiler<'ctx> {
     #[allow(clippy::too_many_lines)]
     fn compile_function(
         &self,
+        handle: FunctionHandle,
         // TODO remove this argument, get this from module when needed
         module_path: &ModulePath,
         module: &module::CompiledModule<'ctx>,
-        function: &types::Function,
+        function: &types::FunctionDefinition,
     ) -> Result<(), CompileError> {
         let types::FunctionBody::Statements(statements) = &function.body else {
             return Ok(());
         };
-        let mut compiled_function = module.begin_compile_function(function, &self.context);
+        let mut compiled_function = module.begin_compile_function(handle, function, &self.context);
+
         for statement in statements {
-            let self_value = function.has_self().then(|| {
-                compiled_function
-                    .scope
-                    .get_value(&Identifier::parse("self"))
-                    .unwrap()
-            });
+            let self_value = compiled_function
+                .scope
+                .get_value(&Identifier::parse("self"));
 
             match statement {
                 types::Statement::Expression(expression) => {

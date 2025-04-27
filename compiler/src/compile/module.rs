@@ -94,30 +94,6 @@ impl<'ctx> CompiledModule<'ctx> {
         )
     }
 
-    // TODO make this return an Option and remove unwraps
-    pub fn resolve_function(&self, kind: &types::CallableKind) -> FunctionHandle {
-        match kind {
-            // TODO name here is a FQDN, we should be consulting the global scope here, not local
-            // and ignoring the module!
-            types::CallableKind::Free { name } => self
-                .scope
-                .get_value(&name.item)
-                .unwrap()
-                .as_function()
-                .unwrap(),
-            types::CallableKind::Associated { self_type: _, name } => self
-                .scope
-                .get_value(&name.struct_.item)
-                .unwrap()
-                .as_struct()
-                .unwrap()
-                .read_static_field(name)
-                .unwrap()
-                .as_function()
-                .unwrap(),
-        }
-    }
-
     pub fn set_variable(&self, name: types::Identifier, value: Value<'ctx>) {
         self.scope.set_value(name, value);
     }
@@ -128,11 +104,11 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn begin_compile_function(
         &self,
-        function: &types::Function,
+        handle: FunctionHandle,
+        function: &types::FunctionDefinition,
         context: &CompilerContext<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
         let mut rcs = vec![];
-        let handle = self.resolve_function(&function.kind);
         let scope = self.scope.child();
 
         let llvm_function = handle.get_or_create_in_module(self, context);

@@ -8,7 +8,7 @@ use itertools::Itertools as _;
 
 use crate::{
     ast::{self, SourceRange},
-    name_mangler::{self, MangledIdentifier, mangle_field, mangle_item},
+    name_mangler::{MangledIdentifier, mangle_field, mangle_item, nomangle_item},
 };
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -111,7 +111,6 @@ pub enum Type {
     StructDescriptor(ItemPath, Vec<StructField>),
     // TODO this should be an object with special properties
     Callable {
-        kind: CallableKind,
         arguments: Vec<Argument>,
         return_type: Box<Type>,
     },
@@ -130,10 +129,17 @@ impl Type {
             Self::Object(item_path) => format!("{item_path}"),
             Self::StructDescriptor(item_path, _) => format!("Struct<{item_path}>"),
             Self::Array(inner) => format!("{}[]", inner.debug_name()),
-            Self::Callable { kind, .. } => match &kind {
-                CallableKind::Free { name } => format!("{name}"),
-                CallableKind::Associated { name, .. } => format!("{name}"),
-            },
+            Self::Callable {
+                arguments,
+                return_type,
+            } => format!(
+                "Callable<({}):{}>",
+                arguments
+                    .iter()
+                    .map(|x| format!("{}:{}", x.name, x.type_))
+                    .join(", "),
+                return_type
+            ),
             Self::U64 => "u64".to_string(),
             Self::U8 => "u8".to_string(),
             Self::Pointer(inner) => format!("*{}", inner.debug_name()),
@@ -162,17 +168,11 @@ impl Display for Type {
             Self::Array(inner) => write!(f, "{inner}[]"),
             Self::StructDescriptor(name, _) => write!(f, "StructDescriptor<{name}>"),
             Self::Callable {
-                kind,
                 arguments,
                 return_type,
             } => write!(
                 f,
-                "{}{}): {return_type}",
-                match kind {
-                    CallableKind::Free { name } => format!("{name}("),
-                    CallableKind::Associated { self_type, name } =>
-                        format!("{name}(self: {self_type}"),
-                },
+                "Callable({}): {return_type}",
                 arguments
                     .iter()
                     .map(|a| format!("{a}"))
@@ -206,62 +206,65 @@ impl Display for Argument {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-// TODO the kinds should perhaps just be different structures? in many places only one of the kinds
-// really makes sense
-pub enum CallableKind {
-    Free {
-        name: ItemPath,
-    },
-    Associated {
-        // TODO the self_type here can be removed, as it's a part of FieldPath anyway
-        self_type: ItemPath,
-        name: FieldPath,
-    },
-}
-
 #[derive(Debug, Clone)]
-pub struct Function {
-    pub kind: CallableKind,
+pub struct FunctionDefinition {
     pub arguments: Vec<Argument>,
     pub return_type: Type,
     pub body: FunctionBody,
     pub position: ast::SourceRange,
 }
-impl Function {
-    // TODO remove this function, whoever needs this should do their own match
-    pub(crate) const fn has_self(&self) -> bool {
-        matches!(self.kind, CallableKind::Associated { .. })
-    }
 
-    // TODO remove this function, it should be decided in module
-    pub(crate) fn is_exported(&self) -> bool {
-        if let CallableKind::Free { name } = &self.kind {
-            if name.item.0 == "main" {
-                return true;
-            }
-        }
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub name: ItemPath,
+    pub definition: FunctionDefinition,
+}
 
-        matches!(self.body, FunctionBody::Extern)
-    }
-
+#[derive(Debug, Clone)]
+pub struct AssociatedFunction {
+    pub name: FieldPath,
+    pub definition: FunctionDefinition,
+}
+impl AssociatedFunction {
     pub(crate) fn type_(&self) -> Type {
         Type::Callable {
-            kind: self.kind.clone(),
-            arguments: self.arguments.clone(),
-            return_type: Box::new(self.return_type.clone()),
+            arguments: self.definition.arguments.clone(),
+            return_type: Box::new(self.definition.return_type.clone()),
         }
     }
 
     pub(crate) fn mangled_name(&self) -> MangledIdentifier {
-        match &self.kind {
-            CallableKind::Free { name } => match &self.body {
-                FunctionBody::Extern => name_mangler::nomangle_item(&name.item),
-                FunctionBody::Statements(_) => name_mangler::mangle_item(&name.module, &name.item),
-            },
-            CallableKind::Associated { self_type: _, name } => {
-                name_mangler::mangle_field(&name.struct_.module, &name.struct_.item, &name.field)
-            }
+        mangle_field(
+            &self.name.struct_.module,
+            &self.name.struct_.item,
+            &self.name.field,
+        )
+    }
+}
+
+impl Function {
+    // TODO remove this function, it should be decided in module
+    pub(crate) fn is_exported(&self) -> bool {
+        if self.name.item.0 == "main" {
+            return true;
+        }
+
+        matches!(self.definition.body, FunctionBody::Extern)
+    }
+
+    pub(crate) fn type_(&self) -> Type {
+        Type::Callable {
+            arguments: self.definition.arguments.clone(),
+            return_type: Box::new(self.definition.return_type.clone()),
+        }
+    }
+
+    pub(crate) fn mangled_name(&self) -> MangledIdentifier {
+        match &self.definition.body {
+            // TODO Extern should have the foreign function's name inside of it, so the declared
+            // name does not have to match
+            FunctionBody::Extern => nomangle_item(&self.name.item),
+            FunctionBody::Statements(_) => mangle_item(&self.name.module, &self.name.item),
         }
     }
 }
@@ -332,7 +335,7 @@ pub struct StructField {
 pub struct Struct {
     pub name: ItemPath,
     pub fields: Vec<StructField>,
-    pub impls: HashMap<FieldPath, Function>,
+    pub impls: HashMap<FieldPath, AssociatedFunction>,
 }
 
 #[derive(Debug, Clone)]
