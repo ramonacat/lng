@@ -530,13 +530,7 @@ impl<'ctx> Compiler<'ctx> {
                 }
             }
         } else {
-            // TODO we should really just return void here, but type_to_llvm can't declare void
-            // correctly (yet)
-            compiled_function.build_return(
-                Some(&self.context.llvm_context.i8_type().const_zero()),
-                &self.context,
-                module_path,
-            )?;
+            compiled_function.build_return(None, &self.context, module_path)?;
         }
         Ok(())
     }

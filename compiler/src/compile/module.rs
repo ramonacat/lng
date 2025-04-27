@@ -51,14 +51,7 @@ impl<'ctx> CompiledModule<'ctx> {
         linkage: Linkage,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let arguments = arguments
-            .iter()
-            .map(|arg| context.type_to_llvm(&arg.type_).as_basic_type_enum().into())
-            .collect::<Vec<_>>();
-
-        let function_type = context
-            .type_to_llvm(return_type)
-            .fn_type(&arguments[..], false);
+        let function_type = context.make_function_type(arguments, return_type);
 
         self.llvm_module
             .add_function(name.as_str(), function_type, Some(linkage))
