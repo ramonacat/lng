@@ -25,7 +25,7 @@ use crate::{
     name_mangler::{mangle_field, mangle_item},
     runtime::register_mappings,
     std::compile_std,
-    types::{self, Identifier, ModulePath},
+    types::{self, Identifier, ModulePath, Visibility},
 };
 
 // TODO instead of executing the code, this should return some object that exposes the
@@ -241,7 +241,6 @@ impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
         let builtins = Builtins {
             string_handle: StructHandle::new(types::Struct {
-                export: true,
                 name: types::Identifier::parse("string"),
                 mangled_name: mangle_item(&ModulePath::parse("std"), &Identifier::parse("string")),
                 fields: vec![types::StructField {
@@ -256,7 +255,6 @@ impl<'ctx> Compiler<'ctx> {
                 impls: HashMap::new(),
             }),
             rc_handle: StructHandle::new(types::Struct {
-                export: true,
                 name: types::Identifier::parse("rc"),
                 mangled_name: mangle_item(&ModulePath::parse("std"), &Identifier::parse("rc")),
                 fields: vec![
@@ -309,10 +307,14 @@ impl<'ctx> Compiler<'ctx> {
             let created_module = self.global_scope.create_module(path.clone(), &self.context);
 
             for declaration in program_module.items.values() {
-                match declaration {
-                    types::Item::Function(function) => {
+                match &declaration.kind {
+                    types::ItemKind::Function(function) => {
                         let function_handle = FunctionHandle {
-                            export: function.is_exported(),
+                            visibility: if function.is_exported() {
+                                Visibility::Export
+                            } else {
+                                declaration.visibility
+                            },
                             name: function.mangled_name.clone(),
                             return_type: function.return_type.clone(),
                             arguments: function.arguments.clone(),
@@ -322,13 +324,13 @@ impl<'ctx> Compiler<'ctx> {
                         created_module
                             .set_variable(function.name.clone(), Value::Function(function_handle));
                     }
-                    types::Item::Struct(struct_) => {
+                    types::ItemKind::Struct(struct_) => {
                         let static_fields = struct_
                             .impls
                             .iter()
                             .map(|(name, impl_)| {
                                 let handle = FunctionHandle {
-                                    export: impl_.export,
+                                    visibility: declaration.visibility,
                                     name: impl_.mangled_name.clone(),
                                     return_type: impl_.return_type.clone(),
                                     arguments: impl_.arguments.clone(),
@@ -346,7 +348,7 @@ impl<'ctx> Compiler<'ctx> {
                             )),
                         );
                     }
-                    types::Item::Import(_) => {}
+                    types::ItemKind::Import(_) => {}
                 }
             }
         }
@@ -359,7 +361,7 @@ impl<'ctx> Compiler<'ctx> {
             };
 
             for item in file.items.values() {
-                let types::Item::Import(import) = item else {
+                let types::ItemKind::Import(import) = &item.kind else {
                     continue;
                 };
 
@@ -384,7 +386,7 @@ impl<'ctx> Compiler<'ctx> {
                         module.set_variable(
                             import.item.clone(),
                             Value::Function(FunctionHandle {
-                                export: function.export,
+                                visibility: function.visibility,
                                 name: function.name.clone(),
                                 return_type: f.return_type,
                                 position: import.position,
@@ -399,12 +401,12 @@ impl<'ctx> Compiler<'ctx> {
             }
 
             for item in file.items.values() {
-                match item {
-                    types::Item::Function(function) => {
+                match &item.kind {
+                    types::ItemKind::Function(function) => {
                         self.compile_function(module_path, module, function, None)?;
                     }
-                    types::Item::Import(_) => {}
-                    types::Item::Struct(struct_) => {
+                    types::ItemKind::Import(_) => {}
+                    types::ItemKind::Struct(struct_) => {
                         for impl_ in struct_.impls.values() {
                             // TODO definitely mangle the name
                             self.compile_function(

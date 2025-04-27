@@ -57,6 +57,7 @@ impl Display for ModulePath {
     }
 }
 
+// TODO support generics
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Void,
@@ -76,7 +77,6 @@ pub enum Type {
     U64,
     U8,
     // TODO do we want this exposed to userland in an unsafe mode?
-    // TODO this should have the target type as its value
     Pointer(Box<Type>),
 }
 
@@ -138,7 +138,6 @@ pub struct Function {
     pub self_type: Option<Identifier>,
     pub return_type: Type,
     pub body: FunctionBody,
-    pub export: bool,
     pub position: ast::SourceRange,
 }
 impl Function {
@@ -146,8 +145,9 @@ impl Function {
         self.self_type.is_some()
     }
 
+    // TODO remove this function, it should be decided in module
     pub(crate) fn is_exported(&self) -> bool {
-        self.name.0 == "main" || matches!(self.body, FunctionBody::Extern) || self.export
+        self.name.0 == "main" || matches!(self.body, FunctionBody::Extern)
     }
 
     pub(crate) fn type_(&self) -> Type {
@@ -224,8 +224,6 @@ pub struct StructField {
 
 #[derive(Debug, Clone)]
 pub struct Struct {
-    // TODO the exports should really be handled at module level
-    pub export: bool,
     pub name: Identifier,
     #[allow(unused)]
     pub mangled_name: MangledIdentifier,
@@ -234,10 +232,22 @@ pub struct Struct {
 }
 
 #[derive(Debug, Clone)]
-pub enum Item {
+pub enum ItemKind {
     Function(Function),
     Struct(Struct),
     Import(Import),
+}
+
+#[derive(Debug, Clone)]
+pub struct Item {
+    pub kind: ItemKind,
+    pub visibility: Visibility,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Visibility {
+    Export,
+    Internal,
 }
 
 #[derive(Debug)]

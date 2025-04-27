@@ -8,7 +8,7 @@ use inkwell::{
 use crate::{
     ast::SourceRange,
     name_mangler::MangledIdentifier,
-    types::{self, Identifier},
+    types::{self, Identifier, Visibility},
 };
 
 use super::{context::CompilerContext, module::CompiledModule, rc_builder::RcValue};
@@ -19,7 +19,8 @@ pub struct FunctionHandle {
     pub position: SourceRange,
     pub arguments: Vec<types::Argument>,
     pub return_type: types::Type,
-    pub export: bool,
+    // TODO this should be handled in Scope
+    pub visibility: Visibility,
 }
 
 impl<'ctx> FunctionHandle {
@@ -32,7 +33,7 @@ impl<'ctx> FunctionHandle {
             .get_llvm_function(self.name.as_str())
             .unwrap_or_else(|| {
                 module.declare_function(
-                    self.export,
+                    self.visibility == Visibility::Export,
                     &self.name,
                     &self.arguments,
                     &self.return_type,

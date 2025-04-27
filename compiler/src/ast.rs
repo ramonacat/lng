@@ -127,6 +127,7 @@ pub struct Function {
     #[allow(unused)]
     pub return_type: TypeDescription,
     pub body: FunctionBody,
+    // TODO move this to declaration
     pub export: bool,
     pub position: SourceRange,
 }

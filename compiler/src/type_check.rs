@@ -3,21 +3,21 @@ use std::{collections::HashMap, error::Error, fmt::Display};
 use crate::{
     ast::{self, SourceRange},
     name_mangler::{mangle_field, mangle_item, nomangle_item},
-    types::{self, Identifier, Import, ModulePath},
+    types::{self, Identifier, Import, ModulePath, Visibility},
 };
 
 impl types::Item {
     fn type_(&self, declared_modules: &DeclaredModules<'_>) -> types::Type {
-        match self {
-            Self::Function(function) => types::Type::Callable {
+        match &self.kind {
+            types::ItemKind::Function(function) => types::Type::Callable {
                 self_type: function.self_type.clone(),
                 arguments: function.arguments.clone(),
                 return_type: Box::new(function.return_type.clone()),
             },
-            Self::Struct(struct_) => {
+            types::ItemKind::Struct(struct_) => {
                 types::Type::StructDescriptor(struct_.name.clone(), struct_.fields.clone())
             }
-            Self::Import(import) => declared_modules
+            types::ItemKind::Import(import) => declared_modules
                 .find_struct(&import.path, &import.item)
                 .unwrap()
                 .type_(declared_modules),
@@ -165,8 +165,6 @@ struct DeclaredFunction {
     arguments: Vec<DeclaredArgument>,
     return_type: types::Type,
     ast: ast::Function,
-    // TODO this should be a higher level concept that applies to all items
-    export: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -184,24 +182,28 @@ struct DeclaredImport {
 }
 
 #[derive(Debug, Clone)]
-enum DeclaredItem {
+enum DeclaredItemKind {
     Function(DeclaredFunction),
     // TODO create DeclaredStruct so all the variants look the same
     Struct {
         name: Identifier,
         module: ModulePath,
         fields: HashMap<Identifier, DeclaredStructField>,
-        // TODO visibility should be handled at module level
-        export: bool,
     },
     Import(DeclaredImport),
     Checked(types::Item),
 }
 
+#[derive(Debug, Clone)]
+struct DeclaredItem {
+    kind: DeclaredItemKind,
+    visibility: types::Visibility,
+}
+
 impl DeclaredItem {
     fn type_(&self, declared_modules: &DeclaredModules) -> types::Type {
-        match self {
-            Self::Function(declared_function) => types::Type::Callable {
+        match &self.kind {
+            DeclaredItemKind::Function(declared_function) => types::Type::Callable {
                 self_type: declared_function.self_type.clone(),
                 arguments: declared_function
                     .arguments
@@ -214,7 +216,7 @@ impl DeclaredItem {
                     .collect(),
                 return_type: Box::new(declared_function.return_type.clone()),
             },
-            Self::Struct {
+            DeclaredItemKind::Struct {
                 name: struct_name,
                 module,
                 fields,
@@ -231,11 +233,11 @@ impl DeclaredItem {
                     })
                     .collect(),
             ),
-            Self::Import(DeclaredImport { from, item, .. }) => declared_modules
+            DeclaredItemKind::Import(DeclaredImport { from, item, .. }) => declared_modules
                 .find_struct(from, item)
                 .unwrap()
                 .type_(declared_modules),
-            Self::Checked(item) => item.type_(declared_modules),
+            DeclaredItemKind::Checked(item) => item.type_(declared_modules),
         }
     }
 }
@@ -268,7 +270,10 @@ impl<'src> DeclaredModules<'src> {
         if let Some(std) = self.std {
             if let Some(std_module) = std.modules.get(module_path) {
                 if let Some(std_item) = std_module.items.get(struct_name) {
-                    return Some(DeclaredItem::Checked(std_item.clone()));
+                    return Some(DeclaredItem {
+                        kind: DeclaredItemKind::Checked(std_item.clone()),
+                        visibility: std_item.visibility,
+                    });
                 }
             }
         }
@@ -342,7 +347,14 @@ pub fn type_check(
 
                     items.insert(
                         Identifier::parse(&function.name),
-                        DeclaredItem::Function(declaration.clone()),
+                        DeclaredItem {
+                            kind: DeclaredItemKind::Function(declaration.clone()),
+                            visibility: if function.export {
+                                Visibility::Export
+                            } else {
+                                Visibility::Internal
+                            },
+                        },
                     );
                 }
                 ast::Declaration::Struct(struct_) => {
@@ -360,12 +372,14 @@ pub fn type_check(
                     let name = Identifier::parse(&struct_.name);
                     items.insert(
                         name.clone(),
-                        DeclaredItem::Struct {
-                            name,
-                            module: module_path.clone(),
-                            fields,
-                            export: true, // TODO structs should also have an explicit "export"
-                                          // keyword that sets this
+                        DeclaredItem {
+                            kind: DeclaredItemKind::Struct {
+                                name,
+                                module: module_path.clone(),
+                                fields,
+                            },
+                            // TODO structs should have configurable visibilty
+                            visibility: Visibility::Export,
                         },
                     );
                 }
@@ -410,8 +424,12 @@ pub fn type_check(
                         .at(module_path, position));
                     };
 
-                    let DeclaredItem::Struct {
-                        mut fields, name, ..
+                    let DeclaredItem {
+                        kind:
+                            DeclaredItemKind::Struct {
+                                mut fields, name, ..
+                            },
+                        ..
                     } = struct_
                     else {
                         return Err(TypeCheckErrorDescription::ImplNotOnStruct(struct_name)
@@ -477,14 +495,16 @@ pub fn type_check(
                 .at(module_path, import.position));
             };
 
-            match item {
-                DeclaredItem::Function(DeclaredFunction { export, .. })
-                | DeclaredItem::Struct { export, .. }
-                | DeclaredItem::Checked(
-                    types::Item::Function(types::Function { export, .. })
-                    | types::Item::Struct(types::Struct { export, .. }),
-                ) => {
-                    if !export {
+            match &item.kind {
+                DeclaredItemKind::Function(DeclaredFunction { .. })
+                | DeclaredItemKind::Struct { .. }
+                | DeclaredItemKind::Checked(types::Item {
+                    kind:
+                        types::ItemKind::Function(types::Function { .. })
+                        | types::ItemKind::Struct(types::Struct { .. }),
+                    ..
+                }) => {
+                    if item.visibility != Visibility::Export {
                         return Err(TypeCheckErrorDescription::ItemNotExported(
                             exporting_module_name,
                             item_name,
@@ -495,14 +515,21 @@ pub fn type_check(
                     declared_modules.declare_item(
                         &importing_module_path,
                         item_name.clone(),
-                        DeclaredItem::Import(DeclaredImport {
-                            from: exporting_module_name,
-                            item: item_name,
-                            position: import.position,
-                        }),
+                        DeclaredItem {
+                            kind: DeclaredItemKind::Import(DeclaredImport {
+                                from: exporting_module_name,
+                                item: item_name,
+                                position: import.position,
+                            }),
+                            visibility: item.visibility,
+                        },
                     );
                 }
-                DeclaredItem::Import(_) | DeclaredItem::Checked(types::Item::Import(_)) => {
+                DeclaredItemKind::Import(_)
+                | DeclaredItemKind::Checked(types::Item {
+                    kind: types::ItemKind::Import(_),
+                    ..
+                }) => {
                     return Err(TypeCheckErrorDescription::ItemDoesNotExist(
                         exporting_module_name,
                         item_name,
@@ -540,7 +567,11 @@ pub fn type_check(
                     };
 
                     // TODO DeclaredItem should have a is_struct method for this!
-                    let DeclaredItem::Struct { fields, .. } = struct_ else {
+                    let DeclaredItem {
+                        kind: DeclaredItemKind::Struct { fields, .. },
+                        ..
+                    } = struct_
+                    else {
                         return Err(TypeCheckErrorDescription::ImplNotOnStruct(struct_name)
                             .at(module_path, position));
                     };
@@ -572,74 +603,89 @@ pub fn type_check(
         let globals = declared_modules.get_declared_types(module_name).unwrap();
 
         for declared_item in module.values() {
-            match declared_item {
-                DeclaredItem::Function(declared_function) => {
+            match &declared_item.kind {
+                DeclaredItemKind::Function(declared_function) => {
                     let body =
                         type_check_function(declared_function, &globals, module_name.clone())?;
 
-                    current_module_items
-                        .insert(declared_function.name.clone(), types::Item::Function(body));
+                    current_module_items.insert(
+                        declared_function.name.clone(),
+                        types::Item {
+                            kind: types::ItemKind::Function(body),
+                            visibility: declared_item.visibility,
+                        },
+                    );
                 }
-                DeclaredItem::Struct {
+                DeclaredItemKind::Struct {
                     name: struct_name,
                     fields,
                     module,
-                    export,
                 } => {
                     current_module_items.insert(
                         struct_name.clone(),
-                        types::Item::Struct(types::Struct {
-                            export: *export,
-                            name: struct_name.clone(),
-                            mangled_name: mangle_item(module, struct_name),
-                            fields: fields
-                                .iter()
-                                .map(|(field_name, declaration)| types::StructField {
-                                    name: field_name.clone(),
-                                    type_: declaration.type_.clone(),
-                                    static_: declaration.static_,
-                                    mangled_name: mangle_field(module, struct_name, field_name),
-                                })
-                                .collect(),
-                            impls: impls
-                                .get(&(module_name.clone(), struct_name.clone()))
-                                .cloned()
-                                .unwrap_or_else(HashMap::new),
-                        }),
+                        types::Item {
+                            kind: types::ItemKind::Struct(types::Struct {
+                                name: struct_name.clone(),
+                                mangled_name: mangle_item(module, struct_name),
+                                fields: fields
+                                    .iter()
+                                    .map(|(field_name, declaration)| types::StructField {
+                                        name: field_name.clone(),
+                                        type_: declaration.type_.clone(),
+                                        static_: declaration.static_,
+                                        mangled_name: mangle_field(module, struct_name, field_name),
+                                    })
+                                    .collect(),
+                                impls: impls
+                                    .get(&(module_name.clone(), struct_name.clone()))
+                                    .cloned()
+                                    .unwrap_or_else(HashMap::new),
+                            }),
+                            visibility: declared_item.visibility,
+                        },
                     );
                 }
-                DeclaredItem::Import(DeclaredImport {
+                DeclaredItemKind::Import(DeclaredImport {
                     from,
                     item,
                     position,
                 }) => {
-                    match declared_modules.find_struct(from, item).unwrap() {
-                        DeclaredItem::Struct {
+                    let imported_item = declared_modules.find_struct(from, item).unwrap();
+                    match &imported_item.kind {
+                        DeclaredItemKind::Struct {
                             name: item_name, ..
                         }
-                        | DeclaredItem::Function(DeclaredFunction {
+                        | DeclaredItemKind::Function(DeclaredFunction {
                             name: item_name, ..
                         })
-                        | DeclaredItem::Checked(
-                            types::Item::Function(types::Function {
-                                name: item_name, ..
-                            })
-                            | types::Item::Struct(types::Struct {
-                                name: item_name, ..
-                            }),
-                        ) => current_module_items.insert(
+                        | DeclaredItemKind::Checked(types::Item {
+                            kind:
+                                types::ItemKind::Function(types::Function {
+                                    name: item_name, ..
+                                })
+                                | types::ItemKind::Struct(types::Struct {
+                                    name: item_name, ..
+                                }),
+                            ..
+                        }) => current_module_items.insert(
                             item_name.clone(),
-                            types::Item::Import(Import {
-                                path: from.clone(),
-                                item: item_name.clone(),
-                                position: *position,
-                            }),
+                            types::Item {
+                                kind: types::ItemKind::Import(Import {
+                                    path: from.clone(),
+                                    item: item_name.clone(),
+                                    position: *position,
+                                }),
+                                visibility: Visibility::Internal, // TODO can imports be reexported?
+                            },
                         ),
-                        DeclaredItem::Import(_) => todo!(),
-                        DeclaredItem::Checked(types::Item::Import(_)) => todo!(),
+                        DeclaredItemKind::Import(_) => todo!(),
+                        DeclaredItemKind::Checked(types::Item {
+                            kind: types::ItemKind::Import(_),
+                            ..
+                        }) => todo!(),
                     };
                 }
-                DeclaredItem::Checked(_) => todo!(),
+                DeclaredItemKind::Checked(_) => todo!(),
             }
         }
         checked_modules.insert(
@@ -744,7 +790,6 @@ fn type_check_function(
             .collect(),
         return_type: declared_function.return_type.clone(),
         body,
-        export: declared_function.export,
         position: declared_function.ast.position,
         mangled_name,
         self_type: declared_function.self_type.clone(),
@@ -782,7 +827,6 @@ fn type_check_function_declaration(
         arguments,
         return_type: convert_type(&function.return_type),
         ast: function.clone(),
-        export: function.export,
         self_type,
     })
 }
