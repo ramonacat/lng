@@ -9,7 +9,7 @@ use inkwell::{
     values::PointerValue,
 };
 
-use crate::types::{self, FieldPath};
+use crate::types::{self, FieldPath, Identifier, ModulePath};
 
 use super::{scope::GlobalScope, value::StructHandle};
 
@@ -26,6 +26,15 @@ pub struct CompilerContext<'ctx> {
 }
 
 impl<'ctx> CompilerContext<'ctx> {
+    pub fn get_std_type(&self, name: &str) -> Option<StructHandle<'ctx>> {
+        self.global_scope
+            .get_value(&types::ItemPath::new(
+                ModulePath::parse("std"),
+                Identifier::parse(name),
+            ))
+            .map(|x| x.as_struct().unwrap())
+    }
+
     fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
         match type_ {
             types::Type::Unit | types::Type::U8 => Box::new(self.llvm_context.i8_type()),
@@ -80,6 +89,7 @@ pub struct StructTypeHandle<'ctx> {
     field_indices: HashMap<FieldPath, u32>,
 }
 
+// TODO cleanup all the read field methods
 impl<'ctx> StructTypeHandle<'ctx> {
     // TODO return Result (error if there's no such field)
     pub fn field_pointer(

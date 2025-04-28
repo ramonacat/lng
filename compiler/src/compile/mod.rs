@@ -690,16 +690,7 @@ impl<'ctx> Compiler<'ctx> {
                 types::Literal::UnsignedInteger(value) => Ok((
                     None,
                     Value::Primitive(
-                        // TODO create `self.get_primitive_type()` or something along these lines
-                        self.context
-                            .global_scope
-                            .get_value(&types::ItemPath::new(
-                                ModulePath::parse("std"),
-                                Identifier::parse("u64"),
-                            ))
-                            .unwrap()
-                            .as_struct()
-                            .unwrap(),
+                        self.context.get_std_type("u64").unwrap(),
                         self.context
                             .llvm_context
                             .i64_type()
