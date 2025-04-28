@@ -5,10 +5,7 @@ use super::{
     context::CompilerContext,
     rc_builder::{self, RcValue},
 };
-use crate::{
-    name_mangler::{MangledIdentifier, mangle_module},
-    types,
-};
+use crate::{name_mangler::MangledIdentifier, types};
 use inkwell::{
     module::{Linkage, Module},
     values::FunctionValue,
@@ -34,7 +31,7 @@ impl<'ctx> CompiledModule<'ctx> {
     ) -> Self {
         let llvm_module = context
             .llvm_context
-            .create_module(mangle_module(&path).as_str());
+            .create_module(path.clone().into_mangled().as_str());
         Self {
             path,
             llvm_module,

@@ -8,7 +8,7 @@ use itertools::Itertools as _;
 
 use crate::{
     ast::{self, SourceRange},
-    name_mangler::{MangledIdentifier, mangle_field, mangle_item, nomangle_item},
+    name_mangler::{MangledIdentifier, mangle_field, mangle_item, mangle_module, nomangle_item},
 };
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -21,8 +21,8 @@ pub struct ItemPath {
 }
 
 impl ItemPath {
-    pub fn mangle(&self) -> MangledIdentifier {
-        mangle_item(&self.module, &self.item)
+    pub fn into_mangled(self) -> MangledIdentifier {
+        mangle_item(self)
     }
 
     pub(crate) const fn new(module: ModulePath, item: Identifier) -> Self {
@@ -43,8 +43,8 @@ pub struct FieldPath {
 }
 
 impl FieldPath {
-    pub fn mangle(&self) -> MangledIdentifier {
-        mangle_field(&self.struct_.module, &self.struct_.item, &self.field)
+    pub fn into_mangled(self) -> MangledIdentifier {
+        mangle_field(self)
     }
 
     pub(crate) const fn new(struct_: ItemPath, field: Identifier) -> Self {
@@ -90,6 +90,10 @@ impl ModulePath {
 
     pub fn parts(&self) -> &[Identifier] {
         self.0.as_slice()
+    }
+
+    pub(crate) fn into_mangled(self) -> MangledIdentifier {
+        mangle_module(self)
     }
 }
 
@@ -234,11 +238,7 @@ impl AssociatedFunction {
     }
 
     pub(crate) fn mangled_name(&self) -> MangledIdentifier {
-        mangle_field(
-            &self.name.struct_.module,
-            &self.name.struct_.item,
-            &self.name.field,
-        )
+        self.name.clone().into_mangled()
     }
 }
 
@@ -263,8 +263,8 @@ impl Function {
         match &self.definition.body {
             // TODO Extern should have the foreign function's name inside of it, so the declared
             // name does not have to match
-            FunctionBody::Extern => nomangle_item(&self.name.item),
-            FunctionBody::Statements(_) => mangle_item(&self.name.module, &self.name.item),
+            FunctionBody::Extern => nomangle_item(self.name.item.clone()),
+            FunctionBody::Statements(_) => self.name.clone().into_mangled(),
         }
     }
 }

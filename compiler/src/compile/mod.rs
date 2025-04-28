@@ -22,7 +22,6 @@ use value::{FunctionHandle, StructHandle, Value};
 
 use crate::{
     ast::SourceRange,
-    name_mangler::mangle_item,
     runtime::register_mappings,
     std::compile_std,
     types::{self, FieldPath, Identifier, ItemPath, ModulePath, Visibility},
@@ -76,7 +75,9 @@ pub fn compile(
         let main = execution_engine
             // TODO we should allow for main to be in any module, not just "main"
             .get_function::<unsafe extern "C" fn()>(
-                mangle_item(&ModulePath::parse("main"), &Identifier::parse("main")).as_str(),
+                types::ItemPath::new(ModulePath::parse("main"), Identifier::parse("main"))
+                    .into_mangled()
+                    .as_str(),
             )
             .unwrap();
         main.call();
