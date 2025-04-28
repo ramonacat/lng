@@ -381,7 +381,7 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
             }
 
             Ok(Expression {
-                kind: ExpressionKind::FunctionCall {
+                kind: ExpressionKind::Call {
                     target: Box::new(target_expression),
                     arguments,
                 },

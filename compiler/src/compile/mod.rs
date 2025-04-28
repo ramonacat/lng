@@ -581,8 +581,7 @@ impl<'ctx> Compiler<'ctx> {
         let position = expression.position;
 
         match &expression.kind {
-            // TODO this should not be named FunctionCall, but just Call
-            types::ExpressionKind::FunctionCall { target, arguments } => {
+            types::ExpressionKind::Call { target, arguments } => {
                 let compiled_target = self.compile_expression(
                     target,
                     self_.clone(),

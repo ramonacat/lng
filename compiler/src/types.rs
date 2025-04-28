@@ -280,7 +280,7 @@ pub enum Literal {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
-    FunctionCall {
+    Call {
         target: Box<Expression>,
         arguments: Vec<Expression>,
     },

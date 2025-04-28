@@ -49,7 +49,7 @@ impl Display for Literal {
 
 #[derive(Debug, Clone)]
 pub enum ExpressionKind {
-    FunctionCall {
+    Call {
         target: Box<Expression>,
         arguments: Vec<Expression>,
     },
@@ -71,7 +71,7 @@ pub struct Expression {
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            ExpressionKind::FunctionCall { target, arguments } => write!(
+            ExpressionKind::Call { target, arguments } => write!(
                 f,
                 "{target}({})",
                 arguments

@@ -39,7 +39,7 @@ impl Display for TypeCheckError {
 
 #[derive(Debug)]
 pub enum TypeCheckErrorDescription {
-    UnexpectedArgumentTypeInFunctionCall {
+    UnexpectedArgumentTypeInCall {
         target: ast::Expression,
         argument_name: Identifier,
         expected_type: types::Type,
@@ -78,7 +78,7 @@ impl TypeCheckErrorDescription {
 impl Display for TypeCheckErrorDescription {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnexpectedArgumentTypeInFunctionCall {
+            Self::UnexpectedArgumentTypeInCall {
                 target,
                 argument_name,
                 expected_type,
@@ -931,7 +931,7 @@ fn type_check_expression(
     let position = expression.position;
 
     match &expression.kind {
-        ast::ExpressionKind::FunctionCall {
+        ast::ExpressionKind::Call {
             target,
             arguments: passed_arguments,
         } => {
@@ -999,15 +999,13 @@ fn type_check_expression(
                 };
 
                 if self_argument.type_ != expected_type {
-                    return Err(
-                        TypeCheckErrorDescription::UnexpectedArgumentTypeInFunctionCall {
-                            target: *target.clone(),
-                            argument_name: self_argument.name,
-                            expected_type,
-                            actual_type: self_argument.type_,
-                        }
-                        .at(error_location),
-                    );
+                    return Err(TypeCheckErrorDescription::UnexpectedArgumentTypeInCall {
+                        target: *target.clone(),
+                        argument_name: self_argument.name,
+                        expected_type,
+                        actual_type: self_argument.type_,
+                    }
+                    .at(error_location));
                 }
 
                 checked_arguments.push(types::Expression {
@@ -1029,15 +1027,13 @@ fn type_check_expression(
                 let expected_type = &called_function_argument.type_;
 
                 if &checked_argument.type_ != expected_type {
-                    return Err(
-                        TypeCheckErrorDescription::UnexpectedArgumentTypeInFunctionCall {
-                            target: *target.clone(),
-                            argument_name: called_function_argument.name,
-                            expected_type: expected_type.clone(),
-                            actual_type: checked_argument.type_,
-                        }
-                        .at(error_location),
-                    );
+                    return Err(TypeCheckErrorDescription::UnexpectedArgumentTypeInCall {
+                        target: *target.clone(),
+                        argument_name: called_function_argument.name,
+                        expected_type: expected_type.clone(),
+                        actual_type: checked_argument.type_,
+                    }
+                    .at(error_location));
                 }
 
                 checked_arguments.push(checked_argument);
@@ -1046,7 +1042,7 @@ fn type_check_expression(
             Ok(types::Expression {
                 position,
                 type_: *return_type.clone(),
-                kind: types::ExpressionKind::FunctionCall {
+                kind: types::ExpressionKind::Call {
                     target: Box::new(checked_target),
                     arguments: checked_arguments,
                 },
