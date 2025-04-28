@@ -811,7 +811,9 @@ fn type_check_function_definition(
 
             types::FunctionBody::Statements(checked_statements)
         }
-        ast::FunctionBody::Extern(_) => types::FunctionBody::Extern,
+        ast::FunctionBody::Extern(foreign_name, _) => {
+            types::FunctionBody::Extern(Identifier::parse(foreign_name))
+        }
     };
 
     Ok(types::FunctionDefinition {

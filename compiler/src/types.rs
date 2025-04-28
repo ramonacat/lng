@@ -252,9 +252,7 @@ impl Function {
 
     pub(crate) fn mangled_name(&self) -> MangledIdentifier {
         match &self.definition.body {
-            // TODO Extern should have the foreign function's name inside of it, so the declared
-            // name does not have to match
-            FunctionBody::Extern => nomangle_item(self.name.item.clone()),
+            FunctionBody::Extern(foreign_name) => nomangle_item(foreign_name.clone()),
             FunctionBody::Statements(_) => self.name.clone().into_mangled(),
         }
     }
@@ -262,7 +260,7 @@ impl Function {
 
 #[derive(Debug, Clone)]
 pub enum FunctionBody {
-    Extern,
+    Extern(Identifier),
     Statements(Vec<Statement>),
 }
 

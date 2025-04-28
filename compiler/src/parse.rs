@@ -253,9 +253,12 @@ fn parse_function_inner(
                 };
 
                 if Rule::keyword_extern == inner_expression.as_rule() {
-                    body = Some(FunctionBody::Extern(find_source_position(
-                        &inner_expression,
-                    )));
+                    // TODO extern should actually have the foreign name as a separate parameter in
+                    // the syntax
+                    body = Some(FunctionBody::Extern(
+                        name.clone(),
+                        find_source_position(&inner_expression),
+                    ));
                     continue;
                 }
 

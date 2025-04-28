@@ -323,8 +323,10 @@ impl<'ctx> Compiler<'ctx> {
                             // TODO main should be detected during typecheck (with signature
                             // verification, checks that only one exists in the program, etc.)
                             visibility: if function.name.item.raw() == "main"
-                                || matches!(function.definition.body, types::FunctionBody::Extern)
-                            {
+                                || matches!(
+                                    function.definition.body,
+                                    types::FunctionBody::Extern(_)
+                                ) {
                                 Visibility::Export
                             } else {
                                 declaration.visibility

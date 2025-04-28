@@ -115,7 +115,7 @@ pub struct Argument {
 #[derive(Debug, Clone)]
 pub enum FunctionBody {
     Statements(Vec<Statement>, SourceRange),
-    Extern(SourceRange),
+    Extern(String, SourceRange),
 }
 
 #[derive(Debug, Clone)]
