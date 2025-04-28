@@ -485,14 +485,21 @@ pub fn type_check(
                         .at(ErrorLocation::Item(imported_item_path, import.position)));
                     }
                     let importing_module_path = types::ModulePath::parse(&file.name);
+                    let imported_as = types::ItemPath::new(
+                        importing_module_path,
+                        import
+                            .alias
+                            .as_ref()
+                            .map_or_else(|| item_name.clone(), |x| Identifier::parse(x)),
+                    );
                     declared_modules.declare_item(
-                        ItemPath::new(importing_module_path, item_name.clone()),
+                        imported_as.clone(),
                         DeclaredItem {
                             kind: DeclaredItemKind::Import(DeclaredImport {
                                 position: import.position,
                                 imported_item: types::ItemPath::new(
                                     exporting_module_name,
-                                    item_name,
+                                    item_name.clone(),
                                 ),
                             }),
                             visibility: imported_item.visibility,
@@ -628,25 +635,29 @@ pub fn type_check(
                 let imported_item = declared_modules.find_struct(imported_item).unwrap();
                 match &imported_item.kind {
                     DeclaredItemKind::Struct(DeclaredStruct {
-                        name: item_name, ..
+                        name: imported_item_name,
+                        ..
                     })
                     | DeclaredItemKind::Function(DeclaredFunction {
-                        name: item_name, ..
+                        name: imported_item_name,
+                        ..
                     })
                     | DeclaredItemKind::Checked(types::Item {
                         kind:
                             types::ItemKind::Function(types::Function {
-                                name: item_name, ..
+                                name: imported_item_name,
+                                ..
                             })
                             | types::ItemKind::Struct(types::Struct {
-                                name: item_name, ..
+                                name: imported_item_name,
+                                ..
                             }),
                         ..
                     }) => module_items.insert(
                         item_path.clone(),
                         types::Item {
                             kind: types::ItemKind::Import(Import {
-                                imported_item: item_name.clone(),
+                                imported_item: imported_item_name.clone(),
                                 position: *position,
                             }),
                             visibility: Visibility::Internal, // TODO can imports be reexported?

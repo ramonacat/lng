@@ -168,6 +168,7 @@ pub struct Declaration {
 #[derive(Debug)]
 pub struct Import {
     pub path: Vec<String>,
+    pub alias: Option<String>,
     pub position: SourceRange,
 }
 

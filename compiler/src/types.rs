@@ -309,7 +309,6 @@ pub struct LetStatement {
 #[derive(Debug, Clone)]
 pub struct Import {
     pub imported_item: ItemPath,
-    // TODO also have an alias here
     pub position: ast::SourceRange,
 }
 

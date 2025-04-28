@@ -378,7 +378,7 @@ impl<'ctx> Compiler<'ctx> {
                 );
             };
 
-            for item in file.items.values() {
+            for (name, item) in &file.items {
                 let types::ItemKind::Import(import) = &item.kind else {
                     continue;
                 };
@@ -388,6 +388,7 @@ impl<'ctx> Compiler<'ctx> {
                     .global_scope
                     .get_value(&import.imported_item)
                     .unwrap();
+
                 match value {
                     Value::Primitive(_, _) => todo!(),
                     Value::Reference(_) => todo!(),
@@ -402,7 +403,9 @@ impl<'ctx> Compiler<'ctx> {
                             arguments: function.arguments.clone(),
                         });
 
-                        module.set_variable(import.imported_item.item.clone(), function_value);
+                        assert!(&name.module == module_path);
+
+                        module.set_variable(name.item.clone(), function_value);
                     }
                     Value::Struct(ref struct_) => {
                         struct_.import(module, &self.context);

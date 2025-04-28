@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    ffi::CStr,
-    sync::{Mutex, OnceLock},
-};
+use std::{cell::RefCell, collections::HashMap, ffi::CStr};
 
 use compiler::{
     compile::compile,
@@ -13,7 +9,9 @@ use compiler::{
 };
 use inkwell::{execution_engine::ExecutionEngine, module::Module};
 
-static TEST_RESUTLS: OnceLock<Mutex<String>> = OnceLock::new();
+thread_local! {
+    static TEST_RESUTLS: RefCell<String> = RefCell::new(String::new());
+}
 
 #[unsafe(no_mangle)]
 extern "C" fn test_println(arg: *const LngRc<LngString>) {
@@ -21,13 +19,10 @@ extern "C" fn test_println(arg: *const LngRc<LngString>) {
         .to_str()
         .unwrap();
 
-    let mut results = TEST_RESUTLS
-        .get_or_init(|| Mutex::new(String::new()))
-        .lock()
-        .unwrap();
-
-    results.push_str(arg);
-    results.push('\n');
+    TEST_RESUTLS.with_borrow_mut(|results| {
+        results.push_str(arg);
+        results.push('\n');
+    })
 }
 
 fn register_test_mappings(engine: &ExecutionEngine, module: &Module) {
@@ -51,11 +46,7 @@ pub fn run(program: HashMap<&str, &str>) -> String {
     let std_program = type_check_std().unwrap();
     let type_check_result = type_check(&program, Some(&std_program)).unwrap();
 
-    TEST_RESUTLS
-        .get_or_init(|| Mutex::new(String::new()))
-        .lock()
-        .unwrap()
-        .clear();
+    TEST_RESUTLS.with_borrow_mut(|results| results.clear());
 
     compile(
         &type_check_result,
@@ -64,9 +55,9 @@ pub fn run(program: HashMap<&str, &str>) -> String {
     )
     .unwrap();
 
-    TEST_RESUTLS
-        .get_or_init(|| Mutex::new(String::new()))
-        .lock()
-        .unwrap()
-        .clone()
+    let mut results = String::new();
+
+    TEST_RESUTLS.with_borrow_mut(|x| std::mem::swap(&mut results, x));
+
+    results
 }

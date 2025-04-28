@@ -176,9 +176,8 @@ fn parse_struct(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     })
 }
 
-fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
+fn parse_qualified_name(item: Pair<Rule>) -> Result<Vec<String>, ParseError<'_>> {
     let mut path = vec![];
-    let position = find_source_position(&item);
 
     for element in item.into_inner() {
         match element.as_rule() {
@@ -191,7 +190,33 @@ fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
         }
     }
 
-    Ok(Import { path, position })
+    Ok(path)
+}
+
+fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
+    let mut path = vec![];
+    let mut alias = None;
+    let position = find_source_position(&item);
+
+    for element in item.into_inner() {
+        match element.as_rule() {
+            Rule::qualified_name => {
+                path = parse_qualified_name(element)?;
+            }
+            Rule::identifier => alias = Some(element.as_str().to_string()),
+            _ => {
+                return Err(ParseError::InternalError(InternalError::UnexpectedRule(
+                    element,
+                )));
+            }
+        }
+    }
+
+    Ok(Import {
+        path,
+        alias,
+        position,
+    })
 }
 
 fn parse_function(function: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {

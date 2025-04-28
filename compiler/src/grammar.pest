@@ -105,7 +105,9 @@ declaration = {
     | impl_declaration
 }
 
-import = {"import" ~ identifier ~ ("::" ~ identifier)* ~ ";"}
+qualified_name = { identifier ~ ("::" ~ identifier)* }
+
+import = {"import" ~ qualified_name ~ ("as" ~ identifier)? ~ ";"}
 
 source_file = {
    SOI ~ import* ~ declaration* ~ EOI
