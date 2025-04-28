@@ -23,8 +23,8 @@ use value::{FunctionHandle, StructHandle, Value};
 use crate::{
     ast::SourceRange,
     runtime::register_mappings,
-    std::{MODULE_PATH_STD, compile_std},
-    types::{self, FieldPath, Identifier, ItemPath, ModulePath, Visibility},
+    std::{TYPE_NAME_STRING, compile_std},
+    types::{self, FQName, Identifier, Visibility},
 };
 
 // TODO instead of executing the code, this should return some object that exposes the
@@ -75,9 +75,7 @@ pub fn compile(
         let main = execution_engine
             // TODO we should allow for main to be in any module, not just "main"
             .get_function::<unsafe extern "C" fn()>(
-                types::ItemPath::new(ModulePath::parse("main"), Identifier::parse("main"))
-                    .into_mangled()
-                    .as_str(),
+                types::FQName::parse("main.main").into_mangled().as_str(),
             )
             .unwrap();
         main.call();
@@ -94,27 +92,19 @@ pub(crate) struct Compiler<'ctx> {
 
 #[derive(Debug, Clone)]
 pub enum ErrorLocation {
-    Position(ModulePath, SourceRange),
-    Item(ItemPath, SourceRange),
-    Field(FieldPath, SourceRange),
-    Module(ModulePath),
+    Position(FQName, SourceRange),
     Indeterminate,
+    ItemOnly(FQName),
 }
 
 impl Display for ErrorLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Position(module_path, source_range) => {
-                write!(f, "{source_range} in module {module_path}")
+            Self::Position(fqname, source_range) => {
+                write!(f, "{source_range} in module {fqname}")
             }
-            Self::Module(name) => write!(f, "module {name}"),
             Self::Indeterminate => write!(f, "indeterminate"),
-            Self::Item(item_path, source_range) => {
-                write!(f, "{source_range} in {item_path}")
-            }
-            Self::Field(field_path, source_range) => {
-                write!(f, "{source_range} in {field_path}")
-            }
+            Self::ItemOnly(fqname) => write!(f, "{fqname}"),
         }
     }
 }
@@ -127,14 +117,14 @@ pub struct CompileError {
 
 #[derive(Debug)]
 pub enum CompileErrorDescription {
-    ModuleNotFound(ModulePath),
+    ModuleNotFound(FQName),
     FunctionNotFound {
-        module_name: ModulePath,
+        module_name: FQName,
         function_name: Identifier,
     },
     InternalError(String),
     StructNotFound {
-        module_name: ModulePath,
+        module_name: FQName,
         struct_name: types::Identifier,
     },
 }
@@ -142,17 +132,17 @@ pub enum CompileErrorDescription {
 impl CompileErrorDescription {
     // TODO clean up all the unwraps so that this actually will be used :)
     #[allow(unused)]
-    fn at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
+    fn at(self, module_path: FQName, position: SourceRange) -> CompileError {
         CompileError {
             description: self,
             position: Box::new(ErrorLocation::Position(module_path, position)),
         }
     }
 
-    fn in_module(self, name: ModulePath) -> CompileError {
+    fn in_module(self, name: FQName) -> CompileError {
         CompileError {
             description: self,
-            position: Box::new(ErrorLocation::Module(name)),
+            position: Box::new(ErrorLocation::ItemOnly(name)),
         }
     }
 
@@ -204,11 +194,11 @@ impl From<BuilderError> for CompileErrorDescription {
 }
 
 trait IntoCompileError {
-    fn into_compile_error_at(self, module_path: ModulePath, position: SourceRange) -> CompileError;
+    fn into_compile_error_at(self, module_path: FQName, position: SourceRange) -> CompileError;
 }
 
 impl IntoCompileError for BuilderError {
-    fn into_compile_error_at(self, module_path: ModulePath, position: SourceRange) -> CompileError {
+    fn into_compile_error_at(self, module_path: FQName, position: SourceRange) -> CompileError {
         CompileError {
             description: self.into(),
             position: Box::new(ErrorLocation::Position(module_path, position)),
@@ -231,7 +221,7 @@ impl<'ctx> CompiledFunction<'ctx> {
         &self,
         return_value: Option<&dyn BasicValue<'ctx>>,
         context: &CompilerContext<'ctx>,
-        module_path: ModulePath,
+        module_path: FQName,
     ) -> Result<(), CompileError> {
         context
             .builder
@@ -248,14 +238,12 @@ impl<'ctx> CompiledFunction<'ctx> {
 
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
-        let string_name =
-            types::ItemPath::new(*MODULE_PATH_STD, types::Identifier::parse("string"));
-
         let builtins = Builtins {
             string_handle: StructHandle::new(types::Struct {
-                name: string_name,
+                name: *TYPE_NAME_STRING,
                 fields: vec![types::StructField {
-                    name: types::FieldPath::new(string_name, Identifier::parse("characters")),
+                    struct_name: *TYPE_NAME_STRING,
+                    name: Identifier::parse("characters"),
                     type_: types::Type::Pointer(Box::new(types::Type::U8)),
                     static_: false,
                 }],
@@ -271,7 +259,7 @@ impl<'ctx> Compiler<'ctx> {
                 global_scope: std.unwrap_or_else(|| {
                     let mut scope = GlobalScope::default();
                     scope
-                        .create_module(*MODULE_PATH_STD, context.create_module("std"))
+                        .create_module(FQName::parse("std"), context.create_module("std"))
                         .set_variable(
                             Identifier::parse("string"),
                             Value::Struct(builtins.string_handle.clone()),
@@ -300,7 +288,7 @@ impl<'ctx> Compiler<'ctx> {
                         let function_handle = FunctionHandle {
                             // TODO main should be detected during typecheck (with signature
                             // verification, checks that only one exists in the program, etc.)
-                            visibility: if function.name.item.raw() == "main"
+                            visibility: if function.name.last().raw() == "main"
                                 || matches!(
                                     function.definition.body,
                                     types::FunctionBody::Extern(_)
@@ -316,7 +304,7 @@ impl<'ctx> Compiler<'ctx> {
                         };
 
                         created_module
-                            .set_variable(function.name.item, Value::Function(function_handle));
+                            .set_variable(function.name.last(), Value::Function(function_handle));
                     }
                     types::ItemKind::Struct(struct_) => {
                         let static_fields = struct_
@@ -335,7 +323,7 @@ impl<'ctx> Compiler<'ctx> {
                             .collect();
 
                         created_module.set_variable(
-                            struct_.name.item,
+                            struct_.name.last(),
                             Value::Struct(StructHandle::new_with_statics(
                                 struct_.clone(),
                                 static_fields,
@@ -379,9 +367,7 @@ impl<'ctx> Compiler<'ctx> {
                             arguments: function.arguments.clone(),
                         });
 
-                        assert!(&name.module == module_path);
-
-                        module.set_variable(name.item, function_value);
+                        module.set_variable(*name, function_value);
                     }
                     Value::Struct(ref struct_) => {
                         struct_.import(module, &self.context);
@@ -395,7 +381,7 @@ impl<'ctx> Compiler<'ctx> {
                     types::ItemKind::Function(function) => {
                         self.compile_function(
                             module
-                                .get_variable(item_name.item)
+                                .get_variable(*item_name)
                                 .unwrap()
                                 .as_function()
                                 .unwrap(),
@@ -409,11 +395,11 @@ impl<'ctx> Compiler<'ctx> {
                         for (impl_name, impl_) in &struct_.impls {
                             self.compile_function(
                                 module
-                                    .get_variable(item_name.item)
+                                    .get_variable(*item_name)
                                     .unwrap()
                                     .as_struct()
                                     .unwrap()
-                                    .read_field_value(Value::Empty, impl_name)
+                                    .read_field_value(Value::Empty, *impl_name)
                                     .unwrap()
                                     .as_function()
                                     .unwrap(),
@@ -436,7 +422,7 @@ impl<'ctx> Compiler<'ctx> {
         &self,
         handle: FunctionHandle,
         // TODO remove this argument, get this from module when needed
-        module_path: ModulePath,
+        module_path: FQName,
         module: &module::CompiledModule<'ctx>,
         function: &types::FunctionDefinition,
     ) -> Result<(), CompileError> {
@@ -547,7 +533,7 @@ impl<'ctx> Compiler<'ctx> {
         expression: &types::Expression,
         self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
-        module_path: ModulePath,
+        module_path: FQName,
         module: &CompiledModule<'ctx>,
     ) -> Result<(Option<Value<'ctx>>, Value<'ctx>), CompileError> {
         let position = expression.position;
@@ -709,9 +695,7 @@ impl<'ctx> Compiler<'ctx> {
                 let (_, target_value) =
                     self.compile_expression(target, self_, compiled_function, module_path, module)?;
 
-                let access_result = target_value
-                    .read_field_value(&types::FieldPath::new(target.type_.name(), *field_name))
-                    .unwrap();
+                let access_result = target_value.read_field_value(*field_name).unwrap();
 
                 Ok((Some(target_value), access_result))
             }

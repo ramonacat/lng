@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::{
     ast::SourceRange,
     name_mangler::MangledIdentifier,
-    types::{self, FieldPath, Identifier, Visibility},
+    types::{self, Identifier, Visibility},
 };
 
 use super::{
@@ -62,7 +62,7 @@ pub struct StructHandle<'ctx> {
     description: types::Struct,
     // TODO rename to static_values?
     // TODO ensure that this object can only be created when all values are set
-    static_fields: HashMap<types::FieldPath, Value<'ctx>>,
+    static_fields: HashMap<types::Identifier, Value<'ctx>>,
 }
 
 impl Debug for StructHandle<'_> {
@@ -97,8 +97,8 @@ impl<'ctx> StructHandle<'ctx> {
             .unwrap();
 
         for field in self.description.fields.iter().filter(|x| !x.static_) {
-            let field_value = field_values.remove(&field.name.field).unwrap();
-            let (_, field_pointer) = llvm_type.field_pointer(&field.name, instance, context);
+            let field_value = field_values.remove(&field.name).unwrap();
+            let (_, field_pointer) = llvm_type.field_pointer(field.name, instance, context);
 
             context
                 .builder
@@ -111,7 +111,7 @@ impl<'ctx> StructHandle<'ctx> {
 
     pub fn build_field_load(
         &self,
-        field: &FieldPath,
+        field: Identifier,
         instance: PointerValue<'ctx>,
         binding_name: &str,
         context: &CompilerContext<'ctx>,
@@ -128,7 +128,7 @@ impl<'ctx> StructHandle<'ctx> {
 
     pub fn build_field_store(
         &self,
-        field_name: &FieldPath,
+        field_name: Identifier,
         instance: PointerValue<'ctx>,
         value: BasicValueEnum<'ctx>,
         context: &CompilerContext<'ctx>,
@@ -153,18 +153,18 @@ impl<'ctx> StructHandle<'ctx> {
             };
         }
 
-        importing_module.set_variable(self.description.name.item, Value::Struct(self.clone()));
+        importing_module.set_variable(self.description.name.last(), Value::Struct(self.clone()));
     }
 
     pub fn read_field_value(
         &self,
         _instance: Value<'ctx>,
-        name: &types::FieldPath,
+        name: Identifier,
     ) -> Option<Value<'ctx>> {
-        let field = self.description.fields.iter().find(|f| &f.name == name)?;
+        let field = self.description.fields.iter().find(|f| f.name == name)?;
 
         if field.static_ {
-            return self.static_fields.get(name).cloned();
+            return self.static_fields.get(&name).cloned();
         }
 
         todo!("support reading non-static fields!");
@@ -176,7 +176,7 @@ impl<'ctx> StructHandle<'ctx> {
 
     pub(crate) const fn new_with_statics(
         description: types::Struct,
-        static_fields: HashMap<FieldPath, Value<'ctx>>,
+        static_fields: HashMap<Identifier, Value<'ctx>>,
     ) -> Self {
         Self {
             description,
@@ -228,7 +228,7 @@ impl<'ctx> Value<'ctx> {
         }
     }
 
-    pub fn read_field_value(&self, field_path: &FieldPath) -> Option<Self> {
+    pub fn read_field_value(&self, field_path: Identifier) -> Option<Self> {
         match self {
             Value::Primitive(handle, _) => handle.read_field_value(self.clone(), field_path),
             Value::Reference(ref_) => ref_.type_().read_field_value(self.clone(), field_path),

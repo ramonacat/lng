@@ -1,12 +1,10 @@
 use itertools::Itertools;
 
-use crate::types::{FieldPath, Identifier, ItemPath, ModulePath};
+use crate::types::{FQName, Identifier};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IdentifierKind {
-    FieldPath(FieldPath),
-    ItemPath(ItemPath),
-    Module(ModulePath),
+    FQName(FQName),
     Identifier(Identifier),
 }
 
@@ -22,8 +20,8 @@ impl MangledIdentifier {
     }
 }
 
-pub fn mangle_module(module: ModulePath) -> MangledIdentifier {
-    let mangled_module_path = module
+pub fn mangle_fq_name(fq_name: FQName) -> MangledIdentifier {
+    let mangled_module_path = fq_name
         .parts()
         .iter()
         .copied()
@@ -32,37 +30,13 @@ pub fn mangle_module(module: ModulePath) -> MangledIdentifier {
 
     MangledIdentifier {
         mangled: mangled_module_path,
-        source: IdentifierKind::Module(module),
+        source: IdentifierKind::FQName(fq_name),
     }
 }
 
-pub fn nomangle_item(identifier: Identifier) -> MangledIdentifier {
+pub fn nomangle_identifier(identifier: Identifier) -> MangledIdentifier {
     MangledIdentifier {
         mangled: identifier.raw(),
         source: IdentifierKind::Identifier(identifier),
-    }
-}
-
-pub fn mangle_item(path: ItemPath) -> MangledIdentifier {
-    let mangled_module_path = &mangle_module(path.module).mangled;
-    let mangled_identifier = path.item.raw();
-
-    let mangled = format!("{mangled_module_path}__$__{mangled_identifier}");
-
-    MangledIdentifier {
-        mangled,
-        source: IdentifierKind::ItemPath(path),
-    }
-}
-
-pub fn mangle_field(field: FieldPath) -> MangledIdentifier {
-    let mangled_struct_ = mangle_item(field.struct_);
-    let mangled_item = field.field.raw();
-
-    let mangled = format!("{}__$__{}", mangled_struct_.as_str(), mangled_item);
-
-    MangledIdentifier {
-        mangled,
-        source: IdentifierKind::FieldPath(field),
     }
 }

@@ -9,12 +9,10 @@ use crate::{
     types,
 };
 
-pub(crate) static MODULE_PATH_STD: LazyLock<types::ModulePath> =
-    LazyLock::new(|| types::ModulePath::parse("std"));
-pub(crate) static TYPE_NAME_U64: LazyLock<types::Identifier> =
-    LazyLock::new(|| types::Identifier::parse("u64"));
-pub(crate) static TYPE_NAME_STRING: LazyLock<types::Identifier> =
-    LazyLock::new(|| types::Identifier::parse("string"));
+pub(crate) static TYPE_NAME_U64: LazyLock<types::FQName> =
+    LazyLock::new(|| types::FQName::parse("std.u64"));
+pub(crate) static TYPE_NAME_STRING: LazyLock<types::FQName> =
+    LazyLock::new(|| types::FQName::parse("std.string"));
 
 pub fn type_check_std() -> Result<types::Program, TypeCheckError> {
     let asts = vec![parse_file("std", include_str!("../../stdlib/std.lng")).unwrap()];

@@ -9,8 +9,8 @@ use string_interner::{StringInterner, backend::StringBackend, symbol::SymbolU32}
 
 use crate::{
     ast::{self, SourceRange},
-    name_mangler::{MangledIdentifier, mangle_field, mangle_item, mangle_module, nomangle_item},
-    std::{MODULE_PATH_STD, TYPE_NAME_U64},
+    name_mangler::{MangledIdentifier, mangle_fq_name, nomangle_identifier},
+    std::TYPE_NAME_U64,
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -19,56 +19,6 @@ pub struct Identifier(SymbolU32);
 impl std::fmt::Debug for Identifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Identifier({self})")
-    }
-}
-
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct ItemPath {
-    pub module: ModulePath,
-    pub item: Identifier,
-}
-
-impl ItemPath {
-    pub fn into_mangled(self) -> MangledIdentifier {
-        mangle_item(self)
-    }
-
-    pub(crate) const fn new(module: ModulePath, item: Identifier) -> Self {
-        Self { module, item }
-    }
-}
-
-impl std::fmt::Debug for ItemPath {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ItemPath({self})")
-    }
-}
-
-impl Display for ItemPath {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}", self.module, self.item)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct FieldPath {
-    pub struct_: ItemPath,
-    pub field: Identifier, // TODO support nesting?
-}
-
-impl FieldPath {
-    pub fn into_mangled(self) -> MangledIdentifier {
-        mangle_field(self)
-    }
-
-    pub(crate) const fn new(struct_: ItemPath, field: Identifier) -> Self {
-        Self { struct_, field }
-    }
-}
-
-impl Display for FieldPath {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}", self.struct_, self.field)
     }
 }
 
@@ -98,17 +48,34 @@ impl Display for Identifier {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct ModulePath(SymbolU32);
+pub struct FQName(SymbolU32);
 
-impl ModulePath {
+impl Display for FQName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.parts().iter().map(|x| x.raw()).join("."))
+    }
+}
+
+impl FQName {
     pub fn parse(raw: &str) -> Self {
         let interned = IDENTIFIERS.write().unwrap().get_or_intern(raw);
 
         Self(interned)
     }
 
-    pub fn from_parts<'a>(path: impl Iterator<Item = &'a str>) -> Self {
-        Self::parse(&path.map(ToOwned::to_owned).join("."))
+    pub fn from_parts(path: impl Iterator<Item = impl Into<String>>) -> Self {
+        Self::parse(&path.map(Into::<String>::into).join("."))
+    }
+
+    pub fn with_part(self, new_part: Identifier) -> Self {
+        let raw = IDENTIFIERS
+            .read()
+            .unwrap()
+            .resolve(self.0)
+            .unwrap()
+            .to_string();
+
+        Self::parse(&format!("{raw}.{new_part}"))
     }
 
     pub fn parts(self) -> Vec<Identifier> {
@@ -123,21 +90,25 @@ impl ModulePath {
     }
 
     pub(crate) fn into_mangled(self) -> MangledIdentifier {
-        mangle_module(self)
+        mangle_fq_name(self)
     }
-}
 
-impl Display for ModulePath {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = self.parts().iter().copied().map(Identifier::raw).join(".");
+    pub fn last(self) -> Identifier {
+        *self.parts().last().unwrap()
+    }
 
-        write!(f, "{name}")
+    pub fn without_last(self) -> Self {
+        let parts = self.parts();
+        let len = parts.len();
+        let parts = parts.into_iter().map(Identifier::raw);
+
+        Self::from_parts(parts.take(len - 1))
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructTypeDescriptor {
-    pub name: ItemPath,
+    pub name: FQName,
     pub fields: Vec<StructField>,
 }
 
@@ -145,7 +116,7 @@ impl StructTypeDescriptor {
     pub fn object_type(&self) -> Type {
         // TODO can we avoid special-casing the types here? perhaps take the object type as an
         // argument?
-        if self.name.module == *MODULE_PATH_STD && self.name.item == *TYPE_NAME_U64 {
+        if self.name == *TYPE_NAME_U64 {
             return Type::U64;
         }
 
@@ -157,7 +128,7 @@ impl StructTypeDescriptor {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Unit,
-    Object(ItemPath),
+    Object(FQName),
     Array(Box<Type>),
     // TODO this should probably be simply an object, just of StructDescriptor<TargetStruct> type
     StructDescriptor(StructTypeDescriptor),
@@ -202,14 +173,14 @@ impl Type {
     }
 
     // TODO remove this? not all types have a path
-    pub(crate) fn name(&self) -> ItemPath {
+    pub(crate) fn name(&self) -> FQName {
         match &self {
             Self::Unit => todo!(),
             Self::Object(item_path) => *item_path,
             Self::Array(_) => todo!(),
             Self::StructDescriptor(_) => todo!(),
             Self::Callable { .. } => todo!(),
-            Self::U64 => ItemPath::new(*MODULE_PATH_STD, *TYPE_NAME_U64),
+            Self::U64 => *TYPE_NAME_U64,
             Self::U8 => todo!(),
             Self::Pointer(_) => todo!(),
         }
@@ -274,13 +245,15 @@ pub struct FunctionDefinition {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub name: ItemPath,
+    pub name: FQName,
     pub definition: FunctionDefinition,
 }
 
+// TODO is AssociatedFunction really a separate entity from Function?
 #[derive(Debug, Clone)]
 pub struct AssociatedFunction {
-    pub name: FieldPath,
+    pub struct_: FQName,
+    pub name: Identifier,
     pub definition: FunctionDefinition,
 }
 impl AssociatedFunction {
@@ -292,7 +265,7 @@ impl AssociatedFunction {
     }
 
     pub(crate) fn mangled_name(&self) -> MangledIdentifier {
-        self.name.into_mangled()
+        self.struct_.with_part(self.name).into_mangled()
     }
 }
 
@@ -306,7 +279,7 @@ impl Function {
 
     pub(crate) fn mangled_name(&self) -> MangledIdentifier {
         match &self.definition.body {
-            FunctionBody::Extern(foreign_name) => nomangle_item(*foreign_name),
+            FunctionBody::Extern(foreign_name) => nomangle_identifier(*foreign_name),
             FunctionBody::Statements(_) => self.name.into_mangled(),
         }
     }
@@ -362,22 +335,23 @@ pub struct LetStatement {
 
 #[derive(Debug, Clone)]
 pub struct Import {
-    pub imported_item: ItemPath,
+    pub imported_item: FQName,
     pub position: ast::SourceRange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructField {
-    pub name: FieldPath,
+    pub struct_name: FQName,
+    pub name: Identifier,
     pub type_: Type,
     pub static_: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
-    pub name: ItemPath,
+    pub name: FQName,
     pub fields: Vec<StructField>,
-    pub impls: HashMap<FieldPath, AssociatedFunction>,
+    pub impls: HashMap<Identifier, AssociatedFunction>,
 }
 
 #[derive(Debug, Clone)]
@@ -401,11 +375,11 @@ pub enum Visibility {
 
 #[derive(Debug)]
 pub struct Module {
-    pub items: HashMap<ItemPath, Item>,
+    pub items: HashMap<Identifier, Item>,
 }
 
 #[derive(Debug)]
-// this should have a different name because this can be a program OR a library
+// TODO this should have a different name because this can be a program OR a library
 pub struct Program {
-    pub modules: HashMap<ModulePath, Module>,
+    pub modules: HashMap<FQName, Module>,
 }

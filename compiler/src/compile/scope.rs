@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::RwLock};
 
 use inkwell::module::Module;
 
-use crate::types::{self, ItemPath};
+use crate::types::{self, FQName};
 
 use super::{Value, module::CompiledModule};
 
@@ -77,7 +77,7 @@ impl<'ctx> Scope<'ctx> {
 }
 
 pub struct GlobalScope<'ctx> {
-    modules: HashMap<types::ModulePath, CompiledModule<'ctx>>,
+    modules: HashMap<types::FQName, CompiledModule<'ctx>>,
     scope: Rc<Scope<'ctx>>,
 }
 
@@ -112,7 +112,7 @@ impl Default for GlobalScope<'_> {
 impl<'ctx> GlobalScope<'ctx> {
     pub fn create_module(
         &mut self,
-        path: types::ModulePath,
+        path: types::FQName,
         llvm_module: Module<'ctx>,
     ) -> &mut CompiledModule<'ctx> {
         self.modules
@@ -120,14 +120,14 @@ impl<'ctx> GlobalScope<'ctx> {
             .or_insert_with(|| CompiledModule::new(path, self.scope.child(), llvm_module))
     }
 
-    pub fn get_module(&self, path: types::ModulePath) -> Option<&CompiledModule<'ctx>> {
+    pub fn get_module(&self, path: types::FQName) -> Option<&CompiledModule<'ctx>> {
         self.modules.get(&path)
     }
 
-    pub fn get_value(&self, item_path: ItemPath) -> Option<Value<'ctx>> {
+    pub fn get_value(&self, item_path: FQName) -> Option<Value<'ctx>> {
         self.modules
-            .get(&item_path.module)
-            .and_then(|x| x.get_variable(item_path.item))
+            .get(&item_path.without_last())
+            .and_then(|x| x.get_variable(item_path.last()))
     }
 
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {

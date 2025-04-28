@@ -5,7 +5,7 @@ use inkwell::{
     values::{BasicValue, PointerValue},
 };
 
-use crate::types::{self, FieldPath, Identifier, ItemPath, ModulePath};
+use crate::types::{self, FQName, Identifier};
 
 use super::{StructHandle, context::CompilerContext};
 
@@ -15,24 +15,22 @@ pub struct RcValue<'ctx> {
     value_type: StructHandle<'ctx>,
 }
 
-static STRUCT_PATH: LazyLock<ItemPath> =
-    LazyLock::new(|| ItemPath::new(ModulePath::parse("std"), Identifier::parse("rc")));
-
-static REFCOUNT_FIELD: LazyLock<FieldPath> =
-    LazyLock::new(|| FieldPath::new(*STRUCT_PATH, Identifier::parse("refcount")));
-static POINTEE_FIELD: LazyLock<FieldPath> =
-    LazyLock::new(|| FieldPath::new(*STRUCT_PATH, Identifier::parse("pointee")));
+static REFCOUNT_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("refcount"));
+static POINTEE_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("pointee"));
 
 pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
+    let struct_name = FQName::parse("std.rc");
     StructHandle::new(types::Struct {
-        name: *STRUCT_PATH,
+        name: struct_name,
         fields: vec![
             types::StructField {
+                struct_name,
                 name: *REFCOUNT_FIELD,
                 type_: types::Type::U64,
                 static_: false,
             },
             types::StructField {
+                struct_name,
                 name: *POINTEE_FIELD,
                 // TODO this is not the right type, but righttyping this requires that we
                 // have generics (because pointee is dependant on the type here)
@@ -56,14 +54,14 @@ impl<'ctx> RcValue<'ctx> {
     {
         let mut field_values = HashMap::new();
         field_values.insert(
-            REFCOUNT_FIELD.field,
+            *REFCOUNT_FIELD,
             context
                 .llvm_context
                 .i64_type()
                 .const_int(1, false)
                 .as_basic_value_enum(),
         );
-        field_values.insert(POINTEE_FIELD.field, value.as_basic_value_enum());
+        field_values.insert(*POINTEE_FIELD, value.as_basic_value_enum());
         let rc = context
             .builtins
             .rc_handle
@@ -113,7 +111,7 @@ pub fn build_cleanup<'ctx>(
             .builtins
             .rc_handle
             .build_field_load(
-                &REFCOUNT_FIELD,
+                *REFCOUNT_FIELD,
                 rc.pointer,
                 &(name.to_string() + "refcount_old"),
                 context,
@@ -159,7 +157,7 @@ pub fn build_cleanup<'ctx>(
             .builtins
             .rc_handle
             .build_field_load(
-                &POINTEE_FIELD,
+                *POINTEE_FIELD,
                 rc.pointer,
                 &(name.to_string() + "free_rc_pointee_value"),
                 context,
@@ -175,7 +173,7 @@ pub fn build_cleanup<'ctx>(
 
         context.builder.position_at_end(do_not_free_rc_block);
         context.builtins.rc_handle.build_field_store(
-            &REFCOUNT_FIELD,
+            *REFCOUNT_FIELD,
             rc.pointer,
             new_refcount.as_basic_value_enum(),
             context,
@@ -203,7 +201,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
         let init_refcount = context.builtins.rc_handle.build_field_load(
-            &REFCOUNT_FIELD,
+            *REFCOUNT_FIELD,
             rc.pointer,
             &format!("{name}_init_refcount"),
             context,
@@ -219,7 +217,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             .unwrap();
 
         context.builtins.rc_handle.build_field_store(
-            &REFCOUNT_FIELD,
+            *REFCOUNT_FIELD,
             rc.pointer,
             incremented_refcount.as_basic_value_enum(),
             context,

@@ -5,14 +5,14 @@ use super::{
     context::CompilerContext,
     rc_builder::{self, RcValue},
 };
-use crate::{name_mangler::MangledIdentifier, std::TYPE_NAME_U64, types};
+use crate::{name_mangler::MangledIdentifier, types};
 use inkwell::{
     module::{Linkage, Module},
     values::FunctionValue,
 };
 
 pub struct CompiledModule<'ctx> {
-    path: types::ModulePath,
+    path: types::FQName,
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
 }
@@ -25,7 +25,7 @@ impl std::fmt::Debug for CompiledModule<'_> {
 
 impl<'ctx> CompiledModule<'ctx> {
     pub const fn new(
-        path: types::ModulePath,
+        path: types::FQName,
         scope: Rc<Scope<'ctx>>,
         llvm_module: Module<'ctx>,
     ) -> Self {
@@ -146,14 +146,9 @@ impl<'ctx> CompiledModule<'ctx> {
                 },
                 types::Type::StructDescriptor(_) => todo!(),
                 types::Type::Callable { .. } => todo!(),
-                types::Type::U64 => Value::Primitive(
-                    self.scope
-                        .get_value(*TYPE_NAME_U64)
-                        .unwrap()
-                        .as_struct()
-                        .unwrap(),
-                    argument_value,
-                ),
+                types::Type::U64 => {
+                    Value::Primitive(context.get_std_type("u64").unwrap(), argument_value)
+                }
                 types::Type::Pointer(_) => todo!(),
                 types::Type::U8 => todo!(),
             };
@@ -189,7 +184,7 @@ impl<'ctx> CompiledModule<'ctx> {
         self.llvm_module
     }
 
-    pub(crate) const fn path(&self) -> types::ModulePath {
+    pub(crate) const fn path(&self) -> types::FQName {
         self.path
     }
 

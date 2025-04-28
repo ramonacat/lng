@@ -9,10 +9,7 @@ use inkwell::{
     values::PointerValue,
 };
 
-use crate::{
-    std::MODULE_PATH_STD,
-    types::{self, FieldPath, Identifier},
-};
+use crate::types::{self, Identifier};
 
 use super::{scope::GlobalScope, value::StructHandle};
 
@@ -31,10 +28,7 @@ pub struct CompilerContext<'ctx> {
 impl<'ctx> CompilerContext<'ctx> {
     pub fn get_std_type(&self, name: &str) -> Option<StructHandle<'ctx>> {
         self.global_scope
-            .get_value(types::ItemPath::new(
-                *MODULE_PATH_STD,
-                Identifier::parse(name),
-            ))
+            .get_value(types::FQName::parse("std").with_part(Identifier::parse(name)))
             .map(|x| x.as_struct().unwrap())
     }
 
@@ -89,18 +83,18 @@ impl<'ctx> CompilerContext<'ctx> {
 
 pub struct StructTypeHandle<'ctx> {
     llvm_type: StructType<'ctx>,
-    field_indices: HashMap<FieldPath, u32>,
+    field_indices: HashMap<Identifier, u32>,
 }
 
 impl<'ctx> StructTypeHandle<'ctx> {
     // TODO return Result (error if there's no such field)
     pub fn field_pointer(
         &self,
-        field: &FieldPath,
+        field: Identifier,
         instance: PointerValue<'ctx>,
         context: &CompilerContext<'ctx>,
     ) -> (BasicTypeEnum<'ctx>, PointerValue<'ctx>) {
-        let index = self.field_indices.get(field).unwrap();
+        let index = self.field_indices.get(&field).unwrap();
 
         // TODO why does const_gep not work here?
         let pointer = unsafe {
@@ -116,7 +110,7 @@ impl<'ctx> StructTypeHandle<'ctx> {
                 ],
                 &format!(
                     "{}_{}",
-                    (*field).into_mangled().as_str(),
+                    field.raw().as_str(),
                     rand::rng()
                         .sample_iter(rand::distr::Alphanumeric)
                         .take(8)
