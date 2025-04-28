@@ -5,7 +5,7 @@ use super::{
     context::CompilerContext,
     rc_builder::{self, RcValue},
 };
-use crate::{name_mangler::MangledIdentifier, types};
+use crate::{name_mangler::MangledIdentifier, std::TYPE_NAME_U64, types};
 use inkwell::{
     module::{Linkage, Module},
     values::FunctionValue,
@@ -92,7 +92,7 @@ impl<'ctx> CompiledModule<'ctx> {
         self.scope.set_value(name, value);
     }
 
-    pub fn get_variable(&self, name: &types::Identifier) -> Option<Value<'ctx>> {
+    pub fn get_variable(&self, name: types::Identifier) -> Option<Value<'ctx>> {
         self.scope.get_value(name)
     }
 
@@ -115,7 +115,7 @@ impl<'ctx> CompiledModule<'ctx> {
                         argument_value.into_pointer_value(),
                         context
                             .global_scope
-                            .get_value(dbg!(&identifier))
+                            .get_value(*identifier)
                             .unwrap()
                             .as_struct()
                             .unwrap(),
@@ -132,23 +132,23 @@ impl<'ctx> CompiledModule<'ctx> {
                         argument_value.into_pointer_value(),
                         context
                             .global_scope
-                            .get_value(identifier)
+                            .get_value(*identifier)
                             .unwrap()
                             .as_struct()
                             .unwrap(),
                     )),
                     types::Type::Array(_) => todo!(),
-                    types::Type::StructDescriptor(_, _) => todo!(),
+                    types::Type::StructDescriptor(_) => todo!(),
                     types::Type::Callable { .. } => todo!(),
                     types::Type::U64 => todo!(),
                     types::Type::Pointer(_) => todo!(),
                     types::Type::U8 => todo!(),
                 },
-                types::Type::StructDescriptor(_, _) => todo!(),
+                types::Type::StructDescriptor(_) => todo!(),
                 types::Type::Callable { .. } => todo!(),
                 types::Type::U64 => Value::Primitive(
                     self.scope
-                        .get_value(&types::Identifier::parse("u64"))
+                        .get_value(*TYPE_NAME_U64)
                         .unwrap()
                         .as_struct()
                         .unwrap(),
@@ -158,7 +158,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::U8 => todo!(),
             };
 
-            scope.set_value(argument.name.clone(), value);
+            scope.set_value(argument.name, value);
         }
 
         let entry_block = context
@@ -189,8 +189,8 @@ impl<'ctx> CompiledModule<'ctx> {
         self.llvm_module
     }
 
-    pub(crate) fn path(&self) -> types::ModulePath {
-        self.path.clone()
+    pub(crate) const fn path(&self) -> types::ModulePath {
+        self.path
     }
 
     // TODO this is a kinda weird API, FunctionHandle should manage the FunctionValue by itself

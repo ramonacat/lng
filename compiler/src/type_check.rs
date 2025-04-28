@@ -1,8 +1,10 @@
 use std::{collections::HashMap, error::Error, fmt::Display};
 
 use crate::{
+    // TODO remove all the imports from types, access items via types::*
     ast::{self, SourceRange},
     compile::ErrorLocation,
+    std::{MODULE_PATH_STD, TYPE_NAME_STRING, TYPE_NAME_U64},
     types::{self, FieldPath, Identifier, Import, ItemPath, ModulePath, Visibility},
 };
 
@@ -11,10 +13,13 @@ impl types::Item {
         match &self.kind {
             types::ItemKind::Function(function) => function.type_(),
             types::ItemKind::Struct(struct_) => {
-                types::Type::StructDescriptor(struct_.name.clone(), struct_.fields.clone())
+                types::Type::StructDescriptor(types::StructTypeDescriptor {
+                    name: struct_.name,
+                    fields: struct_.fields.clone(),
+                })
             }
             types::ItemKind::Import(import) => declared_modules
-                .find_struct(&import.imported_item)
+                .find_struct(import.imported_item)
                 .unwrap()
                 .type_(declared_modules),
         }
@@ -126,7 +131,7 @@ impl Display for TypeCheckErrorDescription {
     }
 }
 
-fn convert_type(module: &ModulePath, type_: &ast::TypeDescription) -> types::Type {
+fn convert_type(module: ModulePath, type_: &ast::TypeDescription) -> types::Type {
     match type_ {
         ast::TypeDescription::Array(type_description) => {
             types::Type::Array(Box::new(convert_type(module, type_description)))
@@ -134,15 +139,11 @@ fn convert_type(module: &ModulePath, type_: &ast::TypeDescription) -> types::Typ
         ast::TypeDescription::Named(name) if name == "()" => types::Type::Unit,
         ast::TypeDescription::Named(name) if name == "u64" => types::Type::U64,
         ast::TypeDescription::Named(name) if name == "string" => {
-            types::Type::Object(types::ItemPath::new(
-                types::ModulePath::parse("std"),
-                types::Identifier::parse("string"),
-            ))
+            types::Type::Object(types::ItemPath::new(*MODULE_PATH_STD, *TYPE_NAME_STRING))
         }
-        ast::TypeDescription::Named(name) => types::Type::Object(types::ItemPath::new(
-            module.clone(),
-            types::Identifier::parse(name),
-        )),
+        ast::TypeDescription::Named(name) => {
+            types::Type::Object(types::ItemPath::new(module, types::Identifier::parse(name)))
+        }
     }
 }
 
@@ -215,27 +216,29 @@ impl DeclaredItem {
                     .arguments
                     .iter()
                     .map(|declaration| types::Argument {
-                        name: declaration.name.clone(),
+                        name: declaration.name,
                         type_: declaration.type_.clone(),
                         position: declaration.position,
                     })
                     .collect(),
                 return_type: Box::new(declared_function.definition.return_type.clone()),
             },
-            DeclaredItemKind::Struct(declared_struct) => types::Type::StructDescriptor(
-                declared_struct.name.clone(),
-                declared_struct
-                    .fields
-                    .iter()
-                    .map(|(field_name, declaration)| types::StructField {
-                        name: field_name.clone(),
-                        type_: declaration.type_.clone(),
-                        static_: declaration.static_,
-                    })
-                    .collect(),
-            ),
+            DeclaredItemKind::Struct(declared_struct) => {
+                types::Type::StructDescriptor(types::StructTypeDescriptor {
+                    name: declared_struct.name,
+                    fields: declared_struct
+                        .fields
+                        .iter()
+                        .map(|(field_name, declaration)| types::StructField {
+                            name: *field_name,
+                            type_: declaration.type_.clone(),
+                            static_: declaration.static_,
+                        })
+                        .collect(),
+                })
+            }
             DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => declared_modules
-                .find_struct(imported_item)
+                .find_struct(*imported_item)
                 .unwrap()
                 .type_(declared_modules),
             DeclaredItemKind::Checked(item) => item.type_(declared_modules),
@@ -262,14 +265,14 @@ impl<'src> DeclaredModules<'src> {
     }
 
     // TODO rename to find_item
-    fn find_struct(&self, item_path: &ItemPath) -> Option<DeclaredItem> {
-        if let Some(local_item) = self.local.get(item_path) {
+    fn find_struct(&self, item_path: ItemPath) -> Option<DeclaredItem> {
+        if let Some(local_item) = self.local.get(&item_path) {
             return Some(local_item.clone());
         }
 
         if let Some(std) = self.std {
             if let Some(std_module) = std.modules.get(&item_path.module) {
-                if let Some(std_item) = std_module.items.get(item_path) {
+                if let Some(std_item) = std_module.items.get(&item_path) {
                     return Some(DeclaredItem {
                         kind: DeclaredItemKind::Checked(std_item.clone()),
                         visibility: std_item.visibility,
@@ -281,8 +284,8 @@ impl<'src> DeclaredModules<'src> {
         None
     }
 
-    fn find_local_mut(&mut self, item_path: &ItemPath) -> Option<&mut DeclaredItem> {
-        if let Some(local_item) = self.local.get_mut(item_path) {
+    fn find_local_mut(&mut self, item_path: ItemPath) -> Option<&mut DeclaredItem> {
+        if let Some(local_item) = self.local.get_mut(&item_path) {
             return Some(local_item);
         }
 
@@ -298,13 +301,13 @@ impl<'src> DeclaredModules<'src> {
         let mut results: HashMap<types::ItemPath, types::Type> = self
             .local
             .iter()
-            .map(|(name, item)| (name.clone(), item.type_(self)))
+            .map(|(name, item)| (*name, item.type_(self)))
             .collect();
 
         if let Some(std) = self.std {
             for module in std.modules.values() {
                 for (item_name, item) in &module.items {
-                    results.insert(item_name.clone(), item.type_(self));
+                    results.insert(*item_name, item.type_(self));
                 }
             }
         }
@@ -330,12 +333,12 @@ pub fn type_check(
                 ast::DeclarationKind::Function(function) => {
                     let function_declaration = type_check_function_declaration(
                         function,
-                        &module_path,
+                        module_path,
                         declaration.position,
                     )?;
 
                     items.insert(
-                        ItemPath::new(module_path.clone(), Identifier::parse(&function.name)),
+                        ItemPath::new(module_path, Identifier::parse(&function.name)),
                         DeclaredItem {
                             kind: DeclaredItemKind::Function(function_declaration),
                             visibility: convert_visibility(declaration.visibility),
@@ -348,22 +351,18 @@ pub fn type_check(
                     for field in &struct_.fields {
                         fields.insert(
                             types::FieldPath::new(
-                                types::ItemPath::new(
-                                    module_path.clone(),
-                                    Identifier::parse(&struct_.name),
-                                ),
+                                types::ItemPath::new(module_path, Identifier::parse(&struct_.name)),
                                 Identifier::parse(&field.name),
                             ),
                             DeclaredStructField {
-                                type_: convert_type(&module_path, &field.type_),
+                                type_: convert_type(module_path, &field.type_),
                                 static_: false,
                             },
                         );
                     }
-                    let name =
-                        types::ItemPath::new(module_path.clone(), Identifier::parse(&struct_.name));
+                    let name = types::ItemPath::new(module_path, Identifier::parse(&struct_.name));
                     items.insert(
-                        name.clone(),
+                        name,
                         DeclaredItem {
                             kind: DeclaredItemKind::Struct(DeclaredStruct { name, fields }),
                             visibility: convert_visibility(declaration.visibility),
@@ -388,23 +387,20 @@ pub fn type_check(
                 ast::DeclarationKind::Function(_) | ast::DeclarationKind::Struct(_) => {}
                 ast::DeclarationKind::Impl(impl_declaration) => {
                     let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
-                    let struct_path =
-                        types::ItemPath::new(module_path.clone(), struct_name.clone());
-                    let error_location = ErrorLocation::Item(struct_path.clone(), position);
+                    let struct_path = types::ItemPath::new(module_path, struct_name);
+                    let error_location = ErrorLocation::Item(struct_path, position);
 
                     let functions = impl_declaration
                         .functions
                         .iter()
                         .map(|f| {
-                            type_check_associated_function_declaration(f, &struct_path, position)
+                            type_check_associated_function_declaration(f, struct_path, position)
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let Some(struct_) = declared_modules.find_local_mut(&struct_path) else {
-                        return Err(TypeCheckErrorDescription::ItemDoesNotExist(
-                            struct_path.clone(),
-                        )
-                        .at(error_location));
+                    let Some(struct_) = declared_modules.find_local_mut(struct_path) else {
+                        return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
+                            .at(error_location));
                     };
 
                     let DeclaredItem {
@@ -412,15 +408,13 @@ pub fn type_check(
                         ..
                     } = struct_
                     else {
-                        return Err(TypeCheckErrorDescription::ImplNotOnStruct(
-                            struct_path.clone(),
-                        )
-                        .at(error_location));
+                        return Err(TypeCheckErrorDescription::ImplNotOnStruct(struct_path)
+                            .at(error_location));
                     };
 
                     for function in &functions {
                         fields.insert(
-                            function.name.clone(),
+                            function.name,
                             DeclaredStructField {
                                 type_: types::Type::Callable {
                                     arguments: function
@@ -428,7 +422,7 @@ pub fn type_check(
                                         .arguments
                                         .iter()
                                         .map(|x| types::Argument {
-                                            name: x.name.clone(),
+                                            name: x.name,
                                             type_: x.type_.clone(),
                                             position,
                                         })
@@ -439,7 +433,7 @@ pub fn type_check(
                             },
                         );
 
-                        declared_impls.insert(function.name.clone(), function.clone());
+                        declared_impls.insert(function.name, function.clone());
                     }
                 }
             }
@@ -457,11 +451,10 @@ pub fn type_check(
                 types::ModulePath::from_parts(path.iter().map(String::as_str));
             let item_name = types::Identifier::parse(name);
 
-            let exported_item_path =
-                ItemPath::new(exporting_module_name.clone(), item_name.clone());
-            let imported_item_path = ItemPath::new(module_path.clone(), item_name.clone());
+            let exported_item_path = ItemPath::new(exporting_module_name, item_name);
+            let imported_item_path = ItemPath::new(module_path, item_name);
 
-            let Some(imported_item) = declared_modules.find_struct(&exported_item_path) else {
+            let Some(imported_item) = declared_modules.find_struct(exported_item_path) else {
                 return Err(
                     TypeCheckErrorDescription::ItemDoesNotExist(exported_item_path)
                         .at(ErrorLocation::Item(imported_item_path, import.position)),
@@ -490,16 +483,16 @@ pub fn type_check(
                         import
                             .alias
                             .as_ref()
-                            .map_or_else(|| item_name.clone(), |x| Identifier::parse(x)),
+                            .map_or_else(|| item_name, |x| Identifier::parse(x)),
                     );
                     declared_modules.declare_item(
-                        imported_as.clone(),
+                        imported_as,
                         DeclaredItem {
                             kind: DeclaredItemKind::Import(DeclaredImport {
                                 position: import.position,
                                 imported_item: types::ItemPath::new(
                                     exporting_module_name,
-                                    item_name.clone(),
+                                    item_name,
                                 ),
                             }),
                             visibility: imported_item.visibility,
@@ -528,7 +521,7 @@ pub fn type_check(
                 ast::DeclarationKind::Function(_) | ast::DeclarationKind::Struct(_) => {}
                 ast::DeclarationKind::Impl(impl_declaration) => {
                     let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
-                    let struct_path = types::ItemPath::new(module_path.clone(), struct_name);
+                    let struct_path = types::ItemPath::new(module_path, struct_name);
 
                     let declared_impl =
                         declared_impls.iter().filter(|x| x.0.struct_ == struct_path);
@@ -538,16 +531,14 @@ pub fn type_check(
                             type_check_associated_function(
                                 f,
                                 &available_types,
-                                ErrorLocation::Field(f.name.clone(), position),
+                                ErrorLocation::Field(f.name, position),
                             )
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let Some(struct_) = declared_modules.find_local_mut(&struct_path) else {
-                        return Err(TypeCheckErrorDescription::ItemDoesNotExist(
-                            struct_path.clone(),
-                        )
-                        .at(ErrorLocation::Item(struct_path, position)));
+                    let Some(struct_) = declared_modules.find_local_mut(struct_path) else {
+                        return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
+                            .at(ErrorLocation::Item(struct_path, position)));
                     };
 
                     // TODO DeclaredItem should have a is_struct method for this!
@@ -556,17 +547,15 @@ pub fn type_check(
                         ..
                     } = struct_
                     else {
-                        return Err(TypeCheckErrorDescription::ImplNotOnStruct(
-                            struct_path.clone(),
-                        )
-                        .at(ErrorLocation::Item(struct_path, position)));
+                        return Err(TypeCheckErrorDescription::ImplNotOnStruct(struct_path)
+                            .at(ErrorLocation::Item(struct_path, position)));
                     };
 
                     for function in &functions {
-                        impls.insert(function.name.clone(), function.clone());
+                        impls.insert(function.name, function.clone());
 
                         fields.insert(
-                            function.name.clone(),
+                            function.name,
                             DeclaredStructField {
                                 type_: function.type_(),
                                 static_: true,
@@ -588,13 +577,13 @@ pub fn type_check(
                     declared_function,
                     &available_types,
                     ErrorLocation::Item(
-                        declared_function.name.clone(),
+                        declared_function.name,
                         declared_function.definition.position,
                     ),
                 )?;
 
                 module_items.insert(
-                    declared_function.name.clone(),
+                    declared_function.name,
                     types::Item {
                         kind: types::ItemKind::Function(body),
                         visibility: declared_item.visibility,
@@ -606,14 +595,14 @@ pub fn type_check(
                 fields,
             }) => {
                 module_items.insert(
-                    struct_name.clone(),
+                    *struct_name,
                     types::Item {
                         kind: types::ItemKind::Struct(types::Struct {
-                            name: struct_name.clone(),
+                            name: *struct_name,
                             fields: fields
                                 .iter()
                                 .map(|(field_name, declaration)| types::StructField {
-                                    name: field_name.clone(),
+                                    name: *field_name,
                                     type_: declaration.type_.clone(),
                                     static_: declaration.static_,
                                 })
@@ -621,7 +610,7 @@ pub fn type_check(
                             impls: impls
                                 .iter()
                                 .filter(|f| &f.0.struct_ == struct_name)
-                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .map(|(k, v)| (*k, v.clone()))
                                 .collect(),
                         }),
                         visibility: declared_item.visibility,
@@ -632,7 +621,7 @@ pub fn type_check(
                 imported_item,
                 position,
             }) => {
-                let imported_item = declared_modules.find_struct(imported_item).unwrap();
+                let imported_item = declared_modules.find_struct(*imported_item).unwrap();
                 match &imported_item.kind {
                     DeclaredItemKind::Struct(DeclaredStruct {
                         name: imported_item_name,
@@ -654,10 +643,10 @@ pub fn type_check(
                             }),
                         ..
                     }) => module_items.insert(
-                        item_path.clone(),
+                        *item_path,
                         types::Item {
                             kind: types::ItemKind::Import(Import {
-                                imported_item: imported_item_name.clone(),
+                                imported_item: *imported_item_name,
                                 position: *position,
                             }),
                             visibility: Visibility::Internal, // TODO can imports be reexported?
@@ -678,7 +667,7 @@ pub fn type_check(
 
     for (path, item) in module_items {
         items_by_module
-            .entry(path.module.clone())
+            .entry(path.module)
             .or_default()
             .insert(path, item);
     }
@@ -708,12 +697,12 @@ fn type_check_function(
     let definition = type_check_function_definition(
         &declared_function.definition,
         available_types,
-        &declared_function.name.module,
+        declared_function.name.module,
         error_location,
     )?;
 
     Ok(types::Function {
-        name: declared_function.name.clone(),
+        name: declared_function.name,
         definition,
     })
 }
@@ -726,12 +715,12 @@ fn type_check_associated_function(
     let definition = type_check_function_definition(
         &declared_function.definition,
         available_types,
-        &declared_function.name.struct_.module,
+        declared_function.name.struct_.module,
         error_location,
     )?;
 
     Ok(types::AssociatedFunction {
-        name: declared_function.name.clone(),
+        name: declared_function.name,
         definition,
     })
 }
@@ -739,17 +728,17 @@ fn type_check_associated_function(
 fn type_check_function_definition(
     declared_function: &DeclaredFunctionDefinition,
     available_types: &HashMap<ItemPath, types::Type>,
-    module: &ModulePath,
+    module: ModulePath,
     error_location: ErrorLocation,
 ) -> Result<types::FunctionDefinition, TypeCheckError> {
     let mut locals: HashMap<Identifier, types::Type> = HashMap::new();
 
-    for global in available_types.iter().filter(|x| &x.0.module == module) {
-        locals.insert(global.0.item.clone(), global.1.clone());
+    for global in available_types.iter().filter(|x| x.0.module == module) {
+        locals.insert(global.0.item, global.1.clone());
     }
 
     for argument in &declared_function.arguments {
-        locals.insert(argument.name.clone(), argument.type_.clone());
+        locals.insert(argument.name, argument.type_.clone());
     }
 
     let body = match &declared_function.ast.body {
@@ -832,7 +821,7 @@ fn type_check_function_definition(
             .arguments
             .iter()
             .map(|argument| types::Argument {
-                name: argument.name.clone(),
+                name: argument.name,
                 type_: argument.type_.clone(),
                 position: argument.position,
             })
@@ -845,17 +834,17 @@ fn type_check_function_definition(
 
 fn type_check_associated_function_declaration(
     function: &ast::Function,
-    self_type: &ItemPath,
+    self_type: ItemPath,
     position: SourceRange,
 ) -> Result<DeclaredAssociatedFunction, TypeCheckError> {
     let function_name = types::Identifier::parse(&function.name);
-    let function_path = types::FieldPath::new(self_type.clone(), function_name);
+    let function_path = types::FieldPath::new(self_type, function_name);
     // TODO this should take both paths with and wihout a struct_name into
     // consideration!
     let mut arguments = vec![];
 
     for arg in &function.arguments {
-        let type_ = convert_type(&self_type.module, &arg.type_);
+        let type_ = convert_type(self_type.module, &arg.type_);
 
         if type_ == types::Type::Unit {
             return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
@@ -866,7 +855,7 @@ fn type_check_associated_function_declaration(
 
         arguments.push(DeclaredArgument {
             name: types::Identifier::parse(&arg.name),
-            type_: convert_type(&self_type.module, &arg.type_),
+            type_: convert_type(self_type.module, &arg.type_),
             position: arg.position,
         });
     }
@@ -875,7 +864,7 @@ fn type_check_associated_function_declaration(
         name: function_path,
         definition: DeclaredFunctionDefinition {
             arguments,
-            return_type: convert_type(&self_type.module, &function.return_type),
+            return_type: convert_type(self_type.module, &function.return_type),
             ast: function.clone(),
             position,
         },
@@ -884,11 +873,11 @@ fn type_check_associated_function_declaration(
 
 fn type_check_function_declaration(
     function: &ast::Function,
-    module_path: &ModulePath,
+    module_path: ModulePath,
     position: SourceRange,
 ) -> Result<DeclaredFunction, TypeCheckError> {
     let function_name = types::Identifier::parse(&function.name);
-    let function_path = types::ItemPath::new(module_path.clone(), function_name);
+    let function_path = types::ItemPath::new(module_path, function_name);
 
     let mut arguments = vec![];
 
@@ -978,25 +967,13 @@ fn type_check_expression(
 
                 callable_arguments = callable_arguments_iter.collect();
 
-                let types::Type::StructDescriptor(target_struct_name, _) =
+                let types::Type::StructDescriptor(target_struct_type_descriptor) =
                     available_types.get(&self_argument.type_.name()).unwrap()
                 else {
                     todo!("{:?}", self_argument.type_);
                 };
 
-                // TODO the struct descriptor should have a method that returns its instance
-                // type, so that this code does not rot
-                // TODO this may have funny consequences if there's a shadowing type with the
-                // same name as a builtin, we should probably simply disallow that
-                // TODO we should be using convert_type here
-                let expected_type = match target_struct_name.item.raw() {
-                    "u64" => types::Type::U64,
-                    "string" => types::Type::Object(types::ItemPath::new(
-                        types::ModulePath::parse("std"),
-                        types::Identifier::parse("string"),
-                    )),
-                    _ => types::Type::Object(target_struct_name.clone()),
-                };
+                let expected_type = target_struct_type_descriptor.object_type();
 
                 if self_argument.type_ != expected_type {
                     return Err(TypeCheckErrorDescription::UnexpectedArgumentTypeInCall {
@@ -1052,8 +1029,8 @@ fn type_check_expression(
             ast::Literal::String(value, _) => Ok(types::Expression {
                 position,
                 type_: types::Type::Object(types::ItemPath::new(
-                    types::ModulePath::parse("std"),
-                    types::Identifier::parse("string"),
+                    *MODULE_PATH_STD,
+                    *TYPE_NAME_STRING,
                 )),
                 kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
             }),
@@ -1069,8 +1046,7 @@ fn type_check_expression(
             let value_type = locals
                 .get(&id)
                 .ok_or_else(|| {
-                    TypeCheckErrorDescription::UndeclaredVariable(id.clone())
-                        .at(error_location.clone())
+                    TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location.clone())
                 })
                 .cloned()?;
 
@@ -1083,14 +1059,14 @@ fn type_check_expression(
         ast::ExpressionKind::StructConstructor(struct_name) => {
             let id = Identifier::parse(struct_name);
 
-            let types::Type::StructDescriptor(name, _) = locals
-                .get(&id)
-                .ok_or_else(|| {
-                    TypeCheckErrorDescription::UndeclaredVariable(id.clone())
-                        .at(error_location.clone())
-                })
-                .cloned()
-                .unwrap()
+            let types::Type::StructDescriptor(types::StructTypeDescriptor { name, fields: _ }) =
+                locals
+                    .get(&id)
+                    .ok_or_else(|| {
+                        TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location.clone())
+                    })
+                    .cloned()
+                    .unwrap()
             else {
                 todo!();
             };
@@ -1108,22 +1084,22 @@ fn type_check_expression(
                 types::Type::Unit => todo!(),
                 types::Type::Object(identifier) => identifier,
                 types::Type::Array(_) => todo!(),
-                types::Type::StructDescriptor(_, _) => todo!(),
+                types::Type::StructDescriptor(_) => todo!(),
                 types::Type::Callable { .. } => todo!(),
-                types::Type::U64 => {
-                    &types::ItemPath::new(types::ModulePath::parse("std"), Identifier::parse("u64"))
-                }
+                types::Type::U64 => &types::ItemPath::new(*MODULE_PATH_STD, *TYPE_NAME_U64),
                 types::Type::Pointer(_) => todo!(),
                 types::Type::U8 => todo!(),
             };
 
             let target_type = available_types.get(type_name).unwrap();
-            let types::Type::StructDescriptor(_, fields) = target_type else {
+            let types::Type::StructDescriptor(types::StructTypeDescriptor { name: _, fields }) =
+                target_type
+            else {
                 todo!("{target_type}");
             };
 
             let field_name = types::Identifier::parse(field_name);
-            let field_path = types::FieldPath::new(type_name.clone(), field_name.clone());
+            let field_path = types::FieldPath::new(*type_name, field_name);
 
             // TODO make fields a HashMap so we don't have to .find?
             let field_type = fields

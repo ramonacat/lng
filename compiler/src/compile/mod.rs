@@ -23,7 +23,7 @@ use value::{FunctionHandle, StructHandle, Value};
 use crate::{
     ast::SourceRange,
     runtime::register_mappings,
-    std::compile_std,
+    std::{MODULE_PATH_STD, compile_std},
     types::{self, FieldPath, Identifier, ItemPath, ModulePath, Visibility},
 };
 
@@ -231,12 +231,12 @@ impl<'ctx> CompiledFunction<'ctx> {
         &self,
         return_value: Option<&dyn BasicValue<'ctx>>,
         context: &CompilerContext<'ctx>,
-        module_path: &ModulePath,
+        module_path: ModulePath,
     ) -> Result<(), CompileError> {
         context
             .builder
             .build_return(return_value)
-            .map_err(|e| e.into_compile_error_at(module_path.clone(), self.handle.position))?;
+            .map_err(|e| e.into_compile_error_at(module_path, self.handle.position))?;
 
         Ok(())
     }
@@ -248,14 +248,12 @@ impl<'ctx> CompiledFunction<'ctx> {
 
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
-        let std_module_path = types::ModulePath::parse("std");
         let string_name =
-            types::ItemPath::new(std_module_path.clone(), types::Identifier::parse("string"));
-        let rc_name = types::ItemPath::new(std_module_path, types::Identifier::parse("rc"));
+            types::ItemPath::new(*MODULE_PATH_STD, types::Identifier::parse("string"));
 
         let builtins = Builtins {
             string_handle: StructHandle::new(types::Struct {
-                name: string_name.clone(),
+                name: string_name,
                 fields: vec![types::StructField {
                     name: types::FieldPath::new(string_name, Identifier::parse("characters")),
                     type_: types::Type::Pointer(Box::new(types::Type::U8)),
@@ -263,24 +261,7 @@ impl<'ctx> Compiler<'ctx> {
                 }],
                 impls: HashMap::new(),
             }),
-            rc_handle: StructHandle::new(types::Struct {
-                name: rc_name.clone(),
-                fields: vec![
-                    types::StructField {
-                        name: types::FieldPath::new(rc_name.clone(), Identifier::parse("refcount")),
-                        type_: types::Type::U64,
-                        static_: false,
-                    },
-                    types::StructField {
-                        name: types::FieldPath::new(rc_name, Identifier::parse("pointee")),
-                        // TODO this is not the right type, but righttyping this requires that we
-                        // have generics (because pointee is dependant on the type here)
-                        type_: types::Type::Pointer(Box::new(types::Type::U8)),
-                        static_: false,
-                    },
-                ],
-                impls: HashMap::new(),
-            }),
+            rc_handle: rc_builder::describe_structure(),
         };
 
         Self {
@@ -290,7 +271,7 @@ impl<'ctx> Compiler<'ctx> {
                 global_scope: std.unwrap_or_else(|| {
                     let mut scope = GlobalScope::default();
                     scope
-                        .create_module(ModulePath::parse("std"), context.create_module("std"))
+                        .create_module(*MODULE_PATH_STD, context.create_module("std"))
                         .set_variable(
                             Identifier::parse("string"),
                             Value::Struct(builtins.string_handle.clone()),
@@ -309,12 +290,9 @@ impl<'ctx> Compiler<'ctx> {
             let llvm_module = self
                 .context
                 .llvm_context
-                .create_module(path.clone().into_mangled().as_str());
+                .create_module((*path).into_mangled().as_str());
 
-            let created_module = self
-                .context
-                .global_scope
-                .create_module(path.clone(), llvm_module);
+            let created_module = self.context.global_scope.create_module(*path, llvm_module);
 
             for declaration in program_module.items.values() {
                 match &declaration.kind {
@@ -337,10 +315,8 @@ impl<'ctx> Compiler<'ctx> {
                             position: function.definition.position,
                         };
 
-                        created_module.set_variable(
-                            function.name.item.clone(),
-                            Value::Function(function_handle),
-                        );
+                        created_module
+                            .set_variable(function.name.item, Value::Function(function_handle));
                     }
                     types::ItemKind::Struct(struct_) => {
                         let static_fields = struct_
@@ -354,12 +330,12 @@ impl<'ctx> Compiler<'ctx> {
                                     arguments: impl_.definition.arguments.clone(),
                                     position: impl_.definition.position,
                                 };
-                                (name.clone(), Value::Function(handle))
+                                (*name, Value::Function(handle))
                             })
                             .collect();
 
                         created_module.set_variable(
-                            struct_.name.item.clone(),
+                            struct_.name.item,
                             Value::Struct(StructHandle::new_with_statics(
                                 struct_.clone(),
                                 static_fields,
@@ -372,9 +348,9 @@ impl<'ctx> Compiler<'ctx> {
         }
 
         for (module_path, file) in &program.modules {
-            let Some(module) = self.context.global_scope.get_module(module_path) else {
+            let Some(module) = self.context.global_scope.get_module(*module_path) else {
                 return Err(
-                    CompileErrorDescription::ModuleNotFound(module_path.clone()).at_indeterminate()
+                    CompileErrorDescription::ModuleNotFound(*module_path).at_indeterminate()
                 );
             };
 
@@ -386,7 +362,7 @@ impl<'ctx> Compiler<'ctx> {
                 let value = self
                     .context
                     .global_scope
-                    .get_value(&import.imported_item)
+                    .get_value(import.imported_item)
                     .unwrap();
 
                 match value {
@@ -405,7 +381,7 @@ impl<'ctx> Compiler<'ctx> {
 
                         assert!(&name.module == module_path);
 
-                        module.set_variable(name.item.clone(), function_value);
+                        module.set_variable(name.item, function_value);
                     }
                     Value::Struct(ref struct_) => {
                         struct_.import(module, &self.context);
@@ -419,11 +395,11 @@ impl<'ctx> Compiler<'ctx> {
                     types::ItemKind::Function(function) => {
                         self.compile_function(
                             module
-                                .get_variable(&item_name.item)
+                                .get_variable(item_name.item)
                                 .unwrap()
                                 .as_function()
                                 .unwrap(),
-                            module_path,
+                            *module_path,
                             module,
                             &function.definition,
                         )?;
@@ -433,7 +409,7 @@ impl<'ctx> Compiler<'ctx> {
                         for (impl_name, impl_) in &struct_.impls {
                             self.compile_function(
                                 module
-                                    .get_variable(&item_name.item)
+                                    .get_variable(item_name.item)
                                     .unwrap()
                                     .as_struct()
                                     .unwrap()
@@ -441,7 +417,7 @@ impl<'ctx> Compiler<'ctx> {
                                     .unwrap()
                                     .as_function()
                                     .unwrap(),
-                                module_path,
+                                *module_path,
                                 module,
                                 &impl_.definition,
                             )?;
@@ -460,7 +436,7 @@ impl<'ctx> Compiler<'ctx> {
         &self,
         handle: FunctionHandle,
         // TODO remove this argument, get this from module when needed
-        module_path: &ModulePath,
+        module_path: ModulePath,
         module: &module::CompiledModule<'ctx>,
         function: &types::FunctionDefinition,
     ) -> Result<(), CompileError> {
@@ -470,9 +446,7 @@ impl<'ctx> Compiler<'ctx> {
         let mut compiled_function = module.begin_compile_function(handle, function, &self.context);
 
         for statement in statements {
-            let self_value = compiled_function
-                .scope
-                .get_value(&Identifier::parse("self"));
+            let self_value = compiled_function.scope.get_value(Identifier::parse("self"));
 
             match statement {
                 types::Statement::Expression(expression) => {
@@ -480,7 +454,7 @@ impl<'ctx> Compiler<'ctx> {
                         expression,
                         self_value,
                         &mut compiled_function,
-                        module_path.clone(),
+                        module_path,
                         module,
                     )?;
                 }
@@ -489,20 +463,18 @@ impl<'ctx> Compiler<'ctx> {
                         &let_.value,
                         self_value,
                         &mut compiled_function,
-                        module_path.clone(),
+                        module_path,
                         module,
                     )?;
 
-                    compiled_function
-                        .scope
-                        .set_value(let_.binding.clone(), value.1);
+                    compiled_function.scope.set_value(let_.binding, value.1);
                 }
                 types::Statement::Return(expression) => {
                     let value = self.compile_expression(
                         expression,
                         self_value,
                         &mut compiled_function,
-                        module_path.clone(),
+                        module_path,
                         module,
                     )?;
 
@@ -586,7 +558,7 @@ impl<'ctx> Compiler<'ctx> {
                     target,
                     self_.clone(),
                     compiled_function,
-                    module_path.clone(),
+                    module_path,
                     module,
                 )?;
                 let (self_value, Value::Function(function)) = compiled_target else {
@@ -600,7 +572,7 @@ impl<'ctx> Compiler<'ctx> {
                             a,
                             self_value.clone(),
                             compiled_function,
-                            module_path.clone(),
+                            module_path,
                             module,
                         )
                         .map(|x| x.1)
@@ -630,7 +602,7 @@ impl<'ctx> Compiler<'ctx> {
                         &call_arguments,
                         &format!("call_result_{}", position.as_id()),
                     )
-                    .map_err(|e| e.into_compile_error_at(module_path.clone(), position))?;
+                    .map_err(|e| e.into_compile_error_at(module_path, position))?;
 
                 let call_result = call_result.as_any_value_enum();
 
@@ -640,13 +612,13 @@ impl<'ctx> Compiler<'ctx> {
                         call_result.into_pointer_value(),
                         self.context
                             .global_scope
-                            .get_value(&item_path)
+                            .get_value(item_path)
                             .unwrap()
                             .as_struct()
                             .unwrap(),
                     )),
                     types::Type::Array(_) => todo!(),
-                    types::Type::StructDescriptor(_, _) => todo!(),
+                    types::Type::StructDescriptor(_) => todo!(),
                     types::Type::Callable { .. } => todo!(),
                     types::Type::U64 => todo!(),
                     types::Type::U8 => todo!(),
@@ -657,6 +629,8 @@ impl<'ctx> Compiler<'ctx> {
             }
             types::ExpressionKind::Literal(literal) => match literal {
                 types::Literal::String(s) => {
+                    // TODO create a class for string, akin to RcValue and move all the creation
+                    // code there
                     let name = format!("literal_{}", position.as_id());
                     let characters_value = self
                         .context
@@ -699,12 +673,12 @@ impl<'ctx> Compiler<'ctx> {
                 )),
             },
             types::ExpressionKind::VariableAccess(name) => {
-                Ok((None, compiled_function.scope.get_value(name).unwrap()))
+                Ok((None, compiled_function.scope.get_value(*name).unwrap()))
             }
             types::ExpressionKind::StructConstructor(name) => {
                 let s = compiled_function
                     .scope
-                    .get_value(name)
+                    .get_value(*name)
                     .unwrap()
                     .as_struct()
                     .unwrap();
@@ -736,10 +710,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.compile_expression(target, self_, compiled_function, module_path, module)?;
 
                 let access_result = target_value
-                    .read_field_value(&types::FieldPath::new(
-                        target.type_.name(),
-                        field_name.clone(),
-                    ))
+                    .read_field_value(&types::FieldPath::new(target.type_.name(), *field_name))
                     .unwrap();
 
                 Ok((Some(target_value), access_result))

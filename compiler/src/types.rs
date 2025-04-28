@@ -1,21 +1,28 @@
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
-    str,
+    sync::{LazyLock, RwLock},
 };
 
 use itertools::Itertools as _;
+use string_interner::{StringInterner, backend::StringBackend, symbol::SymbolU32};
 
 use crate::{
     ast::{self, SourceRange},
     name_mangler::{MangledIdentifier, mangle_field, mangle_item, mangle_module, nomangle_item},
+    std::{MODULE_PATH_STD, TYPE_NAME_U64},
 };
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct Identifier(String);
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub struct Identifier(SymbolU32);
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-// TODO support interning
+impl std::fmt::Debug for Identifier {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Identifier({self})")
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ItemPath {
     pub module: ModulePath,
     pub item: Identifier,
@@ -31,13 +38,19 @@ impl ItemPath {
     }
 }
 
+impl std::fmt::Debug for ItemPath {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ItemPath({self})")
+    }
+}
+
 impl Display for ItemPath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.module, self.item)
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct FieldPath {
     pub struct_: ItemPath,
     pub field: Identifier, // TODO support nesting?
@@ -59,38 +72,54 @@ impl Display for FieldPath {
     }
 }
 
+static IDENTIFIERS: LazyLock<RwLock<StringInterner<StringBackend>>> =
+    LazyLock::new(|| RwLock::new(StringInterner::default()));
+
 impl Identifier {
     pub fn parse(raw: &str) -> Self {
-        Self(raw.to_string())
+        let symbol = IDENTIFIERS.write().unwrap().get_or_intern(raw);
+        Self(symbol)
     }
 
-    pub(crate) fn raw(&self) -> &str {
-        self.0.as_str()
+    pub(crate) fn raw(self) -> String {
+        IDENTIFIERS
+            .read()
+            .unwrap()
+            .resolve(self.0)
+            .unwrap()
+            .to_string()
     }
 }
 
 impl Display for Identifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = &self.0;
-
-        write!(f, "{name}")
+        write!(f, "{}", self.raw())
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub struct ModulePath(Vec<Identifier>);
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct ModulePath(SymbolU32);
 
 impl ModulePath {
     pub fn parse(raw: &str) -> Self {
-        Self(raw.split('.').map(Identifier::parse).collect())
+        let interned = IDENTIFIERS.write().unwrap().get_or_intern(raw);
+
+        Self(interned)
     }
 
     pub fn from_parts<'a>(path: impl Iterator<Item = &'a str>) -> Self {
-        Self(path.map(Identifier::parse).collect())
+        Self::parse(&path.map(ToOwned::to_owned).join("."))
     }
 
-    pub fn parts(&self) -> &[Identifier] {
-        self.0.as_slice()
+    pub fn parts(self) -> Vec<Identifier> {
+        let raw = IDENTIFIERS
+            .read()
+            .unwrap()
+            .resolve(self.0)
+            .unwrap()
+            .to_string();
+
+        raw.split('.').map(Identifier::parse).collect()
     }
 
     pub(crate) fn into_mangled(self) -> MangledIdentifier {
@@ -100,9 +129,27 @@ impl ModulePath {
 
 impl Display for ModulePath {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let name = self.0.iter().map(Identifier::raw).join(".");
+        let name = self.parts().iter().copied().map(Identifier::raw).join(".");
 
         write!(f, "{name}")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructTypeDescriptor {
+    pub name: ItemPath,
+    pub fields: Vec<StructField>,
+}
+
+impl StructTypeDescriptor {
+    pub fn object_type(&self) -> Type {
+        // TODO can we avoid special-casing the types here? perhaps take the object type as an
+        // argument?
+        if self.name.module == *MODULE_PATH_STD && self.name.item == *TYPE_NAME_U64 {
+            return Type::U64;
+        }
+
+        Type::Object(self.name)
     }
 }
 
@@ -113,7 +160,7 @@ pub enum Type {
     Object(ItemPath),
     Array(Box<Type>),
     // TODO this should probably be simply an object, just of StructDescriptor<TargetStruct> type
-    StructDescriptor(ItemPath, Vec<StructField>),
+    StructDescriptor(StructTypeDescriptor),
     // TODO this should be an object with special properties
     Callable {
         arguments: Vec<Argument>,
@@ -132,7 +179,10 @@ impl Type {
         match &self {
             Self::Unit => "void".to_string(),
             Self::Object(item_path) => format!("{item_path}"),
-            Self::StructDescriptor(item_path, _) => format!("Struct<{item_path}>"),
+            Self::StructDescriptor(StructTypeDescriptor {
+                name: item_path,
+                fields: _,
+            }) => format!("Struct<{item_path}>"),
             Self::Array(inner) => format!("{}[]", inner.debug_name()),
             Self::Callable {
                 arguments,
@@ -151,14 +201,15 @@ impl Type {
         }
     }
 
+    // TODO remove this? not all types have a path
     pub(crate) fn name(&self) -> ItemPath {
         match &self {
             Self::Unit => todo!(),
-            Self::Object(item_path) => item_path.clone(),
+            Self::Object(item_path) => *item_path,
             Self::Array(_) => todo!(),
-            Self::StructDescriptor(_, _) => todo!(),
+            Self::StructDescriptor(_) => todo!(),
             Self::Callable { .. } => todo!(),
-            Self::U64 => ItemPath::new(ModulePath::parse("std"), Identifier::parse("u64")),
+            Self::U64 => ItemPath::new(*MODULE_PATH_STD, *TYPE_NAME_U64),
             Self::U8 => todo!(),
             Self::Pointer(_) => todo!(),
         }
@@ -171,7 +222,9 @@ impl Display for Type {
             Self::Unit => write!(f, "void"),
             Self::Object(identifier) => write!(f, "{identifier}"),
             Self::Array(inner) => write!(f, "{inner}[]"),
-            Self::StructDescriptor(name, _) => write!(f, "StructDescriptor<{name}>"),
+            Self::StructDescriptor(StructTypeDescriptor { name, fields: _ }) => {
+                write!(f, "StructDescriptor<{name}>")
+            }
             Self::Callable {
                 arguments,
                 return_type,
@@ -239,7 +292,7 @@ impl AssociatedFunction {
     }
 
     pub(crate) fn mangled_name(&self) -> MangledIdentifier {
-        self.name.clone().into_mangled()
+        self.name.into_mangled()
     }
 }
 
@@ -253,8 +306,8 @@ impl Function {
 
     pub(crate) fn mangled_name(&self) -> MangledIdentifier {
         match &self.definition.body {
-            FunctionBody::Extern(foreign_name) => nomangle_item(foreign_name.clone()),
-            FunctionBody::Statements(_) => self.name.clone().into_mangled(),
+            FunctionBody::Extern(foreign_name) => nomangle_item(*foreign_name),
+            FunctionBody::Statements(_) => self.name.into_mangled(),
         }
     }
 }

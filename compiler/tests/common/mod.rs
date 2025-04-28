@@ -10,7 +10,7 @@ use compiler::{
 use inkwell::{execution_engine::ExecutionEngine, module::Module};
 
 thread_local! {
-    static TEST_RESUTLS: RefCell<String> = RefCell::new(String::new());
+    static TEST_RESUTLS: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
 #[unsafe(no_mangle)]

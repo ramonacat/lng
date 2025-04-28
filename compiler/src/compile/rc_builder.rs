@@ -5,7 +5,7 @@ use inkwell::{
     values::{BasicValue, PointerValue},
 };
 
-use crate::types::{FieldPath, Identifier, ItemPath, ModulePath};
+use crate::types::{self, FieldPath, Identifier, ItemPath, ModulePath};
 
 use super::{StructHandle, context::CompilerContext};
 
@@ -19,9 +19,30 @@ static STRUCT_PATH: LazyLock<ItemPath> =
     LazyLock::new(|| ItemPath::new(ModulePath::parse("std"), Identifier::parse("rc")));
 
 static REFCOUNT_FIELD: LazyLock<FieldPath> =
-    LazyLock::new(|| FieldPath::new(STRUCT_PATH.clone(), Identifier::parse("refcount")));
+    LazyLock::new(|| FieldPath::new(*STRUCT_PATH, Identifier::parse("refcount")));
 static POINTEE_FIELD: LazyLock<FieldPath> =
-    LazyLock::new(|| FieldPath::new(STRUCT_PATH.clone(), Identifier::parse("pointee")));
+    LazyLock::new(|| FieldPath::new(*STRUCT_PATH, Identifier::parse("pointee")));
+
+pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
+    StructHandle::new(types::Struct {
+        name: *STRUCT_PATH,
+        fields: vec![
+            types::StructField {
+                name: *REFCOUNT_FIELD,
+                type_: types::Type::U64,
+                static_: false,
+            },
+            types::StructField {
+                name: *POINTEE_FIELD,
+                // TODO this is not the right type, but righttyping this requires that we
+                // have generics (because pointee is dependant on the type here)
+                type_: types::Type::Pointer(Box::new(types::Type::U8)),
+                static_: false,
+            },
+        ],
+        impls: HashMap::new(),
+    })
+}
 
 impl<'ctx> RcValue<'ctx> {
     pub fn build_init<'src>(
@@ -35,14 +56,14 @@ impl<'ctx> RcValue<'ctx> {
     {
         let mut field_values = HashMap::new();
         field_values.insert(
-            Identifier::parse("refcount"),
+            REFCOUNT_FIELD.field,
             context
                 .llvm_context
                 .i64_type()
                 .const_int(1, false)
                 .as_basic_value_enum(),
         );
-        field_values.insert(Identifier::parse("pointee"), value.as_basic_value_enum());
+        field_values.insert(POINTEE_FIELD.field, value.as_basic_value_enum());
         let rc = context
             .builtins
             .rc_handle

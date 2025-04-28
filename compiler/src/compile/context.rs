@@ -9,7 +9,10 @@ use inkwell::{
     values::PointerValue,
 };
 
-use crate::types::{self, FieldPath, Identifier, ModulePath};
+use crate::{
+    std::MODULE_PATH_STD,
+    types::{self, FieldPath, Identifier},
+};
 
 use super::{scope::GlobalScope, value::StructHandle};
 
@@ -28,8 +31,8 @@ pub struct CompilerContext<'ctx> {
 impl<'ctx> CompilerContext<'ctx> {
     pub fn get_std_type(&self, name: &str) -> Option<StructHandle<'ctx>> {
         self.global_scope
-            .get_value(&types::ItemPath::new(
-                ModulePath::parse("std"),
+            .get_value(types::ItemPath::new(
+                *MODULE_PATH_STD,
                 Identifier::parse(name),
             ))
             .map(|x| x.as_struct().unwrap())
@@ -38,7 +41,7 @@ impl<'ctx> CompilerContext<'ctx> {
     fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
         match type_ {
             types::Type::Unit | types::Type::U8 => Box::new(self.llvm_context.i8_type()),
-            types::Type::StructDescriptor(_, _) => todo!(),
+            types::Type::StructDescriptor(_) => todo!(),
             types::Type::U64 => Box::new(self.llvm_context.i64_type()),
             // TODO arrays should be structs that have bounds, not just ptrs
             types::Type::Callable { .. }
@@ -74,7 +77,7 @@ impl<'ctx> CompilerContext<'ctx> {
 
         for (index, field) in fields.iter().enumerate() {
             field_types.push(self.type_to_llvm(&field.type_).as_basic_type_enum());
-            field_indices.insert(field.name.clone(), u32::try_from(index).unwrap());
+            field_indices.insert(field.name, u32::try_from(index).unwrap());
         }
 
         StructTypeHandle {
@@ -113,7 +116,7 @@ impl<'ctx> StructTypeHandle<'ctx> {
                 ],
                 &format!(
                     "{}_{}",
-                    field.clone().into_mangled().as_str(),
+                    (*field).into_mangled().as_str(),
                     rand::rng()
                         .sample_iter(rand::distr::Alphanumeric)
                         .take(8)

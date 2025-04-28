@@ -153,10 +153,7 @@ impl<'ctx> StructHandle<'ctx> {
             };
         }
 
-        importing_module.set_variable(
-            self.description.name.item.clone(),
-            Value::Struct(self.clone()),
-        );
+        importing_module.set_variable(self.description.name.item, Value::Struct(self.clone()));
     }
 
     pub fn read_field_value(

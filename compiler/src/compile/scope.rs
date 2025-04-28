@@ -63,8 +63,8 @@ impl<'ctx> Scope<'ctx> {
         self.locals.write().unwrap().insert(name, value);
     }
 
-    pub fn get_value(&self, name: &types::Identifier) -> Option<Value<'ctx>> {
-        if let Some(variable) = self.locals.read().unwrap().get(name) {
+    pub fn get_value(&self, name: types::Identifier) -> Option<Value<'ctx>> {
+        if let Some(variable) = self.locals.read().unwrap().get(&name) {
             return Some(variable.clone());
         }
 
@@ -116,18 +116,18 @@ impl<'ctx> GlobalScope<'ctx> {
         llvm_module: Module<'ctx>,
     ) -> &mut CompiledModule<'ctx> {
         self.modules
-            .entry(path.clone())
+            .entry(path)
             .or_insert_with(|| CompiledModule::new(path, self.scope.child(), llvm_module))
     }
 
-    pub fn get_module(&self, path: &types::ModulePath) -> Option<&CompiledModule<'ctx>> {
-        self.modules.get(path)
+    pub fn get_module(&self, path: types::ModulePath) -> Option<&CompiledModule<'ctx>> {
+        self.modules.get(&path)
     }
 
-    pub fn get_value(&self, item_path: &ItemPath) -> Option<Value<'ctx>> {
+    pub fn get_value(&self, item_path: ItemPath) -> Option<Value<'ctx>> {
         self.modules
             .get(&item_path.module)
-            .and_then(|x| x.get_variable(&item_path.item))
+            .and_then(|x| x.get_variable(item_path.item))
     }
 
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
