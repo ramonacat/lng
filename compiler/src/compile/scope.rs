@@ -1,8 +1,10 @@
 use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::RwLock};
 
+use inkwell::module::Module;
+
 use crate::types::{self, ItemPath};
 
-use super::{Value, context::CompilerContext, module::CompiledModule};
+use super::{Value, module::CompiledModule};
 
 pub struct Scope<'ctx> {
     locals: RwLock<HashMap<types::Identifier, Value<'ctx>>>,
@@ -41,6 +43,7 @@ impl<'ctx> Scope<'ctx> {
 
         Ok(())
     }
+
     pub fn root() -> Rc<Self> {
         Rc::new(Self {
             locals: RwLock::new(HashMap::new()),
@@ -99,26 +102,22 @@ impl Debug for GlobalScope<'_> {
 
 impl Default for GlobalScope<'_> {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<'ctx> GlobalScope<'ctx> {
-    pub fn new() -> Self {
         Self {
             modules: HashMap::new(),
             scope: Scope::root(),
         }
     }
+}
 
+impl<'ctx> GlobalScope<'ctx> {
     pub fn create_module(
         &mut self,
         path: types::ModulePath,
-        context: &CompilerContext<'ctx>,
+        llvm_module: Module<'ctx>,
     ) -> &mut CompiledModule<'ctx> {
         self.modules
             .entry(path.clone())
-            .or_insert_with(|| CompiledModule::new(path, self.scope.child(), context))
+            .or_insert_with(|| CompiledModule::new(path, self.scope.child(), llvm_module))
     }
 
     pub fn get_module(&self, path: &types::ModulePath) -> Option<&CompiledModule<'ctx>> {
@@ -133,9 +132,5 @@ impl<'ctx> GlobalScope<'ctx> {
 
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
         self.modules.into_values()
-    }
-
-    pub(crate) fn register(&self, id: types::Identifier, value: Value<'ctx>) {
-        self.scope.set_value(id, value);
     }
 }

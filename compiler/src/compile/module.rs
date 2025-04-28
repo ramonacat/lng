@@ -24,14 +24,11 @@ impl std::fmt::Debug for CompiledModule<'_> {
 }
 
 impl<'ctx> CompiledModule<'ctx> {
-    pub fn new(
+    pub const fn new(
         path: types::ModulePath,
         scope: Rc<Scope<'ctx>>,
-        context: &CompilerContext<'ctx>,
+        llvm_module: Module<'ctx>,
     ) -> Self {
-        let llvm_module = context
-            .llvm_context
-            .create_module(path.clone().into_mangled().as_str());
         Self {
             path,
             llvm_module,
@@ -116,9 +113,9 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::Object(identifier) => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        // TODO don't ignore identifier's module!
-                        scope
-                            .get_value(&identifier.item)
+                        context
+                            .global_scope
+                            .get_value(dbg!(&identifier))
                             .unwrap()
                             .as_struct()
                             .unwrap(),
@@ -133,9 +130,9 @@ impl<'ctx> CompiledModule<'ctx> {
                     types::Type::Unit => todo!(),
                     types::Type::Object(identifier) => Value::Reference(RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        // TODO don't ignore identifier's module!
-                        scope
-                            .get_value(&identifier.item)
+                        context
+                            .global_scope
+                            .get_value(identifier)
                             .unwrap()
                             .as_struct()
                             .unwrap(),

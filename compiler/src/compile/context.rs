@@ -11,7 +11,7 @@ use inkwell::{
 
 use crate::types::{self, FieldPath};
 
-use super::value::StructHandle;
+use super::{scope::GlobalScope, value::StructHandle};
 
 pub struct Builtins<'ctx> {
     pub rc_handle: StructHandle<'ctx>,
@@ -22,6 +22,7 @@ pub struct CompilerContext<'ctx> {
     pub llvm_context: &'ctx Context,
     pub builder: Builder<'ctx>,
     pub builtins: Builtins<'ctx>,
+    pub global_scope: GlobalScope<'ctx>,
 }
 
 impl<'ctx> CompilerContext<'ctx> {

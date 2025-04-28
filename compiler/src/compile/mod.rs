@@ -90,7 +90,6 @@ type RegisterGlobalMappings = Option<Box<dyn FnOnce(&ExecutionEngine, &Module)>>
 
 pub(crate) struct Compiler<'ctx> {
     context: CompilerContext<'ctx>,
-    global_scope: GlobalScope<'ctx>,
 }
 
 #[derive(Debug, Clone)]
@@ -288,22 +287,34 @@ impl<'ctx> Compiler<'ctx> {
             context: CompilerContext {
                 llvm_context: context,
                 builder: context.create_builder(),
+                global_scope: std.unwrap_or_else(|| {
+                    let mut scope = GlobalScope::default();
+                    scope
+                        .create_module(ModulePath::parse("std"), context.create_module("std"))
+                        .set_variable(
+                            Identifier::parse("string"),
+                            Value::Struct(builtins.string_handle.clone()),
+                        );
+                    scope
+                }),
                 builtins,
             },
-            global_scope: std.unwrap_or_default(),
         }
     }
 
     // TODO split into smaller functions and remove the allow
     #[allow(clippy::too_many_lines)]
     pub fn compile(mut self, program: &types::Program) -> Result<GlobalScope<'ctx>, CompileError> {
-        self.global_scope.register(
-            Identifier::parse("string"),
-            Value::Struct(self.context.builtins.string_handle.clone()),
-        );
-
         for (path, program_module) in &program.modules {
-            let created_module = self.global_scope.create_module(path.clone(), &self.context);
+            let llvm_module = self
+                .context
+                .llvm_context
+                .create_module(path.clone().into_mangled().as_str());
+
+            let created_module = self
+                .context
+                .global_scope
+                .create_module(path.clone(), llvm_module);
 
             for declaration in program_module.items.values() {
                 match &declaration.kind {
@@ -355,7 +366,7 @@ impl<'ctx> Compiler<'ctx> {
         }
 
         for (module_path, file) in &program.modules {
-            let Some(module) = self.global_scope.get_module(module_path) else {
+            let Some(module) = self.context.global_scope.get_module(module_path) else {
                 return Err(
                     CompileErrorDescription::ModuleNotFound(module_path.clone()).at_indeterminate()
                 );
@@ -366,7 +377,11 @@ impl<'ctx> Compiler<'ctx> {
                     continue;
                 };
 
-                let value = self.global_scope.get_value(&import.imported_item).unwrap();
+                let value = self
+                    .context
+                    .global_scope
+                    .get_value(&import.imported_item)
+                    .unwrap();
                 match value {
                     Value::Primitive(_, _) => todo!(),
                     Value::Reference(_) => todo!(),
@@ -426,7 +441,7 @@ impl<'ctx> Compiler<'ctx> {
             }
         }
 
-        Ok(self.global_scope)
+        Ok(self.context.global_scope)
     }
 
     // TODO split into smaller functions, remove the allow
@@ -620,7 +635,8 @@ impl<'ctx> Compiler<'ctx> {
                 Ok((
                     None,
                     Value::Primitive(
-                        self.global_scope
+                        self.context
+                            .global_scope
                             .get_value(&types::ItemPath::new(
                                 types::ModulePath::parse("std"),
                                 types::Identifier::parse("u64"),
@@ -667,7 +683,8 @@ impl<'ctx> Compiler<'ctx> {
                     None,
                     Value::Primitive(
                         // TODO create `self.get_primitive_type()` or something along these lines
-                        self.global_scope
+                        self.context
+                            .global_scope
                             .get_value(&types::ItemPath::new(
                                 ModulePath::parse("std"),
                                 Identifier::parse("u64"),
