@@ -112,7 +112,7 @@ impl<'ctx> CompiledModule<'ctx> {
         for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
         {
             let value = match &argument.type_ {
-                types::Type::Void => todo!(),
+                types::Type::Unit => todo!(),
                 types::Type::Object(identifier) => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
@@ -130,7 +130,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 // TODO there should be a built-in object for arrays that has bounds, etc. and
                 // this object should be passed to the function, instead to a reference
                 types::Type::Array(a) => match &**a {
-                    types::Type::Void => todo!(),
+                    types::Type::Unit => todo!(),
                     types::Type::Object(identifier) => Value::Reference(RcValue::from_pointer(
                         argument_value.into_pointer_value(),
                         // TODO don't ignore identifier's module!

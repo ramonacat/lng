@@ -1,9 +1,6 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use inkwell::{
-    types::StructType,
-    values::{BasicValue as _, BasicValueEnum, FunctionValue, PointerValue},
-};
+use inkwell::values::{BasicValue as _, BasicValueEnum, FunctionValue, PointerValue};
 use itertools::Itertools;
 
 use crate::{
@@ -12,7 +9,11 @@ use crate::{
     types::{self, FieldPath, Identifier, Visibility},
 };
 
-use super::{context::CompilerContext, module::CompiledModule, rc_builder::RcValue};
+use super::{
+    context::{CompilerContext, StructTypeHandle},
+    module::CompiledModule,
+    rc_builder::RcValue,
+};
 
 #[derive(Clone)]
 pub struct FunctionHandle {
@@ -84,17 +85,19 @@ impl<'ctx> StructHandle<'ctx> {
         binding_name: &str,
         mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
+        let llvm_type = self.llvm_type(context);
+
         let instance = context
             .builder
             .build_malloc(
-                self.llvm_type(context),
+                llvm_type.as_llvm_type(),
                 &(binding_name.to_string() + "_ptr"),
             )
             .unwrap();
 
         for field in self.description.fields.iter().filter(|x| !x.static_) {
             let field_value = field_values.remove(&field.name.field).unwrap();
-            let (_, field_pointer) = self.field_pointer(&field.name.field, instance, context);
+            let (_, field_pointer) = llvm_type.field_pointer(&field.name, instance, context);
 
             context
                 .builder
@@ -107,12 +110,14 @@ impl<'ctx> StructHandle<'ctx> {
 
     pub fn build_field_load(
         &self,
-        field: &Identifier,
+        field: &FieldPath,
         instance: PointerValue<'ctx>,
         binding_name: &str,
         context: &CompilerContext<'ctx>,
     ) -> BasicValueEnum<'ctx> {
-        let (field_type, field_pointer) = self.field_pointer(field, instance, context);
+        let (field_type, field_pointer) = self
+            .llvm_type(context)
+            .field_pointer(field, instance, context);
 
         context
             .builder
@@ -122,51 +127,16 @@ impl<'ctx> StructHandle<'ctx> {
 
     pub fn build_field_store(
         &self,
-        field_name: &Identifier,
+        field_name: &FieldPath,
         instance: PointerValue<'ctx>,
         value: BasicValueEnum<'ctx>,
         context: &CompilerContext<'ctx>,
     ) {
-        let (_, field_pointer) = self.field_pointer(field_name, instance, context);
+        let (_, field_pointer) = self
+            .llvm_type(context)
+            .field_pointer(field_name, instance, context);
 
         context.builder.build_store(field_pointer, value).unwrap();
-    }
-
-    fn field_pointer(
-        &self,
-        name: &Identifier,
-        instance: PointerValue<'ctx>,
-        context: &CompilerContext<'ctx>,
-    ) -> (inkwell::types::BasicTypeEnum<'ctx>, PointerValue<'ctx>) {
-        let (field_index, field) = self
-            .description
-            .fields
-            .iter()
-            .enumerate()
-            .find(|x| &x.1.name.field == name)
-            .unwrap();
-
-        // TODO why does const_gep not work here?
-        let pointer = unsafe {
-            context.builder.build_gep(
-                self.llvm_type(context),
-                instance,
-                &[
-                    context.llvm_context.i32_type().const_int(0, false),
-                    context
-                        .llvm_context
-                        .i32_type()
-                        .const_int(field_index as u64, false),
-                ],
-                &format!("{name}_gep_{field_index}"),
-            )
-        }
-        .unwrap();
-
-        (
-            context.type_to_llvm(&field.type_).as_basic_type_enum(),
-            pointer,
-        )
     }
 
     pub fn import(&self, importing_module: &CompiledModule<'ctx>, context: &CompilerContext<'ctx>) {
@@ -219,14 +189,9 @@ impl<'ctx> StructHandle<'ctx> {
         }
     }
 
-    fn llvm_type(&self, context: &CompilerContext<'ctx>) -> StructType<'ctx> {
-        let mut field_types = vec![];
-
-        for field in &self.description.fields {
-            field_types.push(context.type_to_llvm(&field.type_).as_basic_type_enum());
-        }
-
-        context.llvm_context.struct_type(&field_types, false)
+    // TODO inline this???
+    fn llvm_type(&self, context: &CompilerContext<'ctx>) -> StructTypeHandle<'ctx> {
+        context.make_struct_type(&self.description.fields)
     }
 }
 

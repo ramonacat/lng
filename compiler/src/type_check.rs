@@ -131,7 +131,7 @@ fn convert_type(module: &ModulePath, type_: &ast::TypeDescription) -> types::Typ
         ast::TypeDescription::Array(type_description) => {
             types::Type::Array(Box::new(convert_type(module, type_description)))
         }
-        ast::TypeDescription::Named(name) if name == "void" => types::Type::Void,
+        ast::TypeDescription::Named(name) if name == "void" => types::Type::Unit,
         ast::TypeDescription::Named(name) if name == "u64" => types::Type::U64,
         ast::TypeDescription::Named(name) if name == "string" => {
             types::Type::Object(types::ItemPath::new(
@@ -830,7 +830,7 @@ fn type_check_associated_function_declaration(
     for arg in &function.arguments {
         let type_ = convert_type(&self_type.module, &arg.type_);
 
-        if type_ == types::Type::Void {
+        if type_ == types::Type::Unit {
             return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
                 argument_name: types::Identifier::parse(&arg.name),
             }
@@ -866,7 +866,7 @@ fn type_check_function_declaration(
     for arg in &function.arguments {
         let type_ = convert_type(module_path, &arg.type_);
 
-        if type_ == types::Type::Void {
+        if type_ == types::Type::Unit {
             return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
                 argument_name: types::Identifier::parse(&arg.name),
             }
@@ -1077,7 +1077,7 @@ fn type_check_expression(
             let target = type_check_expression(target, locals, globals, error_location)?;
 
             let type_name = match &target.type_ {
-                types::Type::Void => todo!(),
+                types::Type::Unit => todo!(),
                 types::Type::Object(identifier) => identifier,
                 types::Type::Array(_) => todo!(),
                 types::Type::StructDescriptor(_, _) => todo!(),

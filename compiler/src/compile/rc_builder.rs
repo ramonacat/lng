@@ -5,7 +5,7 @@ use inkwell::{
     values::{BasicValue, PointerValue},
 };
 
-use crate::types::Identifier;
+use crate::types::{FieldPath, Identifier, ItemPath, ModulePath};
 
 use super::{StructHandle, context::CompilerContext};
 
@@ -70,6 +70,8 @@ pub fn build_cleanup<'ctx>(
     let mut before = before;
     let mut first_block = before;
 
+    let struct_path = ItemPath::new(ModulePath::parse("std"), Identifier::parse("rc"));
+
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
         let previous_before = before;
@@ -84,7 +86,7 @@ pub fn build_cleanup<'ctx>(
             .builtins
             .rc_handle
             .build_field_load(
-                &Identifier::parse("refcount"),
+                &FieldPath::new(struct_path.clone(), Identifier::parse("refcount")),
                 rc.pointer,
                 &(name.to_string() + "refcount_old"),
                 context,
@@ -130,7 +132,7 @@ pub fn build_cleanup<'ctx>(
             .builtins
             .rc_handle
             .build_field_load(
-                &Identifier::parse("pointee"),
+                &FieldPath::new(struct_path.clone(), Identifier::parse("pointee")),
                 rc.pointer,
                 &(name.to_string() + "free_rc_pointee_value"),
                 context,
@@ -146,7 +148,7 @@ pub fn build_cleanup<'ctx>(
 
         context.builder.position_at_end(do_not_free_rc_block);
         context.builtins.rc_handle.build_field_store(
-            &Identifier::parse("refcount"),
+            &FieldPath::new(struct_path.clone(), Identifier::parse("refcount")),
             rc.pointer,
             new_refcount.as_basic_value_enum(),
             context,
@@ -171,10 +173,13 @@ pub fn build_cleanup<'ctx>(
 }
 
 pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
+    // TODO the field paths should be consts or something
+    let struct_path = ItemPath::new(ModulePath::parse("std"), Identifier::parse("rc"));
+
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
         let init_refcount = context.builtins.rc_handle.build_field_load(
-            &Identifier::parse("refcount"),
+            &FieldPath::new(struct_path.clone(), Identifier::parse("refcount")),
             rc.pointer,
             &format!("{name}_init_refcount"),
             context,
@@ -190,7 +195,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             .unwrap();
 
         context.builtins.rc_handle.build_field_store(
-            &Identifier::parse("refcount"),
+            &FieldPath::new(struct_path.clone(), Identifier::parse("refcount")),
             rc.pointer,
             incremented_refcount.as_basic_value_enum(),
             context,

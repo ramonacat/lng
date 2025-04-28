@@ -108,7 +108,8 @@ impl Display for ModulePath {
 // TODO support generics
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Void,
+    // TODO also rename void->unit in the parser, etc.
+    Unit,
     Object(ItemPath),
     Array(Box<Type>),
     // TODO this should probably be simply an object, just of StructDescriptor<TargetStruct> type
@@ -129,7 +130,7 @@ pub enum Type {
 impl Type {
     pub(crate) fn debug_name(&self) -> String {
         match &self {
-            Self::Void => "void".to_string(),
+            Self::Unit => "void".to_string(),
             Self::Object(item_path) => format!("{item_path}"),
             Self::StructDescriptor(item_path, _) => format!("Struct<{item_path}>"),
             Self::Array(inner) => format!("{}[]", inner.debug_name()),
@@ -152,7 +153,7 @@ impl Type {
 
     pub(crate) fn name(&self) -> ItemPath {
         match &self {
-            Self::Void => todo!(),
+            Self::Unit => todo!(),
             Self::Object(item_path) => item_path.clone(),
             Self::Array(_) => todo!(),
             Self::StructDescriptor(_, _) => todo!(),
@@ -167,7 +168,7 @@ impl Type {
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Void => write!(f, "void"),
+            Self::Unit => write!(f, "void"),
             Self::Object(identifier) => write!(f, "{identifier}"),
             Self::Array(inner) => write!(f, "{inner}[]"),
             Self::StructDescriptor(name, _) => write!(f, "StructDescriptor<{name}>"),
