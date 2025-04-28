@@ -7,14 +7,14 @@ pub fn import_function_from_nested() {
     let main = "
         import main::test::my_println;
 
-        fn main(): void {
+        fn main(): () {
             my_println(\"hello\");
         }
     ";
     let main_test = "
         import std::println;
 
-        export fn my_println(text: string): void {
+        export fn my_println(text: string): () {
             println(text);
         }
     ";

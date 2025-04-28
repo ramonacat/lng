@@ -10,12 +10,12 @@ pub fn method_call() {
         struct Greeter {}
 
         impl Greeter {
-            fn greet(self: Greeter, whom: string): void {
+            fn greet(self: Greeter, whom: string): () {
                 println(whom);
             }
         }
 
-        fn main(): void {
+        fn main(): () {
             let greeter:Greeter = Greeter {};
             greeter.greet(\"hello\");
         }

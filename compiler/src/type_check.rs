@@ -131,7 +131,7 @@ fn convert_type(module: &ModulePath, type_: &ast::TypeDescription) -> types::Typ
         ast::TypeDescription::Array(type_description) => {
             types::Type::Array(Box::new(convert_type(module, type_description)))
         }
-        ast::TypeDescription::Named(name) if name == "void" => types::Type::Unit,
+        ast::TypeDescription::Named(name) if name == "()" => types::Type::Unit,
         ast::TypeDescription::Named(name) if name == "u64" => types::Type::U64,
         ast::TypeDescription::Named(name) if name == "string" => {
             types::Type::Object(types::ItemPath::new(
@@ -806,6 +806,8 @@ fn type_check_function_definition(
 
                 checked_statements.push(checked_statement);
             }
+
+            // TODO validate that the return type actually exists!
 
             types::FunctionBody::Statements(checked_statements)
         }

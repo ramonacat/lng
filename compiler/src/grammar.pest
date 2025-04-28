@@ -4,8 +4,14 @@ identifier = @{
     LETTER ~ (LETTER | NUMBER | "_")*
 }
 
+type_named = {identifier}
+type_unit = {"()"}
+type_array = { type_named ~ "[]" }
+
 type_ = {
-    (identifier ~ ("[]")?)
+    type_unit
+    | type_array
+    | type_named
 }
 
 keyword_extern = @{"extern"}

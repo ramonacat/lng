@@ -3,11 +3,11 @@ use std::collections::HashMap;
 mod common;
 
 #[test]
-pub fn method_call() {
+pub fn integer_to_string() {
     let main = "
         import std::println;
 
-        fn main(): void {
+        fn main(): () {
             println(5.to_string());
         }
     ";

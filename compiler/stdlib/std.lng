@@ -1,7 +1,7 @@
-fn println_impl(value: string): void extern;
+fn println_impl(value: string): () extern;
 fn u64_to_string_impl(value: u64): string extern;
 
-export fn println(value: string): void {
+export fn println(value: string): () {
     println_impl(value);
 }
 

@@ -108,7 +108,6 @@ impl Display for ModulePath {
 // TODO support generics
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    // TODO also rename void->unit in the parser, etc.
     Unit,
     Object(ItemPath),
     Array(Box<Type>),

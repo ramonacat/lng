@@ -17,13 +17,13 @@ fn main() {
         struct Greeter {}
 
         impl Greeter {
-            fn greet(self: Greeter, whom: string): void {
+            fn greet(self: Greeter, whom: string): () {
                 println(\"hello\");
                 println(whom);
             }
         }
 
-        fn main(args:string[]): void {
+        fn main(args:string[]): () {
             let greeter:Greeter = Greeter {};
             greeter.greet(\"henlo\");
 
@@ -35,7 +35,7 @@ fn main() {
     let printer = "
         import std::println;
 
-        export fn my_println(arg: string): void {
+        export fn my_println(arg: string): () {
             println(arg);
         }
     ";
