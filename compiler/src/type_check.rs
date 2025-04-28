@@ -512,7 +512,7 @@ pub fn type_check(
             }
         }
 
-        let globals = declared_modules.get_declared_types();
+        let available_types = declared_modules.get_declared_types();
 
         for item in &file.declarations {
             let position = item.position;
@@ -530,7 +530,7 @@ pub fn type_check(
                         .map(|(_, f)| {
                             type_check_associated_function(
                                 f,
-                                &globals,
+                                &available_types,
                                 ErrorLocation::Field(f.name.clone(), position),
                             )
                         })
@@ -573,13 +573,13 @@ pub fn type_check(
 
     let mut module_items: HashMap<ItemPath, types::Item> = HashMap::new();
     for (item_path, declared_item) in &declared_modules.local {
-        let globals = declared_modules.get_declared_types();
+        let available_types = declared_modules.get_declared_types();
 
         match &declared_item.kind {
             DeclaredItemKind::Function(declared_function) => {
                 let body = type_check_function(
                     declared_function,
-                    &globals,
+                    &available_types,
                     ErrorLocation::Item(
                         declared_function.name.clone(),
                         declared_function.definition.position,
@@ -687,14 +687,16 @@ const fn convert_visibility(visibility: ast::Visibility) -> types::Visibility {
     }
 }
 
+// TODO make type checker an object, so that we don't have to pass stuff like available_types
+// around
 fn type_check_function(
     declared_function: &DeclaredFunction,
-    globals: &HashMap<ItemPath, types::Type>,
+    available_types: &HashMap<ItemPath, types::Type>,
     error_location: ErrorLocation,
 ) -> Result<types::Function, TypeCheckError> {
     let definition = type_check_function_definition(
         &declared_function.definition,
-        globals,
+        available_types,
         &declared_function.name.module,
         error_location,
     )?;
@@ -707,12 +709,12 @@ fn type_check_function(
 
 fn type_check_associated_function(
     declared_function: &DeclaredAssociatedFunction,
-    globals: &HashMap<ItemPath, types::Type>,
+    available_types: &HashMap<ItemPath, types::Type>,
     error_location: ErrorLocation,
 ) -> Result<types::AssociatedFunction, TypeCheckError> {
     let definition = type_check_function_definition(
         &declared_function.definition,
-        globals,
+        available_types,
         &declared_function.name.struct_.module,
         error_location,
     )?;
@@ -725,13 +727,13 @@ fn type_check_associated_function(
 
 fn type_check_function_definition(
     declared_function: &DeclaredFunctionDefinition,
-    globals: &HashMap<ItemPath, types::Type>,
+    available_types: &HashMap<ItemPath, types::Type>,
     module: &ModulePath,
     error_location: ErrorLocation,
 ) -> Result<types::FunctionDefinition, TypeCheckError> {
     let mut locals: HashMap<Identifier, types::Type> = HashMap::new();
 
-    for global in globals.iter().filter(|x| &x.0.module == module) {
+    for global in available_types.iter().filter(|x| &x.0.module == module) {
         locals.insert(global.0.item.clone(), global.1.clone());
     }
 
@@ -749,7 +751,7 @@ fn type_check_function_definition(
                         types::Statement::Expression(type_check_expression(
                             expression,
                             &locals,
-                            globals,
+                            available_types,
                             error_location.clone(),
                         )?)
                     }
@@ -758,7 +760,7 @@ fn type_check_function_definition(
                         let checked_expression = type_check_expression(
                             expression,
                             &locals,
-                            globals,
+                            available_types,
                             error_location.clone(),
                         )?;
                         // TODO we should resolve the FQDN by looking at locals, then imports, instead of
@@ -786,7 +788,7 @@ fn type_check_function_definition(
                         let checked_expression = type_check_expression(
                             expression,
                             &locals,
-                            globals,
+                            available_types,
                             error_location.clone(),
                         )?;
 
@@ -908,7 +910,7 @@ fn type_check_function_declaration(
 fn type_check_expression(
     expression: &ast::Expression,
     locals: &HashMap<Identifier, types::Type>,
-    globals: &HashMap<ItemPath, types::Type>,
+    available_types: &HashMap<ItemPath, types::Type>,
     error_location: ErrorLocation,
 ) -> Result<types::Expression, TypeCheckError> {
     let position = expression.position;
@@ -919,7 +921,7 @@ fn type_check_expression(
             arguments: passed_arguments,
         } => {
             let checked_target =
-                type_check_expression(target, locals, globals, error_location.clone())?;
+                type_check_expression(target, locals, available_types, error_location.clone())?;
 
             let types::Type::Callable {
                 arguments: ref callable_arguments,
@@ -962,7 +964,7 @@ fn type_check_expression(
                 callable_arguments = callable_arguments_iter.collect();
 
                 let types::Type::StructDescriptor(target_struct_name, _) =
-                    globals.get(&self_argument.type_.name()).unwrap()
+                    available_types.get(&self_argument.type_.name()).unwrap()
                 else {
                     todo!("{:?}", self_argument.type_);
                 };
@@ -1004,7 +1006,7 @@ fn type_check_expression(
                 passed_arguments.iter().zip(callable_arguments)
             {
                 let checked_argument =
-                    type_check_expression(argument, locals, globals, error_location.clone())?;
+                    type_check_expression(argument, locals, available_types, error_location.clone())?;
                 let expected_type = &called_function_argument.type_;
 
                 if &checked_argument.type_ != expected_type {
@@ -1066,8 +1068,6 @@ fn type_check_expression(
         ast::ExpressionKind::StructConstructor(struct_name) => {
             let id = Identifier::parse(struct_name);
 
-            // TODO make (locals, globals) and object, so that we can have this retrieval logic
-            // centralized
             let types::Type::StructDescriptor(name, _) = locals
                 .get(&id)
                 .ok_or_else(|| {
@@ -1087,7 +1087,7 @@ fn type_check_expression(
             })
         }
         ast::ExpressionKind::FieldAccess { target, field_name } => {
-            let target = type_check_expression(target, locals, globals, error_location)?;
+            let target = type_check_expression(target, locals, available_types, error_location)?;
 
             let type_name = match &target.type_ {
                 types::Type::Unit => todo!(),
@@ -1102,7 +1102,7 @@ fn type_check_expression(
                 types::Type::U8 => todo!(),
             };
 
-            let target_type = globals.get(type_name).unwrap();
+            let target_type = available_types.get(type_name).unwrap();
             let types::Type::StructDescriptor(_, fields) = target_type else {
                 todo!("{target_type}");
             };
