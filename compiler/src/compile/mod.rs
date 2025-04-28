@@ -437,7 +437,7 @@ impl<'ctx> Compiler<'ctx> {
                                     .unwrap()
                                     .as_struct()
                                     .unwrap()
-                                    .read_static_field(impl_name)
+                                    .read_field_value(Value::Empty, impl_name)
                                     .unwrap()
                                     .as_function()
                                     .unwrap(),

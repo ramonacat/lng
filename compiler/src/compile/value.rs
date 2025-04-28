@@ -78,6 +78,7 @@ impl Debug for StructHandle<'_> {
     }
 }
 
+// TODO cleanup all the read field methods
 impl<'ctx> StructHandle<'ctx> {
     pub fn build_heap_instance(
         &self,
@@ -158,10 +159,6 @@ impl<'ctx> StructHandle<'ctx> {
         );
     }
 
-    pub fn read_static_field(&self, name: &types::FieldPath) -> Option<Value<'ctx>> {
-        self.static_fields.get(name).cloned()
-    }
-
     pub fn read_field_value(
         &self,
         _instance: Value<'ctx>,
@@ -170,7 +167,7 @@ impl<'ctx> StructHandle<'ctx> {
         let field = self.description.fields.iter().find(|f| &f.name == name)?;
 
         if field.static_ {
-            return self.read_static_field(name);
+            return self.static_fields.get(name).cloned();
         }
 
         todo!("support reading non-static fields!");

@@ -89,7 +89,6 @@ pub struct StructTypeHandle<'ctx> {
     field_indices: HashMap<FieldPath, u32>,
 }
 
-// TODO cleanup all the read field methods
 impl<'ctx> StructTypeHandle<'ctx> {
     // TODO return Result (error if there's no such field)
     pub fn field_pointer(

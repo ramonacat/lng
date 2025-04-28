@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 use inkwell::{
     basic_block::BasicBlock,
@@ -14,6 +14,14 @@ pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
     value_type: StructHandle<'ctx>,
 }
+
+static STRUCT_PATH: LazyLock<ItemPath> =
+    LazyLock::new(|| ItemPath::new(ModulePath::parse("std"), Identifier::parse("rc")));
+
+static REFCOUNT_FIELD: LazyLock<FieldPath> =
+    LazyLock::new(|| FieldPath::new(STRUCT_PATH.clone(), Identifier::parse("refcount")));
+static POINTEE_FIELD: LazyLock<FieldPath> =
+    LazyLock::new(|| FieldPath::new(STRUCT_PATH.clone(), Identifier::parse("pointee")));
 
 impl<'ctx> RcValue<'ctx> {
     pub fn build_init<'src>(
@@ -70,8 +78,6 @@ pub fn build_cleanup<'ctx>(
     let mut before = before;
     let mut first_block = before;
 
-    let struct_path = ItemPath::new(ModulePath::parse("std"), Identifier::parse("rc"));
-
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
         let previous_before = before;
@@ -86,7 +92,7 @@ pub fn build_cleanup<'ctx>(
             .builtins
             .rc_handle
             .build_field_load(
-                &FieldPath::new(struct_path.clone(), Identifier::parse("refcount")),
+                &REFCOUNT_FIELD,
                 rc.pointer,
                 &(name.to_string() + "refcount_old"),
                 context,
@@ -132,7 +138,7 @@ pub fn build_cleanup<'ctx>(
             .builtins
             .rc_handle
             .build_field_load(
-                &FieldPath::new(struct_path.clone(), Identifier::parse("pointee")),
+                &POINTEE_FIELD,
                 rc.pointer,
                 &(name.to_string() + "free_rc_pointee_value"),
                 context,
@@ -148,7 +154,7 @@ pub fn build_cleanup<'ctx>(
 
         context.builder.position_at_end(do_not_free_rc_block);
         context.builtins.rc_handle.build_field_store(
-            &FieldPath::new(struct_path.clone(), Identifier::parse("refcount")),
+            &REFCOUNT_FIELD,
             rc.pointer,
             new_refcount.as_basic_value_enum(),
             context,
@@ -173,13 +179,10 @@ pub fn build_cleanup<'ctx>(
 }
 
 pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
-    // TODO the field paths should be consts or something
-    let struct_path = ItemPath::new(ModulePath::parse("std"), Identifier::parse("rc"));
-
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
         let init_refcount = context.builtins.rc_handle.build_field_load(
-            &FieldPath::new(struct_path.clone(), Identifier::parse("refcount")),
+            &REFCOUNT_FIELD,
             rc.pointer,
             &format!("{name}_init_refcount"),
             context,
@@ -195,7 +198,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             .unwrap();
 
         context.builtins.rc_handle.build_field_store(
-            &FieldPath::new(struct_path.clone(), Identifier::parse("refcount")),
+            &REFCOUNT_FIELD,
             rc.pointer,
             incremented_refcount.as_basic_value_enum(),
             context,

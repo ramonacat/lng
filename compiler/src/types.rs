@@ -15,6 +15,7 @@ use crate::{
 pub struct Identifier(String);
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
+// TODO support interning
 pub struct ItemPath {
     pub module: ModulePath,
     pub item: Identifier,
