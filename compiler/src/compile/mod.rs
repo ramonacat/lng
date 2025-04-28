@@ -320,7 +320,11 @@ impl<'ctx> Compiler<'ctx> {
                 match &declaration.kind {
                     types::ItemKind::Function(function) => {
                         let function_handle = FunctionHandle {
-                            visibility: if function.is_exported() {
+                            // TODO main should be detected during typecheck (with signature
+                            // verification, checks that only one exists in the program, etc.)
+                            visibility: if function.name.item.raw() == "main"
+                                || matches!(function.definition.body, types::FunctionBody::Extern)
+                            {
                                 Visibility::Export
                             } else {
                                 declaration.visibility

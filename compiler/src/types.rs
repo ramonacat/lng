@@ -243,15 +243,6 @@ impl AssociatedFunction {
 }
 
 impl Function {
-    // TODO remove this function, it should be decided in module
-    pub(crate) fn is_exported(&self) -> bool {
-        if self.name.item.0 == "main" {
-            return true;
-        }
-
-        matches!(self.definition.body, FunctionBody::Extern)
-    }
-
     pub(crate) fn type_(&self) -> Type {
         Type::Callable {
             arguments: self.definition.arguments.clone(),
