@@ -158,6 +158,7 @@ struct DeclaredFunctionDefinition {
     arguments: Vec<DeclaredArgument>,
     return_type: types::Type,
     ast: ast::Function,
+    position: SourceRange,
 }
 
 #[derive(Debug, Clone)]
@@ -325,23 +326,23 @@ pub fn type_check(
         let module_path = ModulePath::parse(&file.name);
 
         for declaration in &file.declarations {
-            match declaration {
-                ast::Declaration::Function(function) => {
-                    let declaration = type_check_function_declaration(function, &module_path)?;
+            match &declaration.kind {
+                ast::DeclarationKind::Function(function) => {
+                    let function_declaration = type_check_function_declaration(
+                        function,
+                        &module_path,
+                        declaration.position,
+                    )?;
 
                     items.insert(
                         ItemPath::new(module_path.clone(), Identifier::parse(&function.name)),
                         DeclaredItem {
-                            kind: DeclaredItemKind::Function(declaration.clone()),
-                            visibility: if function.export {
-                                Visibility::Export
-                            } else {
-                                Visibility::Internal
-                            },
+                            kind: DeclaredItemKind::Function(function_declaration),
+                            visibility: convert_visibility(declaration.visibility),
                         },
                     );
                 }
-                ast::Declaration::Struct(struct_) => {
+                ast::DeclarationKind::Struct(struct_) => {
                     let mut fields = HashMap::new();
                     // TODO check the types exist, possibly in separate pass
                     for field in &struct_.fields {
@@ -365,12 +366,11 @@ pub fn type_check(
                         name.clone(),
                         DeclaredItem {
                             kind: DeclaredItemKind::Struct(DeclaredStruct { name, fields }),
-                            // TODO structs should have configurable visibilty
-                            visibility: Visibility::Export,
+                            visibility: convert_visibility(declaration.visibility),
                         },
                     );
                 }
-                ast::Declaration::Impl(_) => {}
+                ast::DeclarationKind::Impl(_) => {}
             }
         }
 
@@ -382,21 +382,22 @@ pub fn type_check(
     for file in &program.0 {
         let module_path = ModulePath::parse(&file.name);
         for declaration in &file.declarations {
-            let position = declaration.position();
+            let position = declaration.position;
 
-            match declaration {
-                ast::Declaration::Function(_) | ast::Declaration::Struct(_) => {}
-                ast::Declaration::Impl(impl_declaration) => {
+            match &declaration.kind {
+                ast::DeclarationKind::Function(_) | ast::DeclarationKind::Struct(_) => {}
+                ast::DeclarationKind::Impl(impl_declaration) => {
                     let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
                     let struct_path =
                         types::ItemPath::new(module_path.clone(), struct_name.clone());
-                    let error_location =
-                        ErrorLocation::Item(struct_path.clone(), impl_declaration.position);
+                    let error_location = ErrorLocation::Item(struct_path.clone(), position);
 
                     let functions = impl_declaration
                         .functions
                         .iter()
-                        .map(|f| type_check_associated_function_declaration(f, &struct_path))
+                        .map(|f| {
+                            type_check_associated_function_declaration(f, &struct_path, position)
+                        })
                         .collect::<Result<Vec<_>, _>>()?;
 
                     let Some(struct_) = declared_modules.find_local_mut(&struct_path) else {
@@ -514,10 +515,11 @@ pub fn type_check(
         let globals = declared_modules.get_declared_types();
 
         for item in &file.declarations {
-            match item {
-                ast::Declaration::Function(_) | ast::Declaration::Struct(_) => {}
-                ast::Declaration::Impl(impl_declaration) => {
-                    let position = item.position();
+            let position = item.position;
+
+            match &item.kind {
+                ast::DeclarationKind::Function(_) | ast::DeclarationKind::Struct(_) => {}
+                ast::DeclarationKind::Impl(impl_declaration) => {
                     let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
                     let struct_path = types::ItemPath::new(module_path.clone(), struct_name);
 
@@ -580,7 +582,7 @@ pub fn type_check(
                     &globals,
                     ErrorLocation::Item(
                         declared_function.name.clone(),
-                        declared_function.definition.ast.position,
+                        declared_function.definition.position,
                     ),
                 )?;
 
@@ -676,6 +678,13 @@ pub fn type_check(
             .map(|(module_path, items)| (module_path, types::Module { items }))
             .collect(),
     })
+}
+
+const fn convert_visibility(visibility: ast::Visibility) -> types::Visibility {
+    match visibility {
+        ast::Visibility::Export => types::Visibility::Export,
+        ast::Visibility::Internal => types::Visibility::Internal,
+    }
 }
 
 fn type_check_function(
@@ -813,13 +822,14 @@ fn type_check_function_definition(
             .collect(),
         return_type: declared_function.return_type.clone(),
         body,
-        position: declared_function.ast.position,
+        position: declared_function.position,
     })
 }
 
 fn type_check_associated_function_declaration(
     function: &ast::Function,
     self_type: &ItemPath,
+    position: SourceRange,
 ) -> Result<DeclaredAssociatedFunction, TypeCheckError> {
     let function_name = types::Identifier::parse(&function.name);
     let function_path = types::FieldPath::new(self_type.clone(), function_name);
@@ -850,6 +860,7 @@ fn type_check_associated_function_declaration(
             arguments,
             return_type: convert_type(&self_type.module, &function.return_type),
             ast: function.clone(),
+            position,
         },
     })
 }
@@ -857,6 +868,7 @@ fn type_check_associated_function_declaration(
 fn type_check_function_declaration(
     function: &ast::Function,
     module_path: &ModulePath,
+    position: SourceRange,
 ) -> Result<DeclaredFunction, TypeCheckError> {
     let function_name = types::Identifier::parse(&function.name);
     let function_path = types::ItemPath::new(module_path.clone(), function_name);
@@ -886,6 +898,7 @@ fn type_check_function_declaration(
             arguments,
             return_type: convert_type(module_path, &function.return_type),
             ast: function.clone(),
+            position,
         },
     })
 }

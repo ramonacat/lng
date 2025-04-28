@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::ast::{
     Argument, Declaration, Expression, ExpressionKind, Function, FunctionBody, Impl, Import,
-    Literal, SourceFile, SourceRange, Statement, Struct, StructField, TypeDescription,
+    Literal, SourceFile, SourceRange, Statement, Struct, StructField, TypeDescription, Visibility,
 };
 
 #[derive(Parser)]
@@ -87,16 +87,16 @@ fn find_source_position(pair: &Pair<Rule>) -> SourceRange {
 
 fn parse_declaration(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     match item.as_rule() {
-        Rule::function_declaration => Ok(Declaration::Function(parse_function(item)?)),
-        Rule::struct_declaration => Ok(Declaration::Struct(parse_struct(item)?)),
-        Rule::impl_declaration => Ok(Declaration::Impl(parse_impl(item)?)),
+        Rule::function_declaration => Ok(parse_function(item)?),
+        Rule::struct_declaration => Ok(parse_struct(item)?),
+        Rule::impl_declaration => Ok(parse_impl(item)?),
         _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
             item,
         ))),
     }
 }
 
-fn parse_impl(item: Pair<Rule>) -> Result<Impl, ParseError<'_>> {
+fn parse_impl(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     let position = find_source_position(&item);
 
     let mut struct_name = String::new();
@@ -105,7 +105,7 @@ fn parse_impl(item: Pair<Rule>) -> Result<Impl, ParseError<'_>> {
     for item in item.into_inner() {
         match item.as_rule() {
             Rule::identifier => struct_name = item.as_str().to_string(),
-            Rule::function_declaration => functions.push(parse_function(item)?),
+            Rule::function_declaration => functions.push(parse_function_inner(item)?.2),
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     item,
@@ -114,14 +114,21 @@ fn parse_impl(item: Pair<Rule>) -> Result<Impl, ParseError<'_>> {
         }
     }
 
-    Ok(Impl {
+    let impl_ = Impl {
         struct_name,
         functions,
+    };
+
+    Ok(Declaration {
+        kind: crate::ast::DeclarationKind::Impl(impl_),
+        // TODO do impls have visibility at all? this probably should be handled per function
+        // instead
+        visibility: Visibility::Export,
         position,
     })
 }
 
-fn parse_struct(item: Pair<Rule>) -> Result<Struct, ParseError<'_>> {
+fn parse_struct(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     let position = find_source_position(&item);
     let mut name = String::new();
     let mut fields = vec![];
@@ -159,9 +166,12 @@ fn parse_struct(item: Pair<Rule>) -> Result<Struct, ParseError<'_>> {
         }
     }
 
-    Ok(Struct {
-        name,
-        fields,
+    let struct_ = Struct { name, fields };
+
+    Ok(Declaration {
+        kind: crate::ast::DeclarationKind::Struct(struct_),
+        // TODO we should acutally allow the export keyword and decide based on that
+        visibility: Visibility::Export,
         position,
     })
 }
@@ -184,7 +194,21 @@ fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
     Ok(Import { path, position })
 }
 
-fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
+fn parse_function(function: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
+    let (position, visibility, function) = parse_function_inner(function)?;
+
+    Ok(Declaration {
+        kind: crate::ast::DeclarationKind::Function(function),
+        visibility,
+        position,
+    })
+}
+
+// TODO split into smaller functions and remove the allow
+#[allow(clippy::too_many_lines)]
+fn parse_function_inner(
+    function: Pair<Rule>,
+) -> Result<(SourceRange, Visibility, Function), ParseError<'_>> {
     let mut name = String::new();
     let mut type_ = String::new();
     let mut arguments = vec![];
@@ -282,14 +306,22 @@ fn parse_function(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
         }
     }
 
-    Ok(Function {
-        name,
-        arguments,
-        return_type: parse_type(type_.as_str()),
-        body: body.unwrap(),
-        export,
+    let visibility = if export {
+        Visibility::Export
+    } else {
+        Visibility::Internal
+    };
+
+    Ok((
         position,
-    })
+        visibility,
+        Function {
+            name,
+            arguments,
+            return_type: parse_type(type_.as_str()),
+            body: body.unwrap(),
+        },
+    ))
 }
 
 // TODO split into smaller functions and remove the allow

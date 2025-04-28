@@ -114,9 +114,7 @@ pub struct Argument {
 
 #[derive(Debug, Clone)]
 pub enum FunctionBody {
-    #[allow(unused)]
     Statements(Vec<Statement>, SourceRange),
-    #[allow(unused)]
     Extern(SourceRange),
 }
 
@@ -124,19 +122,14 @@ pub enum FunctionBody {
 pub struct Function {
     pub name: String,
     pub arguments: Vec<Argument>,
-    #[allow(unused)]
     pub return_type: TypeDescription,
     pub body: FunctionBody,
-    // TODO move this to declaration
-    pub export: bool,
-    pub position: SourceRange,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructField {
     pub name: String,
     pub type_: TypeDescription,
-    #[allow(unused)]
     pub position: SourceRange,
 }
 
@@ -144,31 +137,32 @@ pub struct StructField {
 pub struct Struct {
     pub name: String,
     pub fields: Vec<StructField>,
-    pub position: SourceRange,
 }
 
 #[derive(Debug, Clone)]
 pub struct Impl {
     pub struct_name: String,
     pub functions: Vec<Function>,
-    pub position: SourceRange,
 }
 
 #[derive(Debug, Clone)]
-pub enum Declaration {
+pub enum DeclarationKind {
     Function(Function),
     Struct(Struct),
     Impl(Impl),
 }
 
-impl Declaration {
-    pub const fn position(&self) -> SourceRange {
-        match self {
-            Self::Function(function) => function.position,
-            Self::Struct(struct_) => struct_.position,
-            Self::Impl(impl_) => impl_.position,
-        }
-    }
+#[derive(Debug, Clone, Copy)]
+pub enum Visibility {
+    Export,
+    Internal,
+}
+
+#[derive(Debug, Clone)]
+pub struct Declaration {
+    pub kind: DeclarationKind,
+    pub visibility: Visibility,
+    pub position: SourceRange,
 }
 
 #[derive(Debug)]
