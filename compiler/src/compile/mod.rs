@@ -401,6 +401,7 @@ impl<'ctx> Compiler<'ctx> {
                     Value::Struct(ref struct_) => {
                         struct_.import(module, &self.context);
                     }
+                    Value::Empty => todo!(),
                 }
             }
 
@@ -512,7 +513,10 @@ impl<'ctx> Compiler<'ctx> {
 
                     match return_ {
                         Value::Reference(rc_value) => rc_value.as_ptr() != x.as_ptr(),
-                        Value::Primitive(_, _) | Value::Function(_) | Value::Struct(_) => true,
+                        Value::Primitive(_, _)
+                        | Value::Function(_)
+                        | Value::Struct(_)
+                        | Value::Empty => true,
                     }
                 })
                 .cloned()
@@ -606,10 +610,10 @@ impl<'ctx> Compiler<'ctx> {
                         Value::Struct(_) => {
                             todo!("implement passing struct definitions as arguments")
                         }
+                        Value::Empty => todo!(),
                     })
                     .collect::<Vec<BasicMetadataValueEnum>>();
 
-                // TODO support functions that return things that aren't ints!
                 let call_result = self
                     .context
                     .builder
@@ -620,33 +624,28 @@ impl<'ctx> Compiler<'ctx> {
                     )
                     .map_err(|e| e.into_compile_error_at(module_path.clone(), position))?;
 
-                let call_result = call_result
-                    .as_any_value_enum()
-                    .try_into()
-                    .unwrap_or_else(|()| {
-                        self.context
-                            .llvm_context
-                            .i64_type()
-                            .const_zero()
-                            .as_basic_value_enum()
-                    });
+                let call_result = call_result.as_any_value_enum();
 
-                // TODO the call result may not be void
-                Ok((
-                    None,
-                    Value::Primitive(
+                let value = match function.return_type {
+                    types::Type::Unit => Value::Empty,
+                    types::Type::Object(item_path) => Value::Reference(RcValue::from_pointer(
+                        call_result.into_pointer_value(),
                         self.context
                             .global_scope
-                            .get_value(&types::ItemPath::new(
-                                types::ModulePath::parse("std"),
-                                types::Identifier::parse("u64"),
-                            ))
+                            .get_value(&item_path)
                             .unwrap()
                             .as_struct()
                             .unwrap(),
-                        call_result,
-                    ),
-                ))
+                    )),
+                    types::Type::Array(_) => todo!(),
+                    types::Type::StructDescriptor(_, _) => todo!(),
+                    types::Type::Callable { .. } => todo!(),
+                    types::Type::U64 => todo!(),
+                    types::Type::U8 => todo!(),
+                    types::Type::Pointer(_) => todo!(),
+                };
+
+                Ok((None, value))
             }
             types::ExpressionKind::Literal(literal) => match literal {
                 types::Literal::String(s) => {

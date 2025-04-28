@@ -1005,8 +1005,12 @@ fn type_check_expression(
             for (argument, called_function_argument) in
                 passed_arguments.iter().zip(callable_arguments)
             {
-                let checked_argument =
-                    type_check_expression(argument, locals, available_types, error_location.clone())?;
+                let checked_argument = type_check_expression(
+                    argument,
+                    locals,
+                    available_types,
+                    error_location.clone(),
+                )?;
                 let expected_type = &called_function_argument.type_;
 
                 if &checked_argument.type_ != expected_type {

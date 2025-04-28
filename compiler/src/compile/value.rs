@@ -148,6 +148,7 @@ impl<'ctx> StructHandle<'ctx> {
                     importing_module.import_function(function_handle, context)
                 }
                 Value::Struct(_) => todo!(),
+                Value::Empty => todo!(),
             };
         }
 
@@ -199,6 +200,7 @@ impl<'ctx> StructHandle<'ctx> {
 // that
 #[derive(Clone)]
 pub enum Value<'ctx> {
+    Empty,
     Primitive(StructHandle<'ctx>, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     Function(FunctionHandle),
@@ -216,6 +218,7 @@ impl Debug for Value<'_> {
             }
             Value::Function(function_handle) => write!(f, "{function_handle:?}"),
             Value::Struct(struct_handle) => write!(f, "{struct_handle:?}"),
+            Value::Empty => todo!(),
         }
     }
 }
@@ -227,6 +230,7 @@ impl<'ctx> Value<'ctx> {
             Value::Reference(value) => value.as_ptr().as_basic_value_enum(),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
+            Value::Empty => todo!(),
         }
     }
 
@@ -236,6 +240,7 @@ impl<'ctx> Value<'ctx> {
             Value::Reference(ref_) => ref_.type_().read_field_value(self.clone(), field_path),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
+            Value::Empty => todo!(),
         }
     }
 
