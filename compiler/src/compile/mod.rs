@@ -30,8 +30,8 @@ use crate::{
 // TODO instead of executing the code, this should return some object that exposes the
 // executable code with a safe interface
 pub fn compile(
-    program: &types::Program,
-    std_program: &types::Program,
+    program: &types::Module,
+    std_program: &types::Module,
     register_global_mappings: RegisterGlobalMappings,
 ) -> Result<(), CompileError> {
     let context = Context::create();
@@ -273,16 +273,26 @@ impl<'ctx> Compiler<'ctx> {
 
     // TODO split into smaller functions and remove the allow
     #[allow(clippy::too_many_lines)]
-    pub fn compile(mut self, program: &types::Program) -> Result<GlobalScope<'ctx>, CompileError> {
-        for (path, program_module) in &program.modules {
-            let llvm_module = self
-                .context
-                .llvm_context
-                .create_module((*path).into_mangled().as_str());
+    pub fn compile(mut self, program: &types::Module) -> Result<GlobalScope<'ctx>, CompileError> {
+        for (path, declaration) in &program.all(None) {
+            let module_path = path.without_last();
+            let created_module = if self.context.global_scope.get_module(module_path).is_none() {
+                let llvm_module = self
+                    .context
+                    .llvm_context
+                    .create_module((*path).into_mangled().as_str());
 
-            let created_module = self.context.global_scope.create_module(*path, llvm_module);
+                self.context
+                    .global_scope
+                    .create_module(module_path, llvm_module)
+            } else {
+                self.context
+                    .global_scope
+                    .get_module_mut(module_path)
+                    .unwrap()
+            };
 
-            for declaration in program_module.items.values() {
+            {
                 match &declaration.kind {
                     types::ItemKind::Function(function) => {
                         let function_handle = FunctionHandle {
@@ -331,61 +341,65 @@ impl<'ctx> Compiler<'ctx> {
                         );
                     }
                     types::ItemKind::Import(_) => {}
+                    types::ItemKind::Module(_) => todo!(),
                 }
             }
         }
 
-        for (module_path, file) in &program.modules {
-            let Some(module) = self.context.global_scope.get_module(*module_path) else {
-                return Err(
-                    CompileErrorDescription::ModuleNotFound(*module_path).at_indeterminate()
-                );
+        for (name, item) in &program.all(None) {
+            let module_path = name.without_last();
+            let Some(module) = self.context.global_scope.get_module(module_path) else {
+                return Err(CompileErrorDescription::ModuleNotFound(module_path).at_indeterminate());
             };
 
-            for (name, item) in &file.items {
-                let types::ItemKind::Import(import) = &item.kind else {
-                    continue;
-                };
+            let types::ItemKind::Import(import) = &item.kind else {
+                continue;
+            };
 
-                let value = self
-                    .context
-                    .global_scope
-                    .get_value(import.imported_item)
-                    .unwrap();
+            let value = self
+                .context
+                .global_scope
+                .get_value(import.imported_item)
+                .unwrap();
 
-                match value {
-                    Value::Primitive(_, _) => todo!(),
-                    Value::Reference(_) => todo!(),
-                    Value::Function(function) => {
-                        module.import_function(&function, &self.context);
+            match value {
+                Value::Primitive(_, _) => todo!(),
+                Value::Reference(_) => todo!(),
+                Value::Function(function) => {
+                    module.import_function(&function, &self.context);
 
-                        let function_value = Value::Function(FunctionHandle {
-                            visibility: function.visibility,
-                            name: function.name.clone(),
-                            return_type: function.return_type,
-                            position: import.position,
-                            arguments: function.arguments.clone(),
-                        });
+                    let function_value = Value::Function(FunctionHandle {
+                        visibility: function.visibility,
+                        name: function.name.clone(),
+                        return_type: function.return_type,
+                        position: import.position,
+                        arguments: function.arguments.clone(),
+                    });
 
-                        module.set_variable(*name, function_value);
-                    }
-                    Value::Struct(ref struct_) => {
-                        struct_.import(module, &self.context);
-                    }
-                    Value::Empty => todo!(),
+                    module.set_variable(name.last(), function_value);
                 }
+                Value::Struct(ref struct_) => {
+                    struct_.import(module, &self.context);
+                }
+                Value::Empty => todo!(),
             }
+        }
+        for (item_name, item) in &program.all(None) {
+            let module_path = item_name.without_last();
+            let Some(module) = self.context.global_scope.get_module(module_path) else {
+                return Err(CompileErrorDescription::ModuleNotFound(module_path).at_indeterminate());
+            };
 
-            for (item_name, item) in &file.items {
+            {
                 match &item.kind {
                     types::ItemKind::Function(function) => {
                         self.compile_function(
                             module
-                                .get_variable(*item_name)
+                                .get_variable(item_name.last())
                                 .unwrap()
                                 .as_function()
                                 .unwrap(),
-                            *module_path,
+                            module_path,
                             module,
                             &function.definition,
                         )?;
@@ -395,7 +409,7 @@ impl<'ctx> Compiler<'ctx> {
                         for (impl_name, impl_) in &struct_.impls {
                             self.compile_function(
                                 module
-                                    .get_variable(*item_name)
+                                    .get_variable(item_name.last())
                                     .unwrap()
                                     .as_struct()
                                     .unwrap()
@@ -403,12 +417,13 @@ impl<'ctx> Compiler<'ctx> {
                                     .unwrap()
                                     .as_function()
                                     .unwrap(),
-                                *module_path,
+                                module_path,
                                 module,
                                 &impl_.definition,
                             )?;
                         }
                     }
+                    types::ItemKind::Module(_) => todo!(),
                 }
             }
         }

@@ -14,14 +14,14 @@ pub(crate) static TYPE_NAME_U64: LazyLock<types::FQName> =
 pub(crate) static TYPE_NAME_STRING: LazyLock<types::FQName> =
     LazyLock::new(|| types::FQName::parse("std.string"));
 
-pub fn type_check_std() -> Result<types::Program, TypeCheckError> {
+pub fn type_check_std() -> Result<types::Module, TypeCheckError> {
     let asts = vec![parse_file("std", include_str!("../../stdlib/std.lng")).unwrap()];
 
     type_check(&type_check::Program(asts), None)
 }
 
 pub fn compile_std<'ctx>(
-    program: &types::Program,
+    program: &types::Module,
     context: &'ctx Context,
 ) -> Result<GlobalScope<'ctx>, CompileError> {
     let compiler = Compiler::new(context, None);

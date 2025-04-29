@@ -47,8 +47,14 @@ impl Display for Identifier {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct FQName(SymbolU32);
+
+impl std::fmt::Debug for FQName {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FQName({self})")
+    }
+}
 
 impl Display for FQName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -103,6 +109,17 @@ impl FQName {
         let parts = parts.into_iter().map(Identifier::raw);
 
         Self::from_parts(parts.take(len - 1))
+    }
+
+    pub(crate) fn split_first(self) -> (Identifier, Self) {
+        let parts = self.parts();
+        let (first, rest) = parts.split_first().unwrap();
+
+        (*first, Self::from_parts(rest.iter().map(|x| x.raw())))
+    }
+
+    pub(crate) fn len(self) -> usize {
+        self.parts().len()
     }
 }
 
@@ -359,6 +376,7 @@ pub enum ItemKind {
     Function(Function),
     Struct(Struct),
     Import(Import),
+    Module(Module),
 }
 
 #[derive(Debug, Clone)]
@@ -373,13 +391,90 @@ pub enum Visibility {
     Internal,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Module {
-    pub items: HashMap<Identifier, Item>,
+    items: HashMap<Identifier, Item>,
 }
 
-#[derive(Debug)]
-// TODO this should have a different name because this can be a program OR a library
-pub struct Program {
-    pub modules: HashMap<FQName, Module>,
+impl Default for Module {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Module {
+    pub fn new() -> Self {
+        Self {
+            items: HashMap::new(),
+        }
+    }
+
+    // TODO rename -> get_item_mut()
+    pub(crate) fn find_struct_mut(&mut self, imported_item: FQName) -> Option<&mut Item> {
+        if imported_item.len() == 1 {
+            return self.items.get_mut(&imported_item.last());
+        }
+
+        let (first, rest) = imported_item.split_first();
+
+        // TODO check visibility?
+        // TODO perhaps don't create modules on the fly and actually let the user figure it out, by
+        // declaring modules in the code?
+        let Item {
+            kind: ItemKind::Module(module),
+            visibility: _,
+        } = self.items.entry(first).or_insert_with(|| Item {
+            kind: ItemKind::Module(Self::new()),
+            // TODO what should the visibility be?
+            visibility: Visibility::Export,
+        })
+        else {
+            todo!();
+        };
+
+        module.find_struct_mut(rest)
+    }
+
+    pub(crate) fn declare(&mut self, name: FQName, item: Item) -> &mut Item {
+        // TODO this is a hack so that all the modules on the way get created
+        self.find_struct_mut(name);
+
+        let found_module = self.find_struct_mut(name.without_last());
+
+        // TODO the modules should not be created implicitly, but instead declared by the user
+        let Some(Item {
+            kind: ItemKind::Module(module),
+            visibility: _,
+        }) = found_module
+        else {
+            todo!();
+        };
+
+        module.items.entry(name.last()).or_insert_with(|| item)
+    }
+
+    // TODO -> into_all (consuming self)
+    pub(crate) fn all(&self, root_path: Option<FQName>) -> HashMap<FQName, Item> {
+        let mut result = HashMap::new();
+
+        for (item_name, item) in &self.items {
+            let item_path = root_path.map_or_else(
+                || FQName::parse(&item_name.raw()),
+                |x| x.with_part(*item_name),
+            );
+
+            match &item.kind {
+                ItemKind::Function(_) | ItemKind::Struct(_) | ItemKind::Import(_) => {
+                    result.insert(item_path, item.clone());
+                }
+                ItemKind::Module(module) => {
+                    for (item_path, item) in module.all(Some(item_path)) {
+                        result.insert(item_path, item);
+                    }
+                }
+            }
+        }
+
+        result
+    }
 }

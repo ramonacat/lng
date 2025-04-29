@@ -9,7 +9,7 @@ use crate::{
 };
 
 impl types::Item {
-    fn type_(&self, declared_modules: &DeclaredModules<'_>) -> types::Type {
+    fn type_(&self, root_module: &DeclaredModule) -> types::Type {
         match &self.kind {
             types::ItemKind::Function(function) => function.type_(),
             types::ItemKind::Struct(struct_) => {
@@ -18,10 +18,11 @@ impl types::Item {
                     fields: struct_.fields.clone(),
                 })
             }
-            types::ItemKind::Import(import) => declared_modules
+            types::ItemKind::Import(import) => root_module
                 .find_struct(import.imported_item)
                 .unwrap()
-                .type_(declared_modules),
+                .type_(root_module),
+            types::ItemKind::Module(_) => todo!(),
         }
     }
 }
@@ -195,11 +196,116 @@ struct DeclaredStruct {
 }
 
 #[derive(Debug, Clone)]
+struct DeclaredModule {
+    items: HashMap<Identifier, DeclaredItem>,
+}
+impl DeclaredModule {
+    fn declare(&mut self, name: FQName, item: DeclaredItem) {
+        if name.len() == 1 {
+            self.items.insert(name.last(), item);
+        } else {
+            let (first, rest) = name.split_first();
+
+            let DeclaredItem {
+                kind: DeclaredItemKind::Module(m),
+                visibility: _,
+            } = self.items.entry(first).or_insert_with(|| DeclaredItem {
+                kind: DeclaredItemKind::Module(Self::new()),
+                visibility: Visibility::Export,
+            })
+            // TODO how do we determine the visiblity correctly?
+            else {
+                todo!();
+            };
+            m.declare(rest, item);
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            items: HashMap::new(),
+        }
+    }
+
+    // TODO rename -> find_item_mut
+    fn find_local_mut(&mut self, name: FQName) -> Option<&mut DeclaredItem> {
+        if name.len() == 1 {
+            return self.items.get_mut(&name.last());
+        }
+
+        let (first, rest) = name.split_first();
+
+        let DeclaredItem {
+            kind: DeclaredItemKind::Module(m),
+            visibility: _,
+        } = self.items.entry(first).or_insert_with(|| DeclaredItem {
+            kind: DeclaredItemKind::Module(Self::new()),
+            visibility: Visibility::Export,
+        })
+        // TODO how do we determine the visibility correctly
+        else {
+            todo!();
+        };
+
+        m.find_local_mut(rest)
+    }
+
+    // TODO rename -> find_item
+    fn find_struct(&self, name: FQName) -> Option<&DeclaredItem> {
+        if name.len() == 1 {
+            return self.items.get(&name.last());
+        }
+
+        let (first, rest) = name.split_first();
+
+        let DeclaredItem {
+            kind: DeclaredItemKind::Module(m),
+            visibility: _,
+        } = self.items.get(&first).unwrap()
+        else {
+            todo!();
+        };
+
+        m.find_struct(rest)
+    }
+
+    // TODO make this into_declared (consume self)?
+    fn find_declared(&self, root_path: Option<FQName>) -> HashMap<FQName, DeclaredItem> {
+        let mut result = HashMap::new();
+        for (item_name, item) in &self.items {
+            let item_path = root_path.map_or_else(
+                || FQName::from_parts(std::iter::once(&item_name.raw())),
+                |r| r.with_part(*item_name),
+            );
+
+            match &item.kind {
+                DeclaredItemKind::Import(_)
+                | DeclaredItemKind::Struct(_)
+                | DeclaredItemKind::Function(_) => {
+                    result.insert(item_path, item.clone());
+                }
+                DeclaredItemKind::Module(declared_module) => {
+                    for (item_name, item) in declared_module.find_declared(Some(item_path)) {
+                        result.insert(item_name, item);
+                    }
+                }
+                // Checked means predeclared, so we don't want to return it
+                // TODO rename Checked to something more inspired
+                DeclaredItemKind::Checked(_) => {}
+            }
+        }
+
+        result
+    }
+}
+
+#[derive(Debug, Clone)]
 enum DeclaredItemKind {
     Function(DeclaredFunction),
     Struct(DeclaredStruct),
     Import(DeclaredImport),
     Checked(types::Item),
+    Module(DeclaredModule),
 }
 
 #[derive(Debug, Clone)]
@@ -209,7 +315,7 @@ struct DeclaredItem {
 }
 
 impl DeclaredItem {
-    fn type_(&self, declared_modules: &DeclaredModules) -> types::Type {
+    fn type_(&self, root_module: &DeclaredModule) -> types::Type {
         match &self.kind {
             DeclaredItemKind::Function(declared_function) => types::Type::Callable {
                 arguments: declared_function
@@ -239,85 +345,13 @@ impl DeclaredItem {
                         .collect(),
                 })
             }
-            DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => declared_modules
+            DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => root_module
                 .find_struct(*imported_item)
                 .unwrap()
-                .type_(declared_modules),
-            DeclaredItemKind::Checked(item) => item.type_(declared_modules),
+                .type_(root_module),
+            DeclaredItemKind::Checked(item) => item.type_(root_module),
+            DeclaredItemKind::Module(_) => todo!(),
         }
-    }
-}
-
-struct DeclaredModules<'src> {
-    // TODO those should really be all in one hashmap
-    local: HashMap<FQName, DeclaredItem>,
-    std: Option<&'src types::Program>,
-}
-impl<'src> DeclaredModules<'src> {
-    fn new(std: Option<&'src types::Program>) -> Self {
-        Self {
-            local: HashMap::new(),
-            std,
-        }
-    }
-
-    fn declare(&mut self, items: HashMap<FQName, DeclaredItem>) {
-        for item in items {
-            self.local.insert(item.0, item.1);
-        }
-    }
-
-    // TODO rename to find_item
-    fn find_struct(&self, item_path: FQName) -> Option<DeclaredItem> {
-        if let Some(local_item) = self.local.get(&item_path) {
-            return Some(local_item.clone());
-        }
-
-        if let Some(std) = self.std {
-            // TODO the storage of items should be flattened so there's no need for dancing around
-            // with last/without_last
-            if let Some(std_module) = std.modules.get(&item_path.without_last()) {
-                if let Some(std_item) = std_module.items.get(&item_path.last()) {
-                    return Some(DeclaredItem {
-                        kind: DeclaredItemKind::Checked(std_item.clone()),
-                        visibility: std_item.visibility,
-                    });
-                }
-            }
-        }
-
-        None
-    }
-
-    fn find_local_mut(&mut self, item_path: FQName) -> Option<&mut DeclaredItem> {
-        if let Some(local_item) = self.local.get_mut(&item_path) {
-            return Some(local_item);
-        }
-
-        None
-    }
-
-    fn declare_item(&mut self, item_path: FQName, item: DeclaredItem) {
-        self.local.insert(item_path, item);
-    }
-
-    // TODO Return Option<> here, if the module does not exist return None
-    fn get_declared_types(&self) -> HashMap<types::FQName, types::Type> {
-        let mut results: HashMap<types::FQName, types::Type> = self
-            .local
-            .iter()
-            .map(|(name, item)| (*name, item.type_(self)))
-            .collect();
-
-        if let Some(std) = self.std {
-            for (module_name, module) in &std.modules {
-                for (item_name, item) in &module.items {
-                    results.insert(module_name.with_part(*item_name), item.type_(self));
-                }
-            }
-        }
-
-        results
     }
 }
 
@@ -325,12 +359,25 @@ impl<'src> DeclaredModules<'src> {
 #[allow(clippy::too_many_lines)]
 pub fn type_check(
     program: &Program,
-    std: Option<&types::Program>,
-) -> Result<types::Program, TypeCheckError> {
-    let mut declared_modules = DeclaredModules::new(std);
+    std: Option<&types::Module>,
+) -> Result<types::Module, TypeCheckError> {
+    let mut root_module = DeclaredModule::new();
+
+    if let Some(std) = std {
+        for (item_name, item) in std.all(None) {
+            let visibility = item.visibility;
+
+            root_module.declare(
+                item_name,
+                DeclaredItem {
+                    kind: DeclaredItemKind::Checked(item),
+                    visibility,
+                },
+            );
+        }
+    }
 
     for file in &program.0 {
-        let mut items: HashMap<FQName, DeclaredItem> = HashMap::new();
         let module_path = FQName::parse(&file.name);
 
         for declaration in &file.declarations {
@@ -342,7 +389,7 @@ pub fn type_check(
                         declaration.position,
                     )?;
 
-                    items.insert(
+                    root_module.declare(
                         module_path.with_part(Identifier::parse(&function.name)),
                         DeclaredItem {
                             kind: DeclaredItemKind::Function(function_declaration),
@@ -363,7 +410,7 @@ pub fn type_check(
                         );
                     }
                     let name = module_path.with_part(Identifier::parse(&struct_.name));
-                    items.insert(
+                    root_module.declare(
                         name,
                         DeclaredItem {
                             kind: DeclaredItemKind::Struct(DeclaredStruct { name, fields }),
@@ -374,8 +421,6 @@ pub fn type_check(
                 ast::DeclarationKind::Impl(_) => {}
             }
         }
-
-        declared_modules.declare(items);
     }
     // TODO check if we still need this
     let mut declared_impls: HashMap<FQName, DeclaredAssociatedFunction> = HashMap::new();
@@ -400,7 +445,7 @@ pub fn type_check(
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let Some(struct_) = declared_modules.find_local_mut(struct_path) else {
+                    let Some(struct_) = root_module.find_local_mut(struct_path) else {
                         return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
                             .at(error_location));
                     };
@@ -456,7 +501,8 @@ pub fn type_check(
             let exported_item_path = exporting_module_name.with_part(item_name);
             let imported_item_path = module_path.with_part(item_name);
 
-            let Some(imported_item) = declared_modules.find_struct(exported_item_path) else {
+            let Some(imported_item) = root_module.find_struct(exported_item_path) else {
+                dbg!(exported_item_path, root_module);
                 return Err(
                     TypeCheckErrorDescription::ItemDoesNotExist(exported_item_path)
                         .at(ErrorLocation::Position(imported_item_path, import.position)),
@@ -486,7 +532,7 @@ pub fn type_check(
                             .as_ref()
                             .map_or_else(|| item_name, |x| Identifier::parse(x)),
                     );
-                    declared_modules.declare_item(
+                    root_module.declare(
                         imported_as,
                         DeclaredItem {
                             kind: DeclaredItemKind::Import(DeclaredImport {
@@ -502,15 +548,19 @@ pub fn type_check(
                     kind: types::ItemKind::Import(_),
                     ..
                 }) => {
+                    dbg!(&exported_item_path);
                     return Err(
                         TypeCheckErrorDescription::ItemDoesNotExist(exported_item_path)
                             .at(ErrorLocation::Position(imported_item_path, import.position)),
                     );
                 }
+                DeclaredItemKind::Module(_)
+                | DeclaredItemKind::Checked(types::Item {
+                    kind: types::ItemKind::Module(_),
+                    visibility: _,
+                }) => todo!(),
             }
         }
-
-        let available_types = declared_modules.get_declared_types();
 
         for item in &file.declarations {
             let position = item.position;
@@ -529,13 +579,14 @@ pub fn type_check(
                         .map(|(_, f)| {
                             type_check_associated_function(
                                 f,
-                                &available_types,
+                                &root_module,
                                 ErrorLocation::Position(struct_path.with_part(f.name), position),
                             )
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let Some(struct_) = declared_modules.find_local_mut(struct_path) else {
+                    let Some(struct_) = root_module.find_local_mut(struct_path) else {
+                        dbg!(struct_path);
                         return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
                             .at(ErrorLocation::Position(struct_path, position)));
                     };
@@ -566,22 +617,20 @@ pub fn type_check(
         }
     }
 
-    let mut module_items: HashMap<FQName, types::Item> = HashMap::new();
-    for (item_path, declared_item) in &declared_modules.local {
-        let available_types = declared_modules.get_declared_types();
-
+    let mut root: types::Module = types::Module::new();
+    for (item_path, declared_item) in root_module.find_declared(None) {
         match &declared_item.kind {
             DeclaredItemKind::Function(declared_function) => {
                 let body = type_check_function(
                     declared_function,
-                    &available_types,
+                    &root_module,
                     ErrorLocation::Position(
                         declared_function.name,
                         declared_function.definition.position,
                     ),
                 )?;
 
-                module_items.insert(
+                root.declare(
                     declared_function.name,
                     types::Item {
                         kind: types::ItemKind::Function(body),
@@ -593,7 +642,7 @@ pub fn type_check(
                 name: struct_name,
                 fields,
             }) => {
-                module_items.insert(
+                root.declare(
                     *struct_name,
                     types::Item {
                         kind: types::ItemKind::Struct(types::Struct {
@@ -621,7 +670,7 @@ pub fn type_check(
                 imported_item,
                 position,
             }) => {
-                let imported_item = declared_modules.find_struct(*imported_item).unwrap();
+                let imported_item = root_module.find_struct(*imported_item).unwrap();
                 match &imported_item.kind {
                     DeclaredItemKind::Struct(DeclaredStruct {
                         name: imported_item_name,
@@ -642,8 +691,8 @@ pub fn type_check(
                                 ..
                             }),
                         ..
-                    }) => module_items.insert(
-                        *item_path,
+                    }) => root.declare(
+                        item_path,
                         types::Item {
                             kind: types::ItemKind::Import(Import {
                                 imported_item: *imported_item_name,
@@ -657,27 +706,19 @@ pub fn type_check(
                         kind: types::ItemKind::Import(_),
                         ..
                     }) => todo!(),
+                    DeclaredItemKind::Module(_) => todo!(),
+                    DeclaredItemKind::Checked(types::Item {
+                        kind: types::ItemKind::Module(_),
+                        ..
+                    }) => todo!(),
                 };
             }
             DeclaredItemKind::Checked(_) => todo!(),
+            DeclaredItemKind::Module(_) => todo!(),
         }
     }
 
-    let mut items_by_module: HashMap<FQName, HashMap<Identifier, _>> = HashMap::new();
-
-    for (path, item) in module_items {
-        items_by_module
-            .entry(path.without_last())
-            .or_default()
-            .insert(path.last(), item);
-    }
-
-    Ok(types::Program {
-        modules: items_by_module
-            .into_iter()
-            .map(|(module_path, items)| (module_path, types::Module { items }))
-            .collect(),
-    })
+    Ok(root)
 }
 
 const fn convert_visibility(visibility: ast::Visibility) -> types::Visibility {
@@ -691,7 +732,7 @@ const fn convert_visibility(visibility: ast::Visibility) -> types::Visibility {
 // around
 fn type_check_function(
     declared_function: &DeclaredFunction,
-    available_types: &HashMap<FQName, types::Type>,
+    available_types: &DeclaredModule,
     error_location: ErrorLocation,
 ) -> Result<types::Function, TypeCheckError> {
     let definition = type_check_function_definition(
@@ -709,7 +750,7 @@ fn type_check_function(
 
 fn type_check_associated_function(
     declared_function: &DeclaredAssociatedFunction,
-    available_types: &HashMap<FQName, types::Type>,
+    available_types: &DeclaredModule,
     error_location: ErrorLocation,
 ) -> Result<types::AssociatedFunction, TypeCheckError> {
     let definition = type_check_function_definition(
@@ -728,17 +769,30 @@ fn type_check_associated_function(
 
 fn type_check_function_definition(
     declared_function: &DeclaredFunctionDefinition,
-    available_types: &HashMap<FQName, types::Type>,
+    available_types: &DeclaredModule,
     module: FQName,
     error_location: ErrorLocation,
 ) -> Result<types::FunctionDefinition, TypeCheckError> {
     let mut locals: HashMap<Identifier, types::Type> = HashMap::new();
 
-    for global in available_types
-        .iter()
-        .filter(|x| x.0.without_last() == module)
+    if let Some(DeclaredItem {
+        kind: DeclaredItemKind::Module(local_module),
+        visibility: _,
+    }) = available_types.find_struct(module)
     {
-        locals.insert(global.0.last(), global.1.clone());
+        // TODO locals should be a struct that handles this
+        for global in &local_module.items {
+            match &global.1.kind {
+                DeclaredItemKind::Function(_)
+                | DeclaredItemKind::Struct(_)
+                | DeclaredItemKind::Import(_)
+                | DeclaredItemKind::Checked(_) => {
+                    locals.insert(*global.0, global.1.type_(available_types));
+                }
+                DeclaredItemKind::Module(_) => {} // TODO we want to include modules here as well,
+                                                  // once they exist as objects in the type system
+            }
+        }
     }
 
     for argument in &declared_function.arguments {
@@ -919,7 +973,7 @@ fn type_check_function_declaration(
 fn type_check_expression(
     expression: &ast::Expression,
     locals: &HashMap<Identifier, types::Type>,
-    available_types: &HashMap<FQName, types::Type>,
+    available_types: &DeclaredModule,
     error_location: ErrorLocation,
 ) -> Result<types::Expression, TypeCheckError> {
     let position = expression.position;
@@ -972,8 +1026,10 @@ fn type_check_expression(
 
                 callable_arguments = callable_arguments_iter.collect();
 
-                let types::Type::StructDescriptor(target_struct_type_descriptor) =
-                    available_types.get(&self_argument.type_.name()).unwrap()
+                let types::Type::StructDescriptor(target_struct_type_descriptor) = available_types
+                    .find_struct(self_argument.type_.name())
+                    .unwrap()
+                    .type_(available_types)
                 else {
                     todo!("{:?}", self_argument.type_);
                 };
@@ -1093,7 +1149,10 @@ fn type_check_expression(
                 types::Type::U8 => todo!(),
             };
 
-            let target_type = available_types.get(&type_name).unwrap();
+            let target_type = available_types
+                .find_struct(type_name)
+                .unwrap()
+                .type_(available_types);
             let types::Type::StructDescriptor(types::StructTypeDescriptor { name: _, fields }) =
                 target_type
             else {

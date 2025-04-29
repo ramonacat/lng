@@ -133,4 +133,11 @@ impl<'ctx> GlobalScope<'ctx> {
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
         self.modules.into_values()
     }
+
+    pub(crate) fn get_module_mut(
+        &mut self,
+        path: types::FQName,
+    ) -> Option<&mut CompiledModule<'ctx>> {
+        self.modules.get_mut(&path)
+    }
 }
