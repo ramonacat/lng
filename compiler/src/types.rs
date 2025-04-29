@@ -471,7 +471,11 @@ impl Module {
             .or_insert_with(|| item)
     }
 
-    // TODO -> into_all (consuming self)
+    pub(crate) fn items(&self) -> impl Iterator<Item = (FQName, &Item)> {
+        self.items.iter().map(|(k, v)| (FQName::parse(&k.raw()), v))
+    }
+
+    // TODO stop using this in compiler, and instead replace with .items()
     pub(crate) fn all(&self, root_path: Option<FQName>) -> HashMap<FQName, Item> {
         let mut result = HashMap::new();
 
