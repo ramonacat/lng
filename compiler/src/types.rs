@@ -124,12 +124,13 @@ impl FQName {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StructTypeDescriptor {
+pub struct StructDescriptorType {
     pub name: FQName,
+    // the fields are a Vec<_>, so that the order is well defined
     pub fields: Vec<StructField>,
 }
 
-impl StructTypeDescriptor {
+impl StructDescriptorType {
     pub fn object_type(&self) -> Type {
         // TODO can we avoid special-casing the types here? perhaps take the object type as an
         // argument?
@@ -148,7 +149,7 @@ pub enum Type {
     Object(FQName),
     Array(Box<Type>),
     // TODO this should probably be simply an object, just of StructDescriptor<TargetStruct> type
-    StructDescriptor(StructTypeDescriptor),
+    StructDescriptor(StructDescriptorType),
     // TODO this should be an object with special properties
     Callable {
         arguments: Vec<Argument>,
@@ -167,7 +168,7 @@ impl Type {
         match &self {
             Self::Unit => "void".to_string(),
             Self::Object(item_path) => format!("{item_path}"),
-            Self::StructDescriptor(StructTypeDescriptor {
+            Self::StructDescriptor(StructDescriptorType {
                 name: item_path,
                 fields: _,
             }) => format!("Struct<{item_path}>"),
@@ -210,7 +211,7 @@ impl Display for Type {
             Self::Unit => write!(f, "void"),
             Self::Object(identifier) => write!(f, "{identifier}"),
             Self::Array(inner) => write!(f, "{inner}[]"),
-            Self::StructDescriptor(StructTypeDescriptor { name, fields: _ }) => {
+            Self::StructDescriptor(StructDescriptorType { name, fields: _ }) => {
                 write!(f, "StructDescriptor<{name}>")
             }
             Self::Callable {
@@ -438,16 +439,10 @@ impl Module {
         let (first, rest) = imported_item.split_first();
 
         // TODO check visibility?
-        // TODO perhaps don't create modules on the fly and actually let the user figure it out, by
-        // declaring modules in the code?
         let Item {
             kind: ItemKind::Module(module),
             visibility: _,
-        } = self.items.entry(first).or_insert_with(|| Item {
-            kind: ItemKind::Module(Self::new()),
-            // TODO what should the visibility be?
-            visibility: Visibility::Export,
-        })
+        } = self.items.get_mut(&first).unwrap()
         else {
             todo!();
         };
@@ -456,21 +451,24 @@ impl Module {
     }
 
     pub(crate) fn declare(&mut self, name: FQName, item: Item) -> &mut Item {
-        // TODO this is a hack so that all the modules on the way get created
-        self.get_item_mut(name);
+        let found_module = if name.len() > 1 {
+            let Some(Item {
+                kind: ItemKind::Module(module),
+                visibility: _,
+            }) = self.get_item_mut(name.without_last())
+            else {
+                todo!();
+            };
 
-        let found_module = self.get_item_mut(name.without_last());
-
-        // TODO the modules should not be created implicitly, but instead declared by the user
-        let Some(Item {
-            kind: ItemKind::Module(module),
-            visibility: _,
-        }) = found_module
-        else {
-            todo!();
+            module
+        } else {
+            self
         };
 
-        module.items.entry(name.last()).or_insert_with(|| item)
+        found_module
+            .items
+            .entry(name.last())
+            .or_insert_with(|| item)
     }
 
     // TODO -> into_all (consuming self)

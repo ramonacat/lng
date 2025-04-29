@@ -13,7 +13,7 @@ impl types::Item {
         match &self.kind {
             types::ItemKind::Function(function) => function.type_(),
             types::ItemKind::Struct(struct_) => {
-                types::Type::StructDescriptor(types::StructTypeDescriptor {
+                types::Type::StructDescriptor(types::StructDescriptorType {
                     name: struct_.name,
                     fields: struct_.fields.clone(),
                 })
@@ -289,6 +289,7 @@ impl DeclaredModule {
     }
 
     // TODO make this into_declared (consume self)?
+    // TODO can we get rid of all the clones?
     fn find_declared(&self, root_path: Option<FQName>) -> HashMap<FQName, DeclaredItem> {
         let mut result = HashMap::new();
         for (item_name, item) in &self.items {
@@ -304,6 +305,7 @@ impl DeclaredModule {
                     result.insert(item_path, item.clone());
                 }
                 DeclaredItemKind::Module(declared_module) => {
+                    result.insert(item_path, item.clone());
                     for (item_name, item) in declared_module.find_declared(Some(item_path)) {
                         result.insert(item_name, item);
                     }
@@ -368,7 +370,7 @@ impl DeclaredItem {
                 return_type: Box::new(declared_function.definition.return_type.clone()),
             },
             DeclaredItemKind::Struct(declared_struct) => {
-                types::Type::StructDescriptor(types::StructTypeDescriptor {
+                types::Type::StructDescriptor(types::StructDescriptorType {
                     name: declared_struct.name,
                     fields: declared_struct
                         .fields
@@ -682,7 +684,25 @@ pub fn type_check(
     }
 
     let mut root: types::Module = types::Module::new();
-    for (item_path, declared_item) in root_module.find_declared(None) {
+
+    let all_declared_items = root_module.find_declared(None);
+    let mut declared_modules = all_declared_items
+        .iter()
+        .filter(|x| matches!(&x.1.kind, DeclaredItemKind::Module(_)))
+        .collect::<Vec<_>>();
+    declared_modules.sort_by_key(|x| x.0.parts().len());
+
+    for (item_path, declared_item) in declared_modules {
+        root.declare(
+            *item_path,
+            types::Item {
+                kind: types::ItemKind::Module(types::Module::new()),
+                visibility: declared_item.visibility,
+            },
+        );
+    }
+
+    for (item_path, declared_item) in all_declared_items {
         match &declared_item.kind {
             DeclaredItemKind::Function(declared_function) => {
                 let body = type_check_function(
@@ -778,7 +798,7 @@ pub fn type_check(
                 };
             }
             DeclaredItemKind::Checked(_) => todo!(),
-            DeclaredItemKind::Module(_) => todo!(),
+            DeclaredItemKind::Module(_) => {}
         }
     }
 
@@ -1181,7 +1201,7 @@ fn type_check_expression(
         ast::ExpressionKind::StructConstructor(struct_name) => {
             let id = Identifier::parse(struct_name);
 
-            let types::Type::StructDescriptor(types::StructTypeDescriptor { name, fields: _ }) =
+            let types::Type::StructDescriptor(types::StructDescriptorType { name, fields: _ }) =
                 locals
                     .get(&id)
                     .ok_or_else(|| {
@@ -1217,7 +1237,7 @@ fn type_check_expression(
                 .find_struct(type_name)
                 .unwrap()
                 .type_(available_types);
-            let types::Type::StructDescriptor(types::StructTypeDescriptor { name: _, fields }) =
+            let types::Type::StructDescriptor(types::StructDescriptorType { name: _, fields }) =
                 target_type
             else {
                 todo!("{target_type}");
@@ -1225,7 +1245,6 @@ fn type_check_expression(
 
             let field_name = types::Identifier::parse(field_name);
 
-            // TODO make fields a HashMap so we don't have to .find?
             let field_type = fields
                 .iter()
                 .find(|x| x.name == field_name)
