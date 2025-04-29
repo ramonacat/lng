@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::{
     ast::SourceRange,
     name_mangler::MangledIdentifier,
-    types::{self, Identifier, Visibility},
+    types::{self, FQName, Identifier, Visibility},
 };
 
 use super::{
@@ -18,6 +18,7 @@ use super::{
 #[derive(Clone)]
 pub struct FunctionHandle {
     pub name: MangledIdentifier,
+    pub fqname: FQName,
     pub position: SourceRange,
     pub arguments: Vec<types::Argument>,
     pub return_type: types::Type,

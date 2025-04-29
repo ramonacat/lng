@@ -223,12 +223,11 @@ impl<'ctx> CompiledFunction<'ctx> {
         &self,
         return_value: Option<&dyn BasicValue<'ctx>>,
         context: &CompilerContext<'ctx>,
-        module_path: FQName,
     ) -> Result<(), CompileError> {
         context
             .builder
             .build_return(return_value)
-            .map_err(|e| e.into_compile_error_at(module_path, self.handle.position))?;
+            .map_err(|e| e.into_compile_error_at(self.handle.fqname, self.handle.position))?;
 
         Ok(())
     }
@@ -301,6 +300,7 @@ impl<'ctx> Compiler<'ctx> {
                                 declaration.visibility
                             },
                             name: function.mangled_name(),
+                            fqname: function.name,
                             return_type: function.definition.return_type.clone(),
                             arguments: function.definition.arguments.clone(),
                             position: function.definition.position,
@@ -315,6 +315,7 @@ impl<'ctx> Compiler<'ctx> {
                             .iter()
                             .map(|(name, impl_)| {
                                 let handle = FunctionHandle {
+                                    fqname: struct_.name.with_part(*name),
                                     visibility: declaration.visibility,
                                     name: impl_.mangled_name(),
                                     return_type: impl_.definition.return_type.clone(),
@@ -362,6 +363,7 @@ impl<'ctx> Compiler<'ctx> {
                     module.import_function(&function, &self.context);
 
                     let function_value = Value::Function(FunctionHandle {
+                        fqname: function.fqname,
                         visibility: function.visibility,
                         name: function.name.clone(),
                         return_type: function.return_type,
@@ -392,7 +394,6 @@ impl<'ctx> Compiler<'ctx> {
                                 .unwrap()
                                 .as_function()
                                 .unwrap(),
-                            module_path,
                             module,
                             &function.definition,
                         )?;
@@ -410,7 +411,6 @@ impl<'ctx> Compiler<'ctx> {
                                     .unwrap()
                                     .as_function()
                                     .unwrap(),
-                                module_path,
                                 module,
                                 &impl_.definition,
                             )?;
@@ -430,7 +430,6 @@ impl<'ctx> Compiler<'ctx> {
         &self,
         handle: FunctionHandle,
         // TODO remove this argument, get this from module when needed
-        module_path: FQName,
         module: &module::CompiledModule<'ctx>,
         function: &types::FunctionDefinition,
     ) -> Result<(), CompileError> {
@@ -448,7 +447,6 @@ impl<'ctx> Compiler<'ctx> {
                         expression,
                         self_value,
                         &mut compiled_function,
-                        module_path,
                         module,
                     )?;
                 }
@@ -457,7 +455,6 @@ impl<'ctx> Compiler<'ctx> {
                         &let_.value,
                         self_value,
                         &mut compiled_function,
-                        module_path,
                         module,
                     )?;
 
@@ -468,7 +465,6 @@ impl<'ctx> Compiler<'ctx> {
                         expression,
                         self_value,
                         &mut compiled_function,
-                        module_path,
                         module,
                     )?;
 
@@ -510,26 +506,26 @@ impl<'ctx> Compiler<'ctx> {
         if let Some(ref r) = compiled_function.return_value {
             match &r.as_basic_value() {
                 BasicValueEnum::ArrayValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path)?;
+                    compiled_function.build_return(Some(v), &self.context)?;
                 }
                 BasicValueEnum::IntValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path)?;
+                    compiled_function.build_return(Some(v), &self.context)?;
                 }
                 BasicValueEnum::FloatValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path)?;
+                    compiled_function.build_return(Some(v), &self.context)?;
                 }
                 BasicValueEnum::PointerValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path)?;
+                    compiled_function.build_return(Some(v), &self.context)?;
                 }
                 BasicValueEnum::StructValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path)?;
+                    compiled_function.build_return(Some(v), &self.context)?;
                 }
                 BasicValueEnum::VectorValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context, module_path)?;
+                    compiled_function.build_return(Some(v), &self.context)?;
                 }
             }
         } else {
-            compiled_function.build_return(None, &self.context, module_path)?;
+            compiled_function.build_return(None, &self.context)?;
         }
         Ok(())
     }
@@ -541,20 +537,14 @@ impl<'ctx> Compiler<'ctx> {
         expression: &types::Expression,
         self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
-        module_path: FQName,
         module: &CompiledModule<'ctx>,
     ) -> Result<(Option<Value<'ctx>>, Value<'ctx>), CompileError> {
         let position = expression.position;
 
         match &expression.kind {
             types::ExpressionKind::Call { target, arguments } => {
-                let compiled_target = self.compile_expression(
-                    target,
-                    self_.clone(),
-                    compiled_function,
-                    module_path,
-                    module,
-                )?;
+                let compiled_target =
+                    self.compile_expression(target, self_.clone(), compiled_function, module)?;
                 let (self_value, Value::Function(function)) = compiled_target else {
                     todo!();
                 };
@@ -562,14 +552,8 @@ impl<'ctx> Compiler<'ctx> {
                 let mut compiled_arguments_iter = arguments
                     .iter()
                     .map(|a| {
-                        self.compile_expression(
-                            a,
-                            self_value.clone(),
-                            compiled_function,
-                            module_path,
-                            module,
-                        )
-                        .map(|x| x.1)
+                        self.compile_expression(a, self_value.clone(), compiled_function, module)
+                            .map(|x| x.1)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
 
@@ -596,7 +580,9 @@ impl<'ctx> Compiler<'ctx> {
                         &call_arguments,
                         &format!("call_result_{}", position.as_id()),
                     )
-                    .map_err(|e| e.into_compile_error_at(module_path, position))?;
+                    .map_err(|e| {
+                        e.into_compile_error_at(compiled_function.handle.fqname, position)
+                    })?;
 
                 let call_result = call_result.as_any_value_enum();
 
@@ -677,7 +663,7 @@ impl<'ctx> Compiler<'ctx> {
                 field: field_name,
             } => {
                 let (_, target_value) =
-                    self.compile_expression(target, self_, compiled_function, module_path, module)?;
+                    self.compile_expression(target, self_, compiled_function, module)?;
 
                 let access_result = target_value.read_field_value(*field_name).unwrap();
 
