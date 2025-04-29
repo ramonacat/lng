@@ -429,7 +429,6 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_function(
         &self,
         handle: FunctionHandle,
-        // TODO remove this argument, get this from module when needed
         module: &module::CompiledModule<'ctx>,
         function: &types::FunctionDefinition,
     ) -> Result<(), CompileError> {

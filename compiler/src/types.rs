@@ -189,7 +189,7 @@ impl Type {
         }
     }
 
-    // TODO remove this? not all types have a path
+    // TODO all types should have a struct descriptor defined for them in std
     pub(crate) fn name(&self) -> FQName {
         match &self {
             Self::Unit => todo!(),
@@ -409,8 +409,7 @@ impl Module {
         }
     }
 
-    // TODO rename -> get_item_mut()
-    pub(crate) fn find_struct_mut(&mut self, imported_item: FQName) -> Option<&mut Item> {
+    fn get_item_mut(&mut self, imported_item: FQName) -> Option<&mut Item> {
         if imported_item.len() == 1 {
             return self.items.get_mut(&imported_item.last());
         }
@@ -432,14 +431,14 @@ impl Module {
             todo!();
         };
 
-        module.find_struct_mut(rest)
+        module.get_item_mut(rest)
     }
 
     pub(crate) fn declare(&mut self, name: FQName, item: Item) -> &mut Item {
         // TODO this is a hack so that all the modules on the way get created
-        self.find_struct_mut(name);
+        self.get_item_mut(name);
 
-        let found_module = self.find_struct_mut(name.without_last());
+        let found_module = self.get_item_mut(name.without_last());
 
         // TODO the modules should not be created implicitly, but instead declared by the user
         let Some(Item {
