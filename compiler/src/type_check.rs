@@ -1,11 +1,10 @@
 use std::{collections::HashMap, error::Error, fmt::Display};
 
 use crate::{
-    // TODO remove all the imports from types, access items via types::*
-    ast::{self, SourceRange},
+    ast,
     compile::ErrorLocation,
     std::{TYPE_NAME_STRING, TYPE_NAME_U64},
-    types::{self, FQName, Identifier, Import, Visibility},
+    types,
 };
 
 impl types::Item {
@@ -47,13 +46,13 @@ impl Display for TypeCheckError {
 pub enum TypeCheckErrorDescription {
     UnexpectedArgumentTypeInCall {
         target: ast::Expression,
-        argument_name: Identifier,
+        argument_name: types::Identifier,
         expected_type: types::Type,
         actual_type: types::Type,
     },
     IncorrectNumberOfArgumentsPassed(types::Type),
     FunctionArgumentCannotBeVoid {
-        argument_name: Identifier,
+        argument_name: types::Identifier,
     },
     ModuleDoesNotExist(types::FQName),
     ItemDoesNotExist(types::FQName),
@@ -61,7 +60,7 @@ pub enum TypeCheckErrorDescription {
     UndeclaredVariable(types::Identifier),
     ImplNotOnStruct(types::FQName),
     MismatchedAssignmentType {
-        target_variable: Identifier,
+        target_variable: types::Identifier,
         variable_type: types::Type,
         assigned_type: types::Type,
     },
@@ -132,7 +131,7 @@ impl Display for TypeCheckErrorDescription {
     }
 }
 
-fn convert_type(module: FQName, type_: &ast::TypeDescription) -> types::Type {
+fn convert_type(module: types::FQName, type_: &ast::TypeDescription) -> types::Type {
     match type_ {
         ast::TypeDescription::Array(type_description) => {
             types::Type::Array(Box::new(convert_type(module, type_description)))
@@ -151,9 +150,9 @@ fn convert_type(module: FQName, type_: &ast::TypeDescription) -> types::Type {
 
 #[derive(Debug, Clone)]
 struct DeclaredArgument {
-    name: Identifier,
+    name: types::Identifier,
     type_: types::Type,
-    position: SourceRange,
+    position: ast::SourceRange,
 }
 
 #[derive(Debug, Clone)]
@@ -161,19 +160,19 @@ struct DeclaredFunctionDefinition {
     arguments: Vec<DeclaredArgument>,
     return_type: types::Type,
     ast: ast::Function,
-    position: SourceRange,
+    position: ast::SourceRange,
 }
 
 #[derive(Debug, Clone)]
 struct DeclaredFunction {
-    name: FQName,
+    name: types::FQName,
     definition: DeclaredFunctionDefinition,
 }
 
 #[derive(Debug, Clone)]
 struct DeclaredAssociatedFunction {
-    struct_: FQName,
-    name: Identifier,
+    struct_: types::FQName,
+    name: types::Identifier,
     definition: DeclaredFunctionDefinition,
 }
 
@@ -186,19 +185,19 @@ struct DeclaredStructField {
 // TODO support aliased imports
 #[derive(Debug, Clone)]
 struct DeclaredImport {
-    imported_item: FQName,
-    position: SourceRange,
+    imported_item: types::FQName,
+    position: ast::SourceRange,
 }
 
 #[derive(Debug, Clone)]
 struct DeclaredStruct {
-    name: FQName,
-    fields: HashMap<Identifier, DeclaredStructField>,
+    name: types::FQName,
+    fields: HashMap<types::Identifier, DeclaredStructField>,
 }
 
 #[derive(Clone)]
 struct DeclaredModule {
-    items: HashMap<Identifier, DeclaredItem>,
+    items: HashMap<types::Identifier, DeclaredItem>,
 }
 
 impl std::fmt::Debug for DeclaredModule {
@@ -214,7 +213,7 @@ impl std::fmt::Debug for DeclaredModule {
 }
 
 impl DeclaredModule {
-    fn declare(&mut self, name: FQName, item: DeclaredItem) {
+    fn declare(&mut self, name: types::FQName, item: DeclaredItem) {
         if name.len() == 1 {
             let old = self.items.insert(name.last(), item);
             assert!(old.is_none());
@@ -244,7 +243,7 @@ impl DeclaredModule {
     }
 
     // TODO rename -> find_item_mut
-    fn find_local_mut(&mut self, name: FQName) -> Option<&mut DeclaredItem> {
+    fn find_local_mut(&mut self, name: types::FQName) -> Option<&mut DeclaredItem> {
         if name.len() == 1 {
             return self.items.get_mut(&name.last());
         }
@@ -256,7 +255,7 @@ impl DeclaredModule {
             visibility: _,
         } = self.items.entry(first).or_insert_with(|| DeclaredItem {
             kind: DeclaredItemKind::Module(Self::new()),
-            visibility: Visibility::Export,
+            visibility: types::Visibility::Export,
         })
         // TODO how do we determine the visibility correctly
         else {
@@ -268,7 +267,7 @@ impl DeclaredModule {
 
     // TODO rename -> find_item
     // TODO can we get rid of the clones here?
-    fn find_struct(&self, name: FQName) -> Option<DeclaredItem> {
+    fn find_struct(&self, name: types::FQName) -> Option<DeclaredItem> {
         if name.len() == 1 {
             return self.items.get(&name.last()).cloned();
         }
@@ -290,11 +289,14 @@ impl DeclaredModule {
 
     // TODO make this into_declared (consume self)?
     // TODO can we get rid of all the clones?
-    fn find_declared(&self, root_path: Option<FQName>) -> HashMap<FQName, DeclaredItem> {
+    fn find_declared(
+        &self,
+        root_path: Option<types::FQName>,
+    ) -> HashMap<types::FQName, DeclaredItem> {
         let mut result = HashMap::new();
         for (item_name, item) in &self.items {
             let item_path = root_path.map_or_else(
-                || FQName::from_parts(std::iter::once(&item_name.raw())),
+                || types::FQName::from_parts(std::iter::once(&item_name.raw())),
                 |r| r.with_part(*item_name),
             );
 
@@ -431,7 +433,7 @@ pub fn type_check(
     let mut modules_to_declare = program
         .0
         .iter()
-        .map(|x| FQName::parse(&x.name))
+        .map(|x| types::FQName::parse(&x.name))
         .collect::<Vec<_>>();
     modules_to_declare.sort_by_key(|name| name.len());
 
@@ -441,13 +443,13 @@ pub fn type_check(
             DeclaredItem {
                 kind: DeclaredItemKind::Module(DeclaredModule::new()),
                 // TODO how do we determine the visibility for modules?
-                visibility: Visibility::Export,
+                visibility: types::Visibility::Export,
             },
         );
     }
 
     for file in &program.0 {
-        let module_path = FQName::parse(&file.name);
+        let module_path = types::FQName::parse(&file.name);
 
         for declaration in &file.declarations {
             match &declaration.kind {
@@ -459,7 +461,7 @@ pub fn type_check(
                     )?;
 
                     root_module.declare(
-                        module_path.with_part(Identifier::parse(&function.name)),
+                        module_path.with_part(types::Identifier::parse(&function.name)),
                         DeclaredItem {
                             kind: DeclaredItemKind::Function(function_declaration),
                             visibility: convert_visibility(declaration.visibility),
@@ -471,14 +473,14 @@ pub fn type_check(
                     // TODO check the types exist, possibly in separate pass
                     for field in &struct_.fields {
                         fields.insert(
-                            Identifier::parse(&field.name),
+                            types::Identifier::parse(&field.name),
                             DeclaredStructField {
                                 type_: convert_type(module_path, &field.type_),
                                 static_: false,
                             },
                         );
                     }
-                    let name = module_path.with_part(Identifier::parse(&struct_.name));
+                    let name = module_path.with_part(types::Identifier::parse(&struct_.name));
                     root_module.declare(
                         name,
                         DeclaredItem {
@@ -492,10 +494,10 @@ pub fn type_check(
         }
     }
     // TODO check if we still need this
-    let mut declared_impls: HashMap<FQName, DeclaredAssociatedFunction> = HashMap::new();
+    let mut declared_impls: HashMap<types::FQName, DeclaredAssociatedFunction> = HashMap::new();
 
     for file in &program.0 {
-        let module_path = FQName::parse(&file.name);
+        let module_path = types::FQName::parse(&file.name);
         for declaration in &file.declarations {
             let position = declaration.position;
 
@@ -560,7 +562,7 @@ pub fn type_check(
     let mut impls: HashMap<types::FQName, types::AssociatedFunction> = HashMap::new();
 
     for file in &program.0 {
-        let module_path = FQName::parse(&file.name);
+        let module_path = types::FQName::parse(&file.name);
 
         for import in &file.imports {
             let (name, path) = import.path.split_last().unwrap();
@@ -586,7 +588,7 @@ pub fn type_check(
                         | types::ItemKind::Struct(types::Struct { .. }),
                     ..
                 }) => {
-                    if imported_item.visibility != Visibility::Export {
+                    if imported_item.visibility != types::Visibility::Export {
                         return Err(TypeCheckErrorDescription::ItemNotExported(
                             exporting_module_name,
                             item_name,
@@ -598,7 +600,7 @@ pub fn type_check(
                         import
                             .alias
                             .as_ref()
-                            .map_or_else(|| item_name, |x| Identifier::parse(x)),
+                            .map_or_else(|| item_name, |x| types::Identifier::parse(x)),
                     );
                     root_module.declare(
                         imported_as,
@@ -778,11 +780,11 @@ pub fn type_check(
                     }) => root.declare(
                         item_path,
                         types::Item {
-                            kind: types::ItemKind::Import(Import {
+                            kind: types::ItemKind::Import(types::Import {
                                 imported_item: *imported_item_name,
                                 position: *position,
                             }),
-                            visibility: Visibility::Internal, // TODO can imports be reexported?
+                            visibility: types::Visibility::Internal, // TODO can imports be reexported?
                         },
                     ),
                     DeclaredItemKind::Import(_) => todo!(),
@@ -854,10 +856,10 @@ fn type_check_associated_function(
 fn type_check_function_definition(
     declared_function: &DeclaredFunctionDefinition,
     available_types: &DeclaredModule,
-    module: FQName,
+    module: types::FQName,
     error_location: ErrorLocation,
 ) -> Result<types::FunctionDefinition, TypeCheckError> {
-    let mut locals: HashMap<Identifier, types::Type> = HashMap::new();
+    let mut locals: HashMap<types::Identifier, types::Type> = HashMap::new();
 
     if let Some(DeclaredItem {
         kind: DeclaredItemKind::Module(local_module),
@@ -921,7 +923,7 @@ fn type_check_function_definition(
                         locals.insert(types::Identifier::parse(name), type_);
 
                         types::Statement::Let(types::LetStatement {
-                            binding: Identifier::parse(name),
+                            binding: types::Identifier::parse(name),
                             value: checked_expression,
                         })
                     }
@@ -954,7 +956,7 @@ fn type_check_function_definition(
             types::FunctionBody::Statements(checked_statements)
         }
         ast::FunctionBody::Extern(foreign_name, _) => {
-            types::FunctionBody::Extern(Identifier::parse(foreign_name))
+            types::FunctionBody::Extern(types::Identifier::parse(foreign_name))
         }
     };
 
@@ -976,13 +978,11 @@ fn type_check_function_definition(
 
 fn type_check_associated_function_declaration(
     function: &ast::Function,
-    self_type: FQName,
-    position: SourceRange,
+    self_type: types::FQName,
+    position: ast::SourceRange,
 ) -> Result<DeclaredAssociatedFunction, TypeCheckError> {
     let function_name = types::Identifier::parse(&function.name);
     let function_path = self_type.with_part(function_name);
-    // TODO this should take both paths with and wihout a struct_name into
-    // consideration!
     let mut arguments = vec![];
 
     for arg in &function.arguments {
@@ -1016,8 +1016,8 @@ fn type_check_associated_function_declaration(
 
 fn type_check_function_declaration(
     function: &ast::Function,
-    module_path: FQName,
-    position: SourceRange,
+    module_path: types::FQName,
+    position: ast::SourceRange,
 ) -> Result<DeclaredFunction, TypeCheckError> {
     let function_name = types::Identifier::parse(&function.name);
     let function_path = module_path.with_part(function_name);
@@ -1056,7 +1056,7 @@ fn type_check_function_declaration(
 #[allow(clippy::too_many_lines)]
 fn type_check_expression(
     expression: &ast::Expression,
-    locals: &HashMap<Identifier, types::Type>,
+    locals: &HashMap<types::Identifier, types::Type>,
     available_types: &DeclaredModule,
     error_location: ErrorLocation,
 ) -> Result<types::Expression, TypeCheckError> {
@@ -1085,7 +1085,7 @@ fn type_check_expression(
             let self_argument = callable_arguments
                 .first()
                 .and_then(|a| {
-                    if a.name == Identifier::parse("self") {
+                    if a.name == types::Identifier::parse("self") {
                         Some(a)
                     } else {
                         None
@@ -1183,7 +1183,7 @@ fn type_check_expression(
             }),
         },
         ast::ExpressionKind::VariableReference(name) => {
-            let id = Identifier::parse(name);
+            let id = types::Identifier::parse(name);
 
             let value_type = locals
                 .get(&id)
@@ -1199,7 +1199,7 @@ fn type_check_expression(
             })
         }
         ast::ExpressionKind::StructConstructor(struct_name) => {
-            let id = Identifier::parse(struct_name);
+            let id = types::Identifier::parse(struct_name);
 
             let types::Type::StructDescriptor(types::StructDescriptorType { name, fields: _ }) =
                 locals
