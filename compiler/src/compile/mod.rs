@@ -2,6 +2,7 @@ mod context;
 mod module;
 mod rc_builder;
 pub(crate) mod scope;
+mod string_builder;
 mod value;
 
 use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
@@ -18,12 +19,13 @@ use inkwell::{
 use module::CompiledModule;
 use rc_builder::RcValue;
 use scope::{GlobalScope, Scope};
+use string_builder::StringValue;
 use value::{FunctionHandle, StructHandle, Value};
 
 use crate::{
     ast::SourceRange,
     runtime::register_mappings,
-    std::{TYPE_NAME_STRING, compile_std},
+    std::compile_std,
     types::{self, FQName, Identifier, Visibility},
 };
 
@@ -239,16 +241,7 @@ impl<'ctx> CompiledFunction<'ctx> {
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
         let builtins = Builtins {
-            string_handle: StructHandle::new(types::Struct {
-                name: *TYPE_NAME_STRING,
-                fields: vec![types::StructField {
-                    struct_name: *TYPE_NAME_STRING,
-                    name: Identifier::parse("characters"),
-                    type_: types::Type::Pointer(Box::new(types::Type::U8)),
-                    static_: false,
-                }],
-                impls: HashMap::new(),
-            }),
+            string_handle: string_builder::describe_structure(),
             rc_handle: rc_builder::describe_structure(),
         };
 
@@ -630,33 +623,9 @@ impl<'ctx> Compiler<'ctx> {
             }
             types::ExpressionKind::Literal(literal) => match literal {
                 types::Literal::String(s) => {
-                    // TODO create a class for string, akin to RcValue and move all the creation
-                    // code there
+                    let value = StringValue::new_literal(s.clone());
                     let name = format!("literal_{}", position.as_id());
-                    let characters_value = self
-                        .context
-                        .builder
-                        .build_global_string_ptr(s, &(name.clone() + "_global"))
-                        .unwrap();
-
-                    let mut field_values = HashMap::new();
-                    field_values.insert(
-                        Identifier::parse("characters"),
-                        characters_value.as_basic_value_enum(),
-                    );
-
-                    let literal_value = self.context.builtins.string_handle.build_heap_instance(
-                        &self.context,
-                        &(name.clone() + "_value"),
-                        field_values,
-                    );
-
-                    let rc = RcValue::build_init(
-                        &name,
-                        literal_value,
-                        self.context.builtins.string_handle.clone(),
-                        &self.context,
-                    );
+                    let rc = value.build_instance(&name, &self.context);
                     compiled_function.rcs.push(rc.clone());
 
                     Ok((None, Value::Reference(rc)))

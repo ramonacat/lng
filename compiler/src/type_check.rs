@@ -138,6 +138,7 @@ fn convert_type(module: FQName, type_: &ast::TypeDescription) -> types::Type {
             types::Type::Array(Box::new(convert_type(module, type_description)))
         }
         ast::TypeDescription::Named(name) if name == "()" => types::Type::Unit,
+        // TODO instead of special-casing the types, do an automatic import?
         ast::TypeDescription::Named(name) if name == "u64" => types::Type::U64,
         ast::TypeDescription::Named(name) if name == "string" => {
             types::Type::Object(*TYPE_NAME_STRING)
