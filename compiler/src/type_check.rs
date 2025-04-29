@@ -4,7 +4,7 @@ use crate::{
     ast,
     compile::ErrorLocation,
     std::{TYPE_NAME_STRING, TYPE_NAME_U64},
-    types,
+    types::{self, FQName},
 };
 
 impl types::Item {
@@ -280,37 +280,8 @@ impl DeclaredModule {
         }
     }
 
-    // TODO make this into_declared (consume self)?
-    // TODO can we get rid of all the clones?
-    // TODO can we get away with just returning all modules?
-    fn find_declared(
-        &self,
-        root_path: Option<types::FQName>,
-    ) -> HashMap<types::FQName, DeclaredItem> {
-        let mut result = HashMap::new();
-        for (item_name, item) in &self.items {
-            let item_path = root_path.map_or_else(
-                || types::FQName::from_parts(std::iter::once(&item_name.raw())),
-                |r| r.with_part(*item_name),
-            );
-
-            match &item.kind {
-                DeclaredItemKind::Import(_)
-                | DeclaredItemKind::Struct(_)
-                | DeclaredItemKind::Function(_) => {
-                    result.insert(item_path, item.clone());
-                }
-                DeclaredItemKind::Module(declared_module) => {
-                    result.insert(item_path, item.clone());
-                    for (item_name, item) in declared_module.find_declared(Some(item_path)) {
-                        result.insert(item_name, item);
-                    }
-                }
-                DeclaredItemKind::Predeclared(_) => {}
-            }
-        }
-
-        result
+    pub(crate) fn items(&self) -> impl Iterator<Item = (&types::Identifier, &DeclaredItem)> {
+        self.items.iter()
     }
 }
 
@@ -395,13 +366,13 @@ pub fn type_check(
     program: &Program,
     std: Option<&types::Module>,
 ) -> Result<types::Module, TypeCheckError> {
-    let mut root_module = DeclaredModule::new();
+    let mut root_module_declaration = DeclaredModule::new();
 
     if let Some(std) = std {
         for (item_name, item) in std.items() {
             let visibility = item.visibility;
 
-            root_module.declare(
+            root_module_declaration.declare(
                 item_name,
                 DeclaredItem {
                     kind: DeclaredItemKind::Predeclared(item.clone()),
@@ -421,7 +392,7 @@ pub fn type_check(
     modules_to_declare.sort_by_key(|name| name.len());
 
     for module_path in modules_to_declare {
-        root_module.declare(
+        root_module_declaration.declare(
             module_path,
             DeclaredItem {
                 kind: DeclaredItemKind::Module(DeclaredModule::new()),
@@ -443,7 +414,7 @@ pub fn type_check(
                         declaration.position,
                     )?;
 
-                    root_module.declare(
+                    root_module_declaration.declare(
                         module_path.with_part(types::Identifier::parse(&function.name)),
                         DeclaredItem {
                             kind: DeclaredItemKind::Function(function_declaration),
@@ -464,7 +435,7 @@ pub fn type_check(
                         );
                     }
                     let name = module_path.with_part(types::Identifier::parse(&struct_.name));
-                    root_module.declare(
+                    root_module_declaration.declare(
                         name,
                         DeclaredItem {
                             kind: DeclaredItemKind::Struct(DeclaredStruct { name, fields }),
@@ -499,7 +470,7 @@ pub fn type_check(
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let Some(struct_) = root_module.get_item_mut(struct_path) else {
+                    let Some(struct_) = root_module_declaration.get_item_mut(struct_path) else {
                         return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
                             .at(error_location));
                     };
@@ -555,7 +526,7 @@ pub fn type_check(
             let exported_item_path = exporting_module_name.with_part(item_name);
             let imported_item_path = module_path.with_part(item_name);
 
-            let Some(imported_item) = root_module.get_item(exported_item_path) else {
+            let Some(imported_item) = root_module_declaration.get_item(exported_item_path) else {
                 return Err(
                     TypeCheckErrorDescription::ItemDoesNotExist(exported_item_path)
                         .at(ErrorLocation::Position(imported_item_path, import.position)),
@@ -585,7 +556,7 @@ pub fn type_check(
                             .as_ref()
                             .map_or_else(|| item_name, |x| types::Identifier::parse(x)),
                     );
-                    root_module.declare(
+                    root_module_declaration.declare(
                         imported_as,
                         DeclaredItem {
                             kind: DeclaredItemKind::Import(DeclaredImport {
@@ -631,13 +602,13 @@ pub fn type_check(
                         .map(|(_, f)| {
                             type_check_associated_function(
                                 f,
-                                &root_module,
+                                &root_module_declaration,
                                 ErrorLocation::Position(struct_path.with_part(f.name), position),
                             )
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let Some(struct_) = root_module.get_item_mut(struct_path) else {
+                    let Some(struct_) = root_module_declaration.get_item_mut(struct_path) else {
                         return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
                             .at(ErrorLocation::Position(struct_path, position)));
                     };
@@ -668,39 +639,39 @@ pub fn type_check(
         }
     }
 
-    let mut root: types::Module = types::Module::new();
+    type_check_definitions(
+        &root_module_declaration,
+        &root_module_declaration,
+        &impls,
+        None,
+    )
+}
 
-    let all_declared_items = root_module.find_declared(None);
-    let mut declared_modules = all_declared_items
-        .iter()
-        .filter(|x| matches!(&x.1.kind, DeclaredItemKind::Module(_)))
-        .collect::<Vec<_>>();
-    declared_modules.sort_by_key(|x| x.0.parts().len());
+// TODO split into smaller functions
+#[allow(clippy::too_many_lines)]
+fn type_check_definitions(
+    root_module_declaration: &DeclaredModule,
+    declaration_to_check: &DeclaredModule,
+    impls: &HashMap<types::FQName, types::AssociatedFunction>,
+    root_path: Option<types::FQName>,
+) -> Result<types::Module, TypeCheckError> {
+    let mut root_module: types::Module = types::Module::new();
+    let root_path = root_path.unwrap_or_else(|| FQName::parse(""));
 
-    for (item_path, declared_item) in declared_modules {
-        root.declare(
-            *item_path,
-            types::Item {
-                kind: types::ItemKind::Module(types::Module::new()),
-                visibility: declared_item.visibility,
-            },
-        );
-    }
-
-    for (item_path, declared_item) in all_declared_items {
+    for (item_path, declared_item) in declaration_to_check.items() {
         match &declared_item.kind {
             DeclaredItemKind::Function(declared_function) => {
                 let body = type_check_function(
                     declared_function,
-                    &root_module,
+                    root_module_declaration,
                     ErrorLocation::Position(
                         declared_function.name,
                         declared_function.definition.position,
                     ),
                 )?;
 
-                root.declare(
-                    declared_function.name,
+                root_module.declare_item(
+                    *item_path,
                     types::Item {
                         kind: types::ItemKind::Function(body),
                         visibility: declared_item.visibility,
@@ -711,8 +682,8 @@ pub fn type_check(
                 name: struct_name,
                 fields,
             }) => {
-                root.declare(
-                    *struct_name,
+                root_module.declare_item(
+                    *item_path,
                     types::Item {
                         kind: types::ItemKind::Struct(types::Struct {
                             name: *struct_name,
@@ -739,7 +710,7 @@ pub fn type_check(
                 imported_item,
                 position,
             }) => {
-                let imported_item = root_module.get_item(*imported_item).unwrap();
+                let imported_item = root_module_declaration.get_item(*imported_item).unwrap();
                 match &imported_item.kind {
                     DeclaredItemKind::Struct(DeclaredStruct {
                         name: imported_item_name,
@@ -760,8 +731,8 @@ pub fn type_check(
                                 ..
                             }),
                         ..
-                    }) => root.declare(
-                        item_path,
+                    }) => root_module.declare_item(
+                        *item_path,
                         types::Item {
                             kind: types::ItemKind::Import(types::Import {
                                 imported_item: *imported_item_name,
@@ -780,14 +751,29 @@ pub fn type_check(
                         kind: types::ItemKind::Module(_),
                         ..
                     }) => todo!(),
-                };
+                }
             }
-            DeclaredItemKind::Predeclared(_) => todo!(),
-            DeclaredItemKind::Module(_) => {}
+            DeclaredItemKind::Predeclared(_) => {}
+            DeclaredItemKind::Module(module_declaration) => root_module.declare_item(
+                *item_path,
+                // TODO ensure the visibility here is set correctly
+                types::Item {
+                    kind: types::ItemKind::Module(
+                        type_check_definitions(
+                            root_module_declaration,
+                            module_declaration,
+                            impls,
+                            Some(root_path),
+                        )
+                        .unwrap(),
+                    ),
+                    visibility: types::Visibility::Export,
+                },
+            ),
         }
     }
 
-    Ok(root)
+    Ok(root_module)
 }
 
 const fn convert_visibility(visibility: ast::Visibility) -> types::Visibility {

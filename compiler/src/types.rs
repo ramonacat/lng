@@ -431,44 +431,8 @@ impl Module {
         }
     }
 
-    fn get_item_mut(&mut self, imported_item: FQName) -> Option<&mut Item> {
-        if imported_item.len() == 1 {
-            return self.items.get_mut(&imported_item.last());
-        }
-
-        let (first, rest) = imported_item.split_first();
-
-        // TODO check visibility?
-        let Item {
-            kind: ItemKind::Module(module),
-            visibility: _,
-        } = self.items.get_mut(&first).unwrap()
-        else {
-            todo!();
-        };
-
-        module.get_item_mut(rest)
-    }
-
-    pub(crate) fn declare(&mut self, name: FQName, item: Item) -> &mut Item {
-        let found_module = if name.len() > 1 {
-            let Some(Item {
-                kind: ItemKind::Module(module),
-                visibility: _,
-            }) = self.get_item_mut(name.without_last())
-            else {
-                todo!();
-            };
-
-            module
-        } else {
-            self
-        };
-
-        found_module
-            .items
-            .entry(name.last())
-            .or_insert_with(|| item)
+    pub(crate) fn declare_item(&mut self, name: Identifier, item: Item) {
+        self.items.insert(name, item);
     }
 
     pub(crate) fn items(&self) -> impl Iterator<Item = (FQName, &Item)> {
