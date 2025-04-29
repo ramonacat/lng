@@ -268,6 +268,9 @@ impl<'ctx> Compiler<'ctx> {
     pub fn compile(mut self, program: &types::Module) -> Result<GlobalScope<'ctx>, CompileError> {
         for (path, declaration) in &program.all(None) {
             let module_path = path.without_last();
+
+            // TODO instead of this jumping around, do a first pass that creates the modules and
+            // then access them during the compilation
             let created_module = if self.context.global_scope.get_module(module_path).is_none() {
                 let llvm_module = self
                     .context
@@ -334,8 +337,7 @@ impl<'ctx> Compiler<'ctx> {
                             )),
                         );
                     }
-                    types::ItemKind::Import(_) => {}
-                    types::ItemKind::Module(_) => todo!(),
+                    types::ItemKind::Import(_) | types::ItemKind::Module(_) => {}
                 }
             }
         }
@@ -398,7 +400,6 @@ impl<'ctx> Compiler<'ctx> {
                             &function.definition,
                         )?;
                     }
-                    types::ItemKind::Import(_) => {}
                     types::ItemKind::Struct(struct_) => {
                         for (impl_name, impl_) in &struct_.impls {
                             self.compile_function(
@@ -416,7 +417,7 @@ impl<'ctx> Compiler<'ctx> {
                             )?;
                         }
                     }
-                    types::ItemKind::Module(_) => todo!(),
+                    types::ItemKind::Import(_) | types::ItemKind::Module(_) => {}
                 }
             }
         }

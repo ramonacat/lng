@@ -196,29 +196,44 @@ struct DeclaredStruct {
     fields: HashMap<Identifier, DeclaredStructField>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct DeclaredModule {
     items: HashMap<Identifier, DeclaredItem>,
 }
+
+impl std::fmt::Debug for DeclaredModule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut struct_ = f.debug_struct("DeclaredModule");
+
+        for (item_name, item) in &self.items {
+            struct_.field(&item_name.raw(), item);
+        }
+
+        struct_.finish()
+    }
+}
+
 impl DeclaredModule {
     fn declare(&mut self, name: FQName, item: DeclaredItem) {
         if name.len() == 1 {
-            self.items.insert(name.last(), item);
+            let old = self.items.insert(name.last(), item);
+            assert!(old.is_none());
         } else {
             let (first, rest) = name.split_first();
 
-            let DeclaredItem {
-                kind: DeclaredItemKind::Module(m),
-                visibility: _,
-            } = self.items.entry(first).or_insert_with(|| DeclaredItem {
-                kind: DeclaredItemKind::Module(Self::new()),
-                visibility: Visibility::Export,
-            })
-            // TODO how do we determine the visiblity correctly?
-            else {
-                todo!();
-            };
-            m.declare(rest, item);
+            let found_module = self.items.get_mut(&first).unwrap();
+            match &mut found_module.kind {
+                DeclaredItemKind::Module(m) => {
+                    m.declare(rest, item);
+                }
+                DeclaredItemKind::Checked(types::Item {
+                    kind: types::ItemKind::Module(_),
+                    visibility: _,
+                }) => {
+                    // do nothing, the structure must've been already setup
+                }
+                _ => todo!(),
+            }
         }
     }
 
@@ -252,22 +267,25 @@ impl DeclaredModule {
     }
 
     // TODO rename -> find_item
-    fn find_struct(&self, name: FQName) -> Option<&DeclaredItem> {
+    // TODO can we get rid of the clones here?
+    fn find_struct(&self, name: FQName) -> Option<DeclaredItem> {
         if name.len() == 1 {
-            return self.items.get(&name.last());
+            return self.items.get(&name.last()).cloned();
         }
 
         let (first, rest) = name.split_first();
 
-        let DeclaredItem {
-            kind: DeclaredItemKind::Module(m),
-            visibility: _,
-        } = self.items.get(&first).unwrap()
-        else {
-            todo!();
-        };
-
-        m.find_struct(rest)
+        match &self.items.get(&first).unwrap().kind {
+            DeclaredItemKind::Module(m) => m.find_struct(rest),
+            DeclaredItemKind::Checked(types::Item {
+                kind: types::ItemKind::Module(m),
+                visibility,
+            }) => Some(DeclaredItem {
+                kind: DeclaredItemKind::Checked(m.get_item(rest).unwrap().clone()),
+                visibility: *visibility,
+            }),
+            _ => todo!(),
+        }
     }
 
     // TODO make this into_declared (consume self)?
@@ -309,10 +327,28 @@ enum DeclaredItemKind {
     Module(DeclaredModule),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct DeclaredItem {
     kind: DeclaredItemKind,
     visibility: types::Visibility,
+}
+
+impl std::fmt::Debug for DeclaredItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            DeclaredItemKind::Function(declared_function) => {
+                write!(f, "Function({})", declared_function.name)
+            }
+            DeclaredItemKind::Struct(declared_struct) => {
+                write!(f, "Struct({})", declared_struct.name)
+            }
+            DeclaredItemKind::Import(declared_import) => {
+                write!(f, "Import({})", declared_import.imported_item)
+            }
+            DeclaredItemKind::Checked(item) => write!(f, "Checked({item:?})"),
+            DeclaredItemKind::Module(declared_module) => write!(f, "Module({declared_module:?})"),
+        }
+    }
 }
 
 impl DeclaredItem {
@@ -366,6 +402,16 @@ pub fn type_check(
 
     if let Some(std) = std {
         for (item_name, item) in std.all(None) {
+            match &item.kind {
+                // TODO: replace std.all with getting all top-level items from std
+                // skip anything other than modules, as the values are already in them
+                types::ItemKind::Function(_)
+                | types::ItemKind::Struct(_)
+                | types::ItemKind::Import(_) => continue,
+
+                types::ItemKind::Module(_) => {}
+            }
+
             let visibility = item.visibility;
 
             root_module.declare(
@@ -376,6 +422,26 @@ pub fn type_check(
                 },
             );
         }
+    }
+
+    // this is equivalent-ish to topo-sort, as fewer parts in the name means it is higher in the
+    // hierarchy (i.e. main.test will definitely appear after main)
+    let mut modules_to_declare = program
+        .0
+        .iter()
+        .map(|x| FQName::parse(&x.name))
+        .collect::<Vec<_>>();
+    modules_to_declare.sort_by_key(|name| name.len());
+
+    for module_path in modules_to_declare {
+        root_module.declare(
+            module_path,
+            DeclaredItem {
+                kind: DeclaredItemKind::Module(DeclaredModule::new()),
+                // TODO how do we determine the visibility for modules?
+                visibility: Visibility::Export,
+            },
+        );
     }
 
     for file in &program.0 {
@@ -503,7 +569,6 @@ pub fn type_check(
             let imported_item_path = module_path.with_part(item_name);
 
             let Some(imported_item) = root_module.find_struct(exported_item_path) else {
-                dbg!(exported_item_path, root_module);
                 return Err(
                     TypeCheckErrorDescription::ItemDoesNotExist(exported_item_path)
                         .at(ErrorLocation::Position(imported_item_path, import.position)),
@@ -549,7 +614,6 @@ pub fn type_check(
                     kind: types::ItemKind::Import(_),
                     ..
                 }) => {
-                    dbg!(&exported_item_path);
                     return Err(
                         TypeCheckErrorDescription::ItemDoesNotExist(exported_item_path)
                             .at(ErrorLocation::Position(imported_item_path, import.position)),
@@ -587,7 +651,6 @@ pub fn type_check(
                         .collect::<Result<Vec<_>, _>>()?;
 
                     let Some(struct_) = root_module.find_local_mut(struct_path) else {
-                        dbg!(struct_path);
                         return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
                             .at(ErrorLocation::Position(struct_path, position)));
                     };

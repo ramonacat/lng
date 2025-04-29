@@ -4,7 +4,7 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use itertools::Itertools as _;
+use itertools::Itertools;
 use string_interner::{StringInterner, backend::StringBackend, symbol::SymbolU32};
 
 use crate::{
@@ -379,10 +379,21 @@ pub enum ItemKind {
     Module(Module),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Item {
     pub kind: ItemKind,
     pub visibility: Visibility,
+}
+
+impl std::fmt::Debug for Item {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            ItemKind::Function(function) => write!(f, "Function({})", function.name),
+            ItemKind::Struct(struct_) => write!(f, "Struct({})", struct_.name),
+            ItemKind::Import(import) => write!(f, "Import({})", import.imported_item),
+            ItemKind::Module(module) => write!(f, "{module:?}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -391,9 +402,19 @@ pub enum Visibility {
     Internal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Module {
     items: HashMap<Identifier, Item>,
+}
+
+impl std::fmt::Debug for Module {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut struct_ = f.debug_struct("module");
+        for item in &self.items {
+            struct_.field(&item.0.raw(), item.1);
+        }
+        struct_.finish()
+    }
 }
 
 impl Default for Module {
@@ -467,6 +488,8 @@ impl Module {
                     result.insert(item_path, item.clone());
                 }
                 ItemKind::Module(module) => {
+                    result.insert(item_path, item.clone());
+
                     for (item_path, item) in module.all(Some(item_path)) {
                         result.insert(item_path, item);
                     }
@@ -475,5 +498,26 @@ impl Module {
         }
 
         result
+    }
+
+    pub(crate) fn get_item(&self, imported_item: FQName) -> Option<&Item> {
+        if imported_item.len() == 1 {
+            return self.items.get(&imported_item.last());
+        }
+
+        let (first, rest) = imported_item.split_first();
+
+        // TODO check visibility?
+        // TODO perhaps don't create modules on the fly and actually let the user figure it out, by
+        // declaring modules in the code?
+        let Item {
+            kind: ItemKind::Module(module),
+            visibility: _,
+        } = self.items.get(&first).unwrap()
+        else {
+            todo!();
+        };
+
+        module.get_item(rest)
     }
 }
