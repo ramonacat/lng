@@ -5,7 +5,7 @@ use compiler::{
     parse::parse_file,
     runtime::{LngRc, LngString},
     std::type_check_std,
-    type_check::{Program, type_check},
+    type_check::type_check,
 };
 use inkwell::{execution_engine::ExecutionEngine, module::Module};
 
@@ -42,9 +42,8 @@ pub fn run(program: HashMap<&str, &str>) -> String {
         .map(|(name, contents)| parse_file(name, contents).unwrap())
         .collect::<Vec<_>>();
 
-    let program = Program(asts);
     let std_program = type_check_std().unwrap();
-    let type_check_result = type_check(&program, Some(&std_program)).unwrap();
+    let type_check_result = type_check(&asts, Some(&std_program)).unwrap();
 
     TEST_RESUTLS.with_borrow_mut(|results| results.clear());
 
