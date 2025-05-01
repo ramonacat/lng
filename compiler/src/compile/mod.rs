@@ -287,58 +287,54 @@ impl<'ctx> Compiler<'ctx> {
                     .unwrap()
             };
 
-            {
-                match &declaration.kind {
-                    types::ItemKind::Function(function) => {
-                        let function_handle = FunctionHandle {
-                            // TODO main should be detected during typecheck (with signature
-                            // verification, checks that only one exists in the program, etc.)
-                            visibility: if function.name.last().raw() == "main"
-                                || matches!(
-                                    function.definition.body,
-                                    types::FunctionBody::Extern(_)
-                                ) {
-                                Visibility::Export
-                            } else {
-                                declaration.visibility
-                            },
-                            name: function.mangled_name(),
-                            fqname: function.name,
-                            return_type: function.definition.return_type.clone(),
-                            arguments: function.definition.arguments.clone(),
-                            position: function.definition.position,
-                        };
+            match &declaration.kind {
+                types::ItemKind::Function(function) => {
+                    let function_handle = FunctionHandle {
+                        // TODO main should be detected during typecheck (with signature
+                        // verification, checks that only one exists in the program, etc.)
+                        visibility: if function.name.last().raw() == "main"
+                            || matches!(function.definition.body, types::FunctionBody::Extern(_))
+                        {
+                            Visibility::Export
+                        } else {
+                            declaration.visibility
+                        },
+                        name: function.mangled_name(),
+                        fqname: function.name,
+                        return_type: function.definition.return_type.clone(),
+                        arguments: function.definition.arguments.clone(),
+                        position: function.definition.position,
+                    };
 
-                        created_module
-                            .set_variable(function.name.last(), Value::Function(function_handle));
-                    }
-                    types::ItemKind::Struct(struct_) => {
-                        let static_fields = struct_
-                            .impls
-                            .iter()
-                            .map(|(name, impl_)| {
-                                let handle = FunctionHandle {
-                                    fqname: struct_.name.with_part(*name),
-                                    visibility: declaration.visibility,
-                                    name: impl_.mangled_name(),
-                                    return_type: impl_.definition.return_type.clone(),
-                                    arguments: impl_.definition.arguments.clone(),
-                                    position: impl_.definition.position,
-                                };
-                                (*name, Value::Function(handle))
-                            })
-                            .collect();
-
-                        created_module.set_variable(
-                            struct_.name.last(),
-                            Value::Struct(StructHandle::new_with_statics(
-                                struct_.clone(),
-                                static_fields,
-                            )),
-                        );
-                    }
-                    types::ItemKind::Import(_) | types::ItemKind::Module(_) => {}
+                    created_module
+                        .set_variable(function.name.last(), Value::Function(function_handle));
                 }
+                types::ItemKind::Struct(struct_) => {
+                    let static_fields = struct_
+                        .impls
+                        .iter()
+                        .map(|(name, impl_)| {
+                            let handle = FunctionHandle {
+                                fqname: struct_.name.with_part(*name),
+                                visibility: declaration.visibility,
+                                name: impl_.mangled_name(),
+                                return_type: impl_.definition.return_type.clone(),
+                                arguments: impl_.definition.arguments.clone(),
+                                position: impl_.definition.position,
+                            };
+                            (*name, Value::Function(handle))
+                        })
+                        .collect();
+
+                    created_module.set_variable(
+                        struct_.name.last(),
+                        Value::Struct(StructHandle::new_with_statics(
+                            struct_.clone(),
+                            static_fields,
+                        )),
+                    );
+                }
+                types::ItemKind::Import(_) | types::ItemKind::Module(_) => {}
             }
         }
 
