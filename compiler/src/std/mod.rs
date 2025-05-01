@@ -5,7 +5,7 @@ use inkwell::context::Context;
 use crate::{
     compile::{CompileError, Compiler, scope::GlobalScope},
     parse::parse_file,
-    type_check::{TypeCheckError, type_check},
+    type_check::{errors::TypeCheckError, type_check},
     types,
 };
 

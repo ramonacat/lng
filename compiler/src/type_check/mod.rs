@@ -1,12 +1,14 @@
 mod declarations;
+pub mod errors;
 
-use std::{collections::HashMap, error::Error, fmt::Display};
+use std::collections::HashMap;
 
 use declarations::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
     DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStruct,
     DeclaredStructField,
 };
+use errors::{TypeCheckError, TypeCheckErrorDescription};
 
 use crate::{
     ast,
@@ -30,108 +32,6 @@ impl types::Item {
                 .unwrap()
                 .type_(root_module),
             types::ItemKind::Module(_) => todo!(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct TypeCheckError {
-    description: TypeCheckErrorDescription,
-    location: ErrorLocation,
-}
-
-impl Error for TypeCheckError {}
-impl Display for TypeCheckError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Error {} at {}", self.description, self.location)
-    }
-}
-
-#[derive(Debug)]
-pub enum TypeCheckErrorDescription {
-    UnexpectedArgumentTypeInCall {
-        target: ast::Expression,
-        argument_name: types::Identifier,
-        expected_type: types::Type,
-        actual_type: types::Type,
-    },
-    IncorrectNumberOfArgumentsPassed(types::Type),
-    FunctionArgumentCannotBeVoid {
-        argument_name: types::Identifier,
-    },
-    ModuleDoesNotExist(types::FQName),
-    ItemDoesNotExist(types::FQName),
-    ItemNotExported(types::FQName, types::Identifier),
-    UndeclaredVariable(types::Identifier),
-    ImplNotOnStruct(types::FQName),
-    MismatchedAssignmentType {
-        target_variable: types::Identifier,
-        variable_type: types::Type,
-        assigned_type: types::Type,
-    },
-    CallingNotCallableItem(types::Type),
-    MismatchedReturnType {
-        actual: types::Type,
-        expected: types::Type,
-    },
-}
-
-impl TypeCheckErrorDescription {
-    const fn at(self, location: ErrorLocation) -> TypeCheckError {
-        TypeCheckError {
-            description: self,
-            location,
-        }
-    }
-}
-
-impl Display for TypeCheckErrorDescription {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnexpectedArgumentTypeInCall {
-                target,
-                argument_name,
-                expected_type,
-                actual_type,
-            } => write!(
-                f,
-                "Incorrect argument type {actual_type} for argument {argument_name} of type {expected_type} in a call to {target}"
-            ),
-            Self::IncorrectNumberOfArgumentsPassed(name) => {
-                write!(f, "Incorrect number of arguments passed to {name}")
-            }
-            Self::FunctionArgumentCannotBeVoid { argument_name } => {
-                write!(f, "Argument {argument_name} cannot be of type void")
-            }
-            Self::ModuleDoesNotExist(module_path) => {
-                write!(f, "Module {module_path} does not exist")
-            }
-            Self::ItemDoesNotExist(item_path) => write!(f, "Item {item_path} does not exist"),
-            Self::ItemNotExported(module_path, identifier) => write!(
-                f,
-                "Item {identifier} exists in module {module_path}, but is not exported"
-            ),
-            Self::UndeclaredVariable(identifier) => {
-                write!(f, "Variable {identifier} does not exist")
-            }
-            Self::ImplNotOnStruct(identifier) => {
-                write!(f, "{identifier} is not a struct, impl is not allowed")
-            }
-            Self::MismatchedAssignmentType {
-                target_variable,
-                variable_type,
-                assigned_type,
-            } => write!(
-                f,
-                "Cannot assign value of type {assigned_type} to variiable {target_variable} of typee {variable_type}"
-            ),
-            Self::CallingNotCallableItem(identifier) => {
-                write!(f, "{identifier} cannot be called")
-            }
-            Self::MismatchedReturnType { actual, expected } => write!(
-                f,
-                "Function was expected to return {expected}, but returns {actual}"
-            ),
         }
     }
 }

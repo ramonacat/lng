@@ -93,6 +93,7 @@ pub(crate) struct Compiler<'ctx> {
 }
 
 #[derive(Debug, Clone)]
+// TODO move this out of the compiler, it's also used by typecheck!
 pub enum ErrorLocation {
     Position(FQName, SourceRange),
     Indeterminate,
