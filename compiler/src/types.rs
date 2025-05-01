@@ -458,33 +458,6 @@ impl Module {
         self.items.iter().map(|(k, v)| (*k, v))
     }
 
-    // TODO stop using this in compiler, and instead replace with .items()
-    pub(crate) fn all(&self, root_path: Option<FQName>) -> HashMap<FQName, Item> {
-        let mut result = HashMap::new();
-
-        for (item_name, item) in &self.items {
-            let item_path = root_path.map_or_else(
-                || FQName::parse(&item_name.raw()),
-                |x| x.with_part(*item_name),
-            );
-
-            match &item.kind {
-                ItemKind::Function(_) | ItemKind::Struct(_) | ItemKind::Import(_) => {
-                    result.insert(item_path, item.clone());
-                }
-                ItemKind::Module(module) => {
-                    result.insert(item_path, item.clone());
-
-                    for (item_path, item) in module.all(Some(item_path)) {
-                        result.insert(item_path, item);
-                    }
-                }
-            }
-        }
-
-        result
-    }
-
     pub(crate) fn get_item(&self, imported_item: FQName) -> Option<&Item> {
         if imported_item.len() == 1 {
             return self.items.get(&imported_item.last());

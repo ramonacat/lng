@@ -266,89 +266,108 @@ impl<'ctx> Compiler<'ctx> {
 
     pub fn compile(mut self, program: &types::Module) -> Result<GlobalScope<'ctx>, CompileError> {
         self.declare_items(program, FQName::parse(""));
+        self.resolve_imports(program, FQName::parse(""))?;
+        self.define_items(program, FQName::parse(""))?;
 
-        for (name, item) in &program.all(None) {
-            let module_path = name.without_last();
-            let Some(module) = self.context.global_scope.get_module(module_path) else {
-                dbg!(1);
-                return Err(CompileErrorDescription::ModuleNotFound(module_path).at_indeterminate());
+        Ok(self.context.global_scope)
+    }
+
+    fn define_items(&self, program: &types::Module, root_path: FQName) -> Result<(), CompileError> {
+        for (item_name, item) in program.items() {
+            let Some(module) = self.context.global_scope.get_module(root_path) else {
+                return Err(CompileErrorDescription::ModuleNotFound(root_path).at_indeterminate());
             };
 
-            let types::ItemKind::Import(import) = &item.kind else {
-                continue;
-            };
-
-            let value = self
-                .context
-                .global_scope
-                .get_value(import.imported_item)
-                .unwrap();
-
-            match value {
-                Value::Primitive(_, _) => todo!(),
-                Value::Reference(_) => todo!(),
-                Value::Function(function) => {
-                    module.import_function(&function, &self.context);
-
-                    let function_value = Value::Function(FunctionHandle {
-                        fqname: function.fqname,
-                        visibility: function.visibility,
-                        name: function.name.clone(),
-                        return_type: function.return_type,
-                        position: import.position,
-                        arguments: function.arguments.clone(),
-                    });
-
-                    module.set_variable(name.last(), function_value);
+            match &item.kind {
+                types::ItemKind::Function(function) => {
+                    self.compile_function(
+                        module
+                            .get_variable(item_name)
+                            .unwrap()
+                            .as_function()
+                            .unwrap(),
+                        module,
+                        &function.definition,
+                    )?;
                 }
-                Value::Struct(ref struct_) => {
-                    struct_.import(module, &self.context);
-                }
-                Value::Empty => todo!(),
-            }
-        }
-        for (item_name, item) in &program.all(None) {
-            let module_path = item_name.without_last();
-            let Some(module) = self.context.global_scope.get_module(module_path) else {
-                return Err(CompileErrorDescription::ModuleNotFound(module_path).at_indeterminate());
-            };
-
-            {
-                match &item.kind {
-                    types::ItemKind::Function(function) => {
+                types::ItemKind::Struct(struct_) => {
+                    for (impl_name, impl_) in &struct_.impls {
                         self.compile_function(
                             module
-                                .get_variable(item_name.last())
+                                .get_variable(item_name)
+                                .unwrap()
+                                .as_struct()
+                                .unwrap()
+                                .read_field_value(Value::Empty, *impl_name)
                                 .unwrap()
                                 .as_function()
                                 .unwrap(),
                             module,
-                            &function.definition,
+                            &impl_.definition,
                         )?;
                     }
-                    types::ItemKind::Struct(struct_) => {
-                        for (impl_name, impl_) in &struct_.impls {
-                            self.compile_function(
-                                module
-                                    .get_variable(item_name.last())
-                                    .unwrap()
-                                    .as_struct()
-                                    .unwrap()
-                                    .read_field_value(Value::Empty, *impl_name)
-                                    .unwrap()
-                                    .as_function()
-                                    .unwrap(),
-                                module,
-                                &impl_.definition,
-                            )?;
-                        }
-                    }
-                    types::ItemKind::Import(_) | types::ItemKind::Module(_) => {}
+                }
+                types::ItemKind::Import(_) => {}
+                types::ItemKind::Module(module) => {
+                    self.define_items(module, root_path.with_part(item_name))?;
                 }
             }
         }
 
-        Ok(self.context.global_scope)
+        Ok(())
+    }
+
+    fn resolve_imports(
+        &self,
+        program: &types::Module,
+        root_path: FQName,
+    ) -> Result<(), CompileError> {
+        for (name, item) in program.items() {
+            match &item.kind {
+                types::ItemKind::Function(_) | types::ItemKind::Struct(_) => {}
+                types::ItemKind::Import(import) => {
+                    let Some(module) = self.context.global_scope.get_module(root_path) else {
+                        return Err(
+                            CompileErrorDescription::ModuleNotFound(root_path).at_indeterminate()
+                        );
+                    };
+
+                    let value = self
+                        .context
+                        .global_scope
+                        .get_value(import.imported_item)
+                        .unwrap();
+
+                    match value {
+                        Value::Primitive(_, _) => todo!(),
+                        Value::Reference(_) => todo!(),
+                        Value::Function(function) => {
+                            module.import_function(&function, &self.context);
+
+                            let function_value = Value::Function(FunctionHandle {
+                                fqname: function.fqname,
+                                visibility: function.visibility,
+                                name: function.name.clone(),
+                                return_type: function.return_type,
+                                position: import.position,
+                                arguments: function.arguments.clone(),
+                            });
+
+                            module.set_variable(name, function_value);
+                        }
+                        Value::Struct(ref struct_) => {
+                            struct_.import(module, &self.context);
+                        }
+                        Value::Empty => todo!(),
+                    }
+                }
+                types::ItemKind::Module(module) => {
+                    self.resolve_imports(module, root_path.with_part(name))?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn declare_items(&mut self, program: &types::Module, root_path: FQName) {
