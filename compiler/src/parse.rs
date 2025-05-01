@@ -229,8 +229,59 @@ fn parse_function(function: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     })
 }
 
-// TODO split into smaller functions and remove the allow
-#[allow(clippy::too_many_lines)]
+fn parse_function_body(name: String, element: Pair<Rule>) -> Result<FunctionBody, ParseError<'_>> {
+    let position = find_source_position(&element);
+    let Some(inner_expression) = element.clone().into_inner().next() else {
+        return Err(ParseError::InternalError(
+            InternalError::MissingExpectedRule(element),
+        ));
+    };
+
+    if Rule::keyword_extern == inner_expression.as_rule() {
+        // TODO extern should actually have the foreign name as a separate parameter in
+        // the syntax
+        return Ok(FunctionBody::Extern(
+            name,
+            find_source_position(&inner_expression),
+        ));
+    }
+
+    let mut statements = vec![];
+    for statement in inner_expression.into_inner() {
+        for expression in statement.into_inner() {
+            match expression.as_rule() {
+                Rule::expression => {
+                    let position = find_source_position(&expression);
+                    statements.push(Statement::Expression(
+                        parse_expression(expression)?,
+                        position,
+                    ));
+                }
+                Rule::statement_let => {
+                    let mut inner = expression.into_inner();
+
+                    let declared_name = inner.next().unwrap().as_str().to_string();
+                    let type_ = parse_type(inner.next().unwrap().as_str());
+                    let expression = parse_expression(inner.next().unwrap())?;
+
+                    statements.push(Statement::Let(declared_name, type_, expression));
+                }
+                Rule::statement_return => {
+                    let inner = expression.into_inner().next().unwrap();
+
+                    statements.push(Statement::Return(parse_expression(inner)?, position));
+                }
+                _ => {
+                    return Err(ParseError::InternalError(InternalError::UnexpectedRule(
+                        expression,
+                    )));
+                }
+            }
+        }
+    }
+    Ok(FunctionBody::Statements(statements, position))
+}
+
 fn parse_function_inner(
     function: Pair<Rule>,
 ) -> Result<(SourceRange, Visibility, Function), ParseError<'_>> {
@@ -270,58 +321,7 @@ fn parse_function_inner(
                 });
             }
             Rule::function_body => {
-                let position = find_source_position(&element);
-                let Some(inner_expression) = element.clone().into_inner().next() else {
-                    return Err(ParseError::InternalError(
-                        InternalError::MissingExpectedRule(element),
-                    ));
-                };
-
-                if Rule::keyword_extern == inner_expression.as_rule() {
-                    // TODO extern should actually have the foreign name as a separate parameter in
-                    // the syntax
-                    body = Some(FunctionBody::Extern(
-                        name.clone(),
-                        find_source_position(&inner_expression),
-                    ));
-                    continue;
-                }
-
-                let mut statements = vec![];
-                for statement in inner_expression.into_inner() {
-                    for expression in statement.into_inner() {
-                        match expression.as_rule() {
-                            Rule::expression => {
-                                let position = find_source_position(&expression);
-                                statements.push(Statement::Expression(
-                                    parse_expression(expression)?,
-                                    position,
-                                ));
-                            }
-                            Rule::statement_let => {
-                                let mut inner = expression.into_inner();
-
-                                let declared_name = inner.next().unwrap().as_str().to_string();
-                                let type_ = parse_type(inner.next().unwrap().as_str());
-                                let expression = parse_expression(inner.next().unwrap())?;
-
-                                statements.push(Statement::Let(declared_name, type_, expression));
-                            }
-                            Rule::statement_return => {
-                                let inner = expression.into_inner().next().unwrap();
-
-                                statements
-                                    .push(Statement::Return(parse_expression(inner)?, position));
-                            }
-                            _ => {
-                                return Err(ParseError::InternalError(
-                                    InternalError::UnexpectedRule(expression),
-                                ));
-                            }
-                        }
-                    }
-                }
-                body = Some(FunctionBody::Statements(statements, position));
+                body = Some(parse_function_body(name.clone(), element)?);
             }
             Rule::keyword_export => {
                 export = true;
@@ -352,8 +352,6 @@ fn parse_function_inner(
     ))
 }
 
-// TODO split into smaller functions and remove the allow
-#[allow(clippy::too_many_lines)]
 fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>> {
     let Some(expression) = expression.clone().into_inner().next() else {
         return Err(ParseError::InternalError(
@@ -364,30 +362,7 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
     let position = find_source_position(&expression);
 
     match expression.as_rule() {
-        Rule::expression_call => {
-            let mut expression_inner = expression.clone().into_inner();
-            let mut arguments = vec![];
-
-            let Some(call_target) = expression_inner.next() else {
-                return Err(ParseError::InternalError(
-                    InternalError::MissingExpectedRule(expression),
-                ));
-            };
-
-            let target_expression = parse_expression(call_target)?;
-
-            for argument in expression_inner {
-                arguments.push(parse_expression(argument)?);
-            }
-
-            Ok(Expression {
-                kind: ExpressionKind::Call {
-                    target: Box::new(target_expression),
-                    arguments,
-                },
-                position,
-            })
-        }
+        Rule::expression_call => parse_expression_call(&expression, position),
         Rule::expression_literal => {
             let Some(expression_inner) = expression.clone().into_inner().next() else {
                 return Err(ParseError::InternalError(
@@ -469,6 +444,34 @@ fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>
             expression,
         ))),
     }
+}
+
+fn parse_expression_call<'expr>(
+    expression: &Pair<'expr, Rule>,
+    position: SourceRange,
+) -> Result<Expression, ParseError<'expr>> {
+    let mut expression_inner = expression.clone().into_inner();
+    let mut arguments = vec![];
+
+    let Some(call_target) = expression_inner.next() else {
+        return Err(ParseError::InternalError(
+            InternalError::MissingExpectedRule(expression.clone()),
+        ));
+    };
+
+    let target_expression = parse_expression(call_target)?;
+
+    for argument in expression_inner {
+        arguments.push(parse_expression(argument)?);
+    }
+
+    Ok(Expression {
+        kind: ExpressionKind::Call {
+            target: Box::new(target_expression),
+            arguments,
+        },
+        position,
+    })
 }
 
 fn parse_type(mut type_: &str) -> TypeDescription {
