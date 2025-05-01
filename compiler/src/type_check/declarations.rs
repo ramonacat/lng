@@ -66,6 +66,20 @@ impl std::fmt::Debug for DeclaredModule {
 }
 
 impl DeclaredModule {
+    pub(super) fn import_predeclared(&mut self, module: &types::Module) {
+        for (item_name, item) in module.items() {
+            let visibility = item.visibility;
+
+            self.declare(
+                item_name,
+                DeclaredItem {
+                    kind: DeclaredItemKind::Predeclared(item.clone()),
+                    visibility,
+                },
+            );
+        }
+    }
+
     pub(super) fn declare(&mut self, name: types::FQName, item: DeclaredItem) {
         if name.len() == 1 {
             let old = self.items.insert(name.last(), item);

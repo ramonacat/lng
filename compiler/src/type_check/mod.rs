@@ -62,17 +62,7 @@ pub fn type_check(
     let mut root_module_declaration = DeclaredModule::new();
 
     if let Some(std) = std {
-        for (item_name, item) in std.items() {
-            let visibility = item.visibility;
-
-            root_module_declaration.declare(
-                item_name,
-                DeclaredItem {
-                    kind: DeclaredItemKind::Predeclared(item.clone()),
-                    visibility,
-                },
-            );
-        }
+        root_module_declaration.import_predeclared(std);
     }
 
     // this is equivalent-ish to topo-sort, as fewer parts in the name means it is higher in the
