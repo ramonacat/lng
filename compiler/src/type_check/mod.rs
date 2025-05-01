@@ -14,7 +14,7 @@ use crate::{
     ast,
     compile::ErrorLocation,
     std::{TYPE_NAME_STRING, TYPE_NAME_U64},
-    types::{self, FQName},
+    types::{self, AssociatedFunction, FQName},
 };
 
 impl types::Item {
@@ -53,8 +53,6 @@ fn convert_type(module: types::FQName, type_: &ast::TypeDescription) -> types::T
     }
 }
 
-// TODO split into smaller functions
-#[allow(clippy::too_many_lines)]
 pub fn type_check(
     program: &Vec<ast::SourceFile>,
     std: Option<&types::Module>,
@@ -84,120 +82,23 @@ pub fn type_check(
         );
     }
 
-    for file in program {
-        let module_path = types::FQName::parse(&file.name);
+    type_check_declarations(program, &mut root_module_declaration)?;
 
-        for declaration in &file.declarations {
-            match &declaration.kind {
-                ast::DeclarationKind::Function(function) => {
-                    let function_declaration = type_check_function_declaration(
-                        function,
-                        module_path,
-                        declaration.position,
-                    )?;
+    let declared_impls = type_check_impl_declarations(program, &mut root_module_declaration)?;
+    type_check_imports(program, &mut root_module_declaration)?;
 
-                    root_module_declaration.declare(
-                        module_path.with_part(types::Identifier::parse(&function.name)),
-                        DeclaredItem {
-                            kind: DeclaredItemKind::Function(function_declaration),
-                            visibility: convert_visibility(declaration.visibility),
-                        },
-                    );
-                }
-                ast::DeclarationKind::Struct(struct_) => {
-                    let mut fields = HashMap::new();
-                    // TODO check the types exist, possibly in separate pass
-                    for field in &struct_.fields {
-                        fields.insert(
-                            types::Identifier::parse(&field.name),
-                            DeclaredStructField {
-                                type_: convert_type(module_path, &field.type_),
+    type_check_definitions(
+        &root_module_declaration,
+        &root_module_declaration,
+        &declared_impls,
+        None,
+    )
+}
 
-                                static_: false,
-                            },
-                        );
-                    }
-                    let name = module_path.with_part(types::Identifier::parse(&struct_.name));
-                    root_module_declaration.declare(
-                        name,
-                        DeclaredItem {
-                            kind: DeclaredItemKind::Struct(DeclaredStruct { name, fields }),
-                            visibility: convert_visibility(declaration.visibility),
-                        },
-                    );
-                }
-                ast::DeclarationKind::Impl(_) => {}
-            }
-        }
-    }
-    // TODO check if we still need this
-    let mut declared_impls: HashMap<types::FQName, DeclaredAssociatedFunction> = HashMap::new();
-
-    for file in program {
-        let module_path = types::FQName::parse(&file.name);
-        for declaration in &file.declarations {
-            let position = declaration.position;
-
-            match &declaration.kind {
-                ast::DeclarationKind::Function(_) | ast::DeclarationKind::Struct(_) => {}
-                ast::DeclarationKind::Impl(impl_declaration) => {
-                    let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
-                    let struct_path = module_path.with_part(struct_name);
-                    let error_location = ErrorLocation::Position(struct_path, position);
-
-                    let functions = impl_declaration
-                        .functions
-                        .iter()
-                        .map(|f| {
-                            type_check_associated_function_declaration(f, struct_path, position)
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-
-                    let Some(struct_) = root_module_declaration.get_item_mut(struct_path) else {
-                        return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
-                            .at(error_location));
-                    };
-
-                    let DeclaredItem {
-                        kind: DeclaredItemKind::Struct(DeclaredStruct { fields, .. }),
-                        ..
-                    } = struct_
-                    else {
-                        return Err(TypeCheckErrorDescription::ImplNotOnStruct(struct_path)
-                            .at(error_location));
-                    };
-
-                    for function in &functions {
-                        fields.insert(
-                            function.name,
-                            DeclaredStructField {
-                                type_: types::Type::Callable {
-                                    arguments: function
-                                        .definition
-                                        .arguments
-                                        .iter()
-                                        .map(|x| types::Argument {
-                                            name: x.name,
-                                            type_: x.type_.clone(),
-                                            position,
-                                        })
-                                        .collect(),
-                                    return_type: Box::new(function.definition.return_type.clone()),
-                                },
-                                static_: true,
-                            },
-                        );
-
-                        declared_impls
-                            .insert(struct_path.with_part(function.name), function.clone());
-                    }
-                }
-            }
-        }
-    }
-
-    let mut impls: HashMap<types::FQName, types::AssociatedFunction> = HashMap::new();
-
+fn type_check_imports(
+    program: &Vec<ast::SourceFile>,
+    root_module_declaration: &mut DeclaredModule,
+) -> Result<(), TypeCheckError> {
     for file in program {
         let module_path = types::FQName::parse(&file.name);
 
@@ -267,79 +168,145 @@ pub fn type_check(
                 }) => todo!(),
             }
         }
+    }
 
-        for item in &file.declarations {
-            let position = item.position;
+    Ok(())
+}
 
-            match &item.kind {
+fn type_check_impl_declarations(
+    program: &Vec<ast::SourceFile>,
+    root_module_declaration: &mut DeclaredModule,
+) -> Result<HashMap<FQName, DeclaredAssociatedFunction>, TypeCheckError> {
+    let mut declared_impls: HashMap<types::FQName, DeclaredAssociatedFunction> = HashMap::new();
+    for file in program {
+        let module_path = types::FQName::parse(&file.name);
+        for declaration in &file.declarations {
+            let position = declaration.position;
+
+            match &declaration.kind {
                 ast::DeclarationKind::Function(_) | ast::DeclarationKind::Struct(_) => {}
                 ast::DeclarationKind::Impl(impl_declaration) => {
                     let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
                     let struct_path = module_path.with_part(struct_name);
+                    let error_location = ErrorLocation::Position(struct_path, position);
 
-                    let declared_impl = declared_impls
+                    let functions = impl_declaration
+                        .functions
                         .iter()
-                        .filter(|x| x.0.without_last() == struct_path);
-
-                    let functions = declared_impl
-                        .map(|(_, f)| {
-                            type_check_associated_function(
-                                f,
-                                &root_module_declaration,
-                                ErrorLocation::Position(struct_path.with_part(f.name), position),
-                            )
+                        .map(|f| {
+                            type_check_associated_function_declaration(f, struct_path, position)
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
                     let Some(struct_) = root_module_declaration.get_item_mut(struct_path) else {
                         return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
-                            .at(ErrorLocation::Position(struct_path, position)));
+                            .at(error_location));
                     };
 
-                    // TODO DeclaredItem should have a is_struct method for this!
                     let DeclaredItem {
                         kind: DeclaredItemKind::Struct(DeclaredStruct { fields, .. }),
                         ..
                     } = struct_
                     else {
                         return Err(TypeCheckErrorDescription::ImplNotOnStruct(struct_path)
-                            .at(ErrorLocation::Position(struct_path, position)));
+                            .at(error_location));
                     };
 
                     for function in &functions {
-                        impls.insert(function.struct_.with_part(function.name), function.clone());
-
                         fields.insert(
                             function.name,
                             DeclaredStructField {
-                                type_: function.type_(),
+                                type_: types::Type::Callable {
+                                    arguments: function
+                                        .definition
+                                        .arguments
+                                        .iter()
+                                        .map(|x| types::Argument {
+                                            name: x.name,
+                                            type_: x.type_.clone(),
+                                            position,
+                                        })
+                                        .collect(),
+                                    return_type: Box::new(function.definition.return_type.clone()),
+                                },
                                 static_: true,
                             },
                         );
+
+                        declared_impls
+                            .insert(struct_path.with_part(function.name), function.clone());
                     }
                 }
             }
         }
     }
-
-    type_check_definitions(
-        &root_module_declaration,
-        &root_module_declaration,
-        &impls,
-        None,
-    )
+    Ok(declared_impls)
 }
 
-// TODO split into smaller functions
-#[allow(clippy::too_many_lines)]
+fn type_check_declarations(
+    program: &Vec<ast::SourceFile>,
+    root_module_declaration: &mut DeclaredModule,
+) -> Result<(), TypeCheckError> {
+    for file in program {
+        let module_path = types::FQName::parse(&file.name);
+
+        for declaration in &file.declarations {
+            match &declaration.kind {
+                ast::DeclarationKind::Function(function) => {
+                    let function_declaration = type_check_function_declaration(
+                        function,
+                        module_path,
+                        declaration.position,
+                    )?;
+
+                    root_module_declaration.declare(
+                        module_path.with_part(types::Identifier::parse(&function.name)),
+                        DeclaredItem {
+                            kind: DeclaredItemKind::Function(function_declaration),
+                            visibility: convert_visibility(declaration.visibility),
+                        },
+                    );
+                }
+                ast::DeclarationKind::Struct(struct_) => {
+                    let mut fields = HashMap::new();
+                    // TODO check the types exist, possibly in separate pass
+                    for field in &struct_.fields {
+                        fields.insert(
+                            types::Identifier::parse(&field.name),
+                            DeclaredStructField {
+                                type_: convert_type(module_path, &field.type_),
+
+                                static_: false,
+                            },
+                        );
+                    }
+                    let name = module_path.with_part(types::Identifier::parse(&struct_.name));
+                    root_module_declaration.declare(
+                        name,
+                        DeclaredItem {
+                            kind: DeclaredItemKind::Struct(DeclaredStruct { name, fields }),
+                            visibility: convert_visibility(declaration.visibility),
+                        },
+                    );
+                }
+                ast::DeclarationKind::Impl(_) => {}
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn type_check_definitions(
     root_module_declaration: &DeclaredModule,
     declaration_to_check: &DeclaredModule,
-    impls: &HashMap<types::FQName, types::AssociatedFunction>,
+    declared_impls: &HashMap<types::FQName, DeclaredAssociatedFunction>,
     root_path: Option<types::FQName>,
 ) -> Result<types::Module, TypeCheckError> {
     let mut root_module: types::Module = types::Module::new();
     let root_path = root_path.unwrap_or_else(|| FQName::parse(""));
+    let mut impls =
+        type_check_associated_function_definitions(root_module_declaration, declared_impls)?;
 
     for (item_path, declared_item) in declaration_to_check.items() {
         match &declared_item.kind {
@@ -365,29 +332,9 @@ fn type_check_definitions(
                 name: struct_name,
                 fields,
             }) => {
-                root_module.declare_item(
-                    *item_path,
-                    types::Item {
-                        kind: types::ItemKind::Struct(types::Struct {
-                            name: *struct_name,
-                            fields: fields
-                                .iter()
-                                .map(|(field_name, declaration)| types::StructField {
-                                    struct_name: *struct_name,
-                                    name: *field_name,
-                                    type_: declaration.type_.clone(),
-                                    static_: declaration.static_,
-                                })
-                                .collect(),
-                            impls: impls
-                                .iter()
-                                .filter(|f| &f.0.without_last() == struct_name)
-                                .map(|(k, v)| (k.last(), v.clone()))
-                                .collect(),
-                        }),
-                        visibility: declared_item.visibility,
-                    },
-                );
+                let struct_impls = impls.remove(struct_name).unwrap();
+                let item = type_check_struct(*struct_name, fields, struct_impls, declared_item);
+                root_module.declare_item(*item_path, item);
             }
             DeclaredItemKind::Import(DeclaredImport {
                 imported_item,
@@ -445,7 +392,7 @@ fn type_check_definitions(
                         type_check_definitions(
                             root_module_declaration,
                             module_declaration,
-                            impls,
+                            declared_impls,
                             Some(root_path),
                         )
                         .unwrap(),
@@ -457,6 +404,69 @@ fn type_check_definitions(
     }
 
     Ok(root_module)
+}
+
+fn type_check_struct(
+    struct_name: FQName,
+    fields: &HashMap<types::Identifier, DeclaredStructField>,
+    impls: HashMap<types::Identifier, AssociatedFunction>,
+    declared_item: &DeclaredItem,
+) -> types::Item {
+    let mut fields: Vec<_> = fields
+        .iter()
+        .map(|(field_name, declaration)| types::StructField {
+            struct_name,
+            name: *field_name,
+            type_: declaration.type_.clone(),
+            static_: declaration.static_,
+        })
+        .collect();
+
+    for (name, impl_) in &impls {
+        fields.push(types::StructField {
+            struct_name,
+            name: *name,
+            type_: impl_.type_(),
+            static_: true,
+        });
+    }
+
+    types::Item {
+        kind: types::ItemKind::Struct(types::Struct {
+            name: struct_name,
+            fields,
+            impls,
+        }),
+        visibility: declared_item.visibility,
+    }
+}
+
+fn type_check_associated_function_definitions(
+    root_module_declaration: &DeclaredModule,
+    declared_impls: &HashMap<FQName, DeclaredAssociatedFunction>,
+) -> Result<HashMap<FQName, HashMap<types::Identifier, AssociatedFunction>>, TypeCheckError> {
+    let mut impls: HashMap<FQName, HashMap<types::Identifier, AssociatedFunction>> = HashMap::new();
+    for (associated_function_name, declared_associated_function) in declared_impls {
+        let struct_name = associated_function_name.without_last();
+        let struct_path = struct_name.without_last();
+
+        let position = declared_associated_function.definition.position;
+
+        let associated_function = type_check_associated_function(
+            declared_associated_function,
+            root_module_declaration,
+            ErrorLocation::Position(
+                struct_path.with_part(associated_function_name.last()),
+                position,
+            ),
+        )?;
+
+        impls
+            .entry(struct_name)
+            .or_default()
+            .insert(associated_function.name, associated_function);
+    }
+    Ok(impls)
 }
 
 const fn convert_visibility(visibility: ast::Visibility) -> types::Visibility {
@@ -704,8 +714,6 @@ fn type_check_function_declaration(
     })
 }
 
-// TODO split it into smaller functions
-#[allow(clippy::too_many_lines)]
 fn type_check_expression(
     expression: &ast::Expression,
     locals: &HashMap<types::Identifier, types::Type>,
@@ -719,108 +727,15 @@ fn type_check_expression(
             target,
             arguments: passed_arguments,
         } => {
-            let checked_target =
-                type_check_expression(target, locals, available_types, error_location.clone())?;
-
-            let types::Type::Callable {
-                arguments: ref callable_arguments,
-                ref return_type,
-            } = checked_target.type_
-            else {
-                return Err(TypeCheckErrorDescription::CallingNotCallableItem(
-                    checked_target.type_,
-                )
-                .at(error_location));
-            };
-            let mut callable_arguments = callable_arguments.clone();
-
-            let self_argument = callable_arguments
-                .first()
-                .and_then(|a| {
-                    if a.name == types::Identifier::parse("self") {
-                        Some(a)
-                    } else {
-                        None
-                    }
-                })
-                .cloned();
-
-            if passed_arguments.len() + usize::from(self_argument.is_some())
-                != callable_arguments.len()
-            {
-                return Err(TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(
-                    checked_target.type_.clone(),
-                )
-                .at(error_location));
-            }
-
-            let mut checked_arguments = vec![];
-            if let Some(self_argument) = self_argument {
-                let mut callable_arguments_iter = callable_arguments.into_iter();
-
-                callable_arguments_iter.next().unwrap();
-
-                callable_arguments = callable_arguments_iter.collect();
-
-                let types::Type::StructDescriptor(target_struct_type_descriptor) = available_types
-                    .get_item(self_argument.type_.name())
-                    .unwrap()
-                    .type_(available_types)
-                else {
-                    todo!("{:?}", self_argument.type_);
-                };
-
-                let expected_type = target_struct_type_descriptor.object_type();
-
-                if self_argument.type_ != expected_type {
-                    return Err(TypeCheckErrorDescription::UnexpectedArgumentTypeInCall {
-                        target: *target.clone(),
-                        argument_name: self_argument.name,
-                        expected_type,
-                        actual_type: self_argument.type_,
-                    }
-                    .at(error_location));
-                }
-
-                checked_arguments.push(types::Expression {
-                    position: self_argument.position,
-                    type_: self_argument.type_,
-                    kind: types::ExpressionKind::SelfAccess,
-                });
-            }
-
-            for (argument, called_function_argument) in
-                passed_arguments.iter().zip(callable_arguments)
-            {
-                let checked_argument = type_check_expression(
-                    argument,
-                    locals,
-                    available_types,
-                    error_location.clone(),
-                )?;
-                let expected_type = &called_function_argument.type_;
-
-                if &checked_argument.type_ != expected_type {
-                    return Err(TypeCheckErrorDescription::UnexpectedArgumentTypeInCall {
-                        target: *target.clone(),
-                        argument_name: called_function_argument.name,
-                        expected_type: expected_type.clone(),
-                        actual_type: checked_argument.type_,
-                    }
-                    .at(error_location));
-                }
-
-                checked_arguments.push(checked_argument);
-            }
-
-            Ok(types::Expression {
+            let expression_type = type_check_call(
+                target,
+                passed_arguments,
+                locals,
+                available_types,
+                error_location,
                 position,
-                type_: *return_type.clone(),
-                kind: types::ExpressionKind::Call {
-                    target: Box::new(checked_target),
-                    arguments: checked_arguments,
-                },
-            })
+            )?;
+            Ok(expression_type)
         }
         ast::ExpressionKind::Literal(literal) => match literal {
             ast::Literal::String(value, _) => Ok(types::Expression {
@@ -914,4 +829,104 @@ fn type_check_expression(
             })
         }
     }
+}
+
+fn type_check_call(
+    target: &ast::Expression,
+    passed_arguments: &[ast::Expression],
+    locals: &HashMap<types::Identifier, types::Type>,
+    available_types: &DeclaredModule,
+
+    error_location: ErrorLocation,
+    position: ast::SourceRange,
+) -> Result<types::Expression, TypeCheckError> {
+    let checked_target =
+        type_check_expression(target, locals, available_types, error_location.clone())?;
+    let types::Type::Callable {
+        arguments: ref callable_arguments,
+        ref return_type,
+    } = checked_target.type_
+    else {
+        return Err(
+            TypeCheckErrorDescription::CallingNotCallableItem(checked_target.type_)
+                .at(error_location),
+        );
+    };
+    let mut callable_arguments = callable_arguments.clone();
+    let self_argument = callable_arguments
+        .first()
+        .and_then(|a| {
+            if a.name == types::Identifier::parse("self") {
+                Some(a)
+            } else {
+                None
+            }
+        })
+        .cloned();
+    if passed_arguments.len() + usize::from(self_argument.is_some()) != callable_arguments.len() {
+        return Err(TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(
+            checked_target.type_.clone(),
+        )
+        .at(error_location));
+    }
+    let mut checked_arguments = vec![];
+    if let Some(self_argument) = self_argument {
+        let mut callable_arguments_iter = callable_arguments.into_iter();
+
+        callable_arguments_iter.next().unwrap();
+
+        callable_arguments = callable_arguments_iter.collect();
+
+        let types::Type::StructDescriptor(target_struct_type_descriptor) = available_types
+            .get_item(self_argument.type_.name())
+            .unwrap()
+            .type_(available_types)
+        else {
+            todo!("{:?}", self_argument.type_);
+        };
+
+        let expected_type = target_struct_type_descriptor.object_type();
+
+        if self_argument.type_ != expected_type {
+            return Err(TypeCheckErrorDescription::UnexpectedArgumentTypeInCall {
+                target: target.clone(),
+                argument_name: self_argument.name,
+                expected_type,
+                actual_type: self_argument.type_,
+            }
+            .at(error_location));
+        }
+
+        checked_arguments.push(types::Expression {
+            position: self_argument.position,
+            type_: self_argument.type_,
+            kind: types::ExpressionKind::SelfAccess,
+        });
+    }
+    for (argument, called_function_argument) in passed_arguments.iter().zip(callable_arguments) {
+        let checked_argument =
+            type_check_expression(argument, locals, available_types, error_location.clone())?;
+        let expected_type = &called_function_argument.type_;
+
+        if &checked_argument.type_ != expected_type {
+            return Err(TypeCheckErrorDescription::UnexpectedArgumentTypeInCall {
+                target: target.clone(),
+                argument_name: called_function_argument.name,
+                expected_type: expected_type.clone(),
+                actual_type: checked_argument.type_,
+            }
+            .at(error_location));
+        }
+
+        checked_arguments.push(checked_argument);
+    }
+    let expression_type = types::Expression {
+        position,
+        type_: *return_type.clone(),
+        kind: types::ExpressionKind::Call {
+            target: Box::new(checked_target),
+            arguments: checked_arguments,
+        },
+    };
+    Ok(expression_type)
 }
