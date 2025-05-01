@@ -58,9 +58,9 @@ impl<'ctx> Scope<'ctx> {
         })
     }
 
-    // TODO check for overwrite!
     pub fn set_value(&self, name: types::Identifier, value: Value<'ctx>) {
-        self.locals.write().unwrap().insert(name, value);
+        let old = self.locals.write().unwrap().insert(name, value);
+        assert!(old.is_none());
     }
 
     pub fn get_value(&self, name: types::Identifier) -> Option<Value<'ctx>> {
