@@ -81,7 +81,11 @@ impl FQName {
             .unwrap()
             .to_string();
 
-        Self::parse(&format!("{raw}.{new_part}"))
+        if raw.is_empty() {
+            Self::parse(&format!("{new_part}"))
+        } else {
+            Self::parse(&format!("{raw}.{new_part}"))
+        }
     }
 
     pub fn parts(self) -> Vec<Identifier> {
@@ -435,8 +439,8 @@ impl Module {
         self.items.insert(name, item);
     }
 
-    pub(crate) fn items(&self) -> impl Iterator<Item = (FQName, &Item)> {
-        self.items.iter().map(|(k, v)| (FQName::parse(&k.raw()), v))
+    pub(crate) fn items(&self) -> impl Iterator<Item = (Identifier, &Item)> {
+        self.items.iter().map(|(k, v)| (*k, v))
     }
 
     // TODO stop using this in compiler, and instead replace with .items()

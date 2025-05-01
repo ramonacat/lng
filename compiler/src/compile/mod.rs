@@ -252,7 +252,7 @@ impl<'ctx> Compiler<'ctx> {
                 global_scope: std.unwrap_or_else(|| {
                     let mut scope = GlobalScope::default();
                     scope
-                        .create_module(FQName::parse("std"), context.create_module("std"))
+                        .get_or_create_module(FQName::parse("std"), || context.create_module("std"))
                         .set_variable(
                             Identifier::parse("string"),
                             Value::Struct(builtins.string_handle.clone()),
@@ -264,84 +264,13 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    // TODO split into smaller functions and remove the allow
-    #[allow(clippy::too_many_lines)]
     pub fn compile(mut self, program: &types::Module) -> Result<GlobalScope<'ctx>, CompileError> {
-        for (path, declaration) in &program.all(None) {
-            let module_path = path.without_last();
-
-            // TODO instead of this jumping around, do a first pass that creates the modules and
-            // then access them during the compilation
-            let created_module = if self.context.global_scope.get_module(module_path).is_none() {
-                let llvm_module = self
-                    .context
-                    .llvm_context
-                    .create_module((*path).into_mangled().as_str());
-
-                self.context
-                    .global_scope
-                    .create_module(module_path, llvm_module)
-            } else {
-                self.context
-                    .global_scope
-                    .get_module_mut(module_path)
-                    .unwrap()
-            };
-
-            match &declaration.kind {
-                types::ItemKind::Function(function) => {
-                    let function_handle = FunctionHandle {
-                        // TODO main should be detected during typecheck (with signature
-                        // verification, checks that only one exists in the program, etc.)
-                        visibility: if function.name.last().raw() == "main"
-                            || matches!(function.definition.body, types::FunctionBody::Extern(_))
-                        {
-                            Visibility::Export
-                        } else {
-                            declaration.visibility
-                        },
-                        name: function.mangled_name(),
-                        fqname: function.name,
-                        return_type: function.definition.return_type.clone(),
-                        arguments: function.definition.arguments.clone(),
-                        position: function.definition.position,
-                    };
-
-                    created_module
-                        .set_variable(function.name.last(), Value::Function(function_handle));
-                }
-                types::ItemKind::Struct(struct_) => {
-                    let static_fields = struct_
-                        .impls
-                        .iter()
-                        .map(|(name, impl_)| {
-                            let handle = FunctionHandle {
-                                fqname: struct_.name.with_part(*name),
-                                visibility: declaration.visibility,
-                                name: impl_.mangled_name(),
-                                return_type: impl_.definition.return_type.clone(),
-                                arguments: impl_.definition.arguments.clone(),
-                                position: impl_.definition.position,
-                            };
-                            (*name, Value::Function(handle))
-                        })
-                        .collect();
-
-                    created_module.set_variable(
-                        struct_.name.last(),
-                        Value::Struct(StructHandle::new_with_statics(
-                            struct_.clone(),
-                            static_fields,
-                        )),
-                    );
-                }
-                types::ItemKind::Import(_) | types::ItemKind::Module(_) => {}
-            }
-        }
+        self.declare_items(program, FQName::parse(""));
 
         for (name, item) in &program.all(None) {
             let module_path = name.without_last();
             let Some(module) = self.context.global_scope.get_module(module_path) else {
+                dbg!(1);
                 return Err(CompileErrorDescription::ModuleNotFound(module_path).at_indeterminate());
             };
 
@@ -422,8 +351,74 @@ impl<'ctx> Compiler<'ctx> {
         Ok(self.context.global_scope)
     }
 
-    // TODO split into smaller functions, remove the allow
-    #[allow(clippy::too_many_lines)]
+    fn declare_items(&mut self, program: &types::Module, root_path: FQName) {
+        for (path, declaration) in program.items() {
+            let module = self.get_or_create_module(root_path);
+
+            match &declaration.kind {
+                types::ItemKind::Function(function) => {
+                    let function_handle = FunctionHandle {
+                        // TODO main should be detected during typecheck (with signature
+                        // verification, checks that only one exists in the program, etc.)
+                        visibility: if function.name.last().raw() == "main"
+                            || matches!(function.definition.body, types::FunctionBody::Extern(_))
+                        {
+                            Visibility::Export
+                        } else {
+                            declaration.visibility
+                        },
+                        name: function.mangled_name(),
+                        fqname: function.name,
+                        return_type: function.definition.return_type.clone(),
+                        arguments: function.definition.arguments.clone(),
+                        position: function.definition.position,
+                    };
+
+                    module.set_variable(function.name.last(), Value::Function(function_handle));
+                }
+                types::ItemKind::Struct(struct_) => {
+                    let static_fields = struct_
+                        .impls
+                        .iter()
+                        .map(|(name, impl_)| {
+                            let handle = FunctionHandle {
+                                fqname: struct_.name.with_part(*name),
+                                visibility: declaration.visibility,
+                                name: impl_.mangled_name(),
+                                return_type: impl_.definition.return_type.clone(),
+                                arguments: impl_.definition.arguments.clone(),
+                                position: impl_.definition.position,
+                            };
+                            (*name, Value::Function(handle))
+                        })
+                        .collect();
+
+                    module.set_variable(
+                        struct_.name.last(),
+                        Value::Struct(StructHandle::new_with_statics(
+                            struct_.clone(),
+                            static_fields,
+                        )),
+                    );
+                }
+                types::ItemKind::Import(_) => {}
+                types::ItemKind::Module(module_declaration) => {
+                    self.declare_items(module_declaration, root_path.with_part(path));
+                }
+            }
+        }
+    }
+
+    fn get_or_create_module(&mut self, module_path: FQName) -> &mut CompiledModule<'ctx> {
+        self.context
+            .global_scope
+            .get_or_create_module(module_path, || {
+                self.context
+                    .llvm_context
+                    .create_module(module_path.into_mangled().as_str())
+            })
+    }
+
     fn compile_function(
         &self,
         handle: FunctionHandle,
@@ -527,8 +522,6 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
-    // TODO: split into smaller functions and remove the allow
-    #[allow(clippy::too_many_lines)]
     fn compile_expression(
         &self,
         expression: &types::Expression,
@@ -540,67 +533,14 @@ impl<'ctx> Compiler<'ctx> {
 
         match &expression.kind {
             types::ExpressionKind::Call { target, arguments } => {
-                let compiled_target =
-                    self.compile_expression(target, self_.clone(), compiled_function, module)?;
-                let (self_value, Value::Function(function)) = compiled_target else {
-                    todo!();
-                };
-
-                let mut compiled_arguments_iter = arguments
-                    .iter()
-                    .map(|a| {
-                        self.compile_expression(a, self_value.clone(), compiled_function, module)
-                            .map(|x| x.1)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                let call_arguments = compiled_arguments_iter
-                    .iter_mut()
-                    .map(|a| match a {
-                        Value::Primitive(_, v) => v.as_basic_value_enum().into(),
-                        Value::Reference(rc_value) => {
-                            rc_value.as_ptr().as_basic_value_enum().into()
-                        }
-                        Value::Function(_) => todo!("implement passing callables as arguments"),
-                        Value::Struct(_) => {
-                            todo!("implement passing struct definitions as arguments")
-                        }
-                        Value::Empty => todo!(),
-                    })
-                    .collect::<Vec<BasicMetadataValueEnum>>();
-
-                let call_result = self
-                    .context
-                    .builder
-                    .build_call(
-                        function.get_or_create_in_module(module, &self.context),
-                        &call_arguments,
-                        &format!("call_result_{}", position.as_id()),
-                    )
-                    .map_err(|e| {
-                        e.into_compile_error_at(compiled_function.handle.fqname, position)
-                    })?;
-
-                let call_result = call_result.as_any_value_enum();
-
-                let value = match function.return_type {
-                    types::Type::Unit => Value::Empty,
-                    types::Type::Object(item_path) => Value::Reference(RcValue::from_pointer(
-                        call_result.into_pointer_value(),
-                        self.context
-                            .global_scope
-                            .get_value(item_path)
-                            .unwrap()
-                            .as_struct()
-                            .unwrap(),
-                    )),
-                    types::Type::Array(_) => todo!(),
-                    types::Type::StructDescriptor(_) => todo!(),
-                    types::Type::Callable { .. } => todo!(),
-                    types::Type::U64 => todo!(),
-                    types::Type::U8 => todo!(),
-                    types::Type::Pointer(_) => todo!(),
-                };
+                let value = self.compile_expression_call(
+                    self_.as_ref(),
+                    compiled_function,
+                    module,
+                    position,
+                    target,
+                    arguments,
+                )?;
 
                 Ok((None, value))
             }
@@ -668,5 +608,69 @@ impl<'ctx> Compiler<'ctx> {
             }
             types::ExpressionKind::SelfAccess => Ok((None, self_.unwrap())),
         }
+    }
+
+    fn compile_expression_call(
+        &self,
+        self_: Option<&Value<'ctx>>,
+        compiled_function: &mut CompiledFunction<'ctx>,
+        module: &CompiledModule<'ctx>,
+        position: SourceRange,
+        target: &types::Expression,
+        arguments: &[types::Expression],
+    ) -> Result<Value<'ctx>, CompileError> {
+        let compiled_target =
+            self.compile_expression(target, self_.cloned(), compiled_function, module)?;
+        let (self_value, Value::Function(function)) = compiled_target else {
+            todo!();
+        };
+        let mut compiled_arguments_iter = arguments
+            .iter()
+            .map(|a| {
+                self.compile_expression(a, self_value.clone(), compiled_function, module)
+                    .map(|x| x.1)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let call_arguments = compiled_arguments_iter
+            .iter_mut()
+            .map(|a| match a {
+                Value::Primitive(_, v) => v.as_basic_value_enum().into(),
+                Value::Reference(rc_value) => rc_value.as_ptr().as_basic_value_enum().into(),
+                Value::Function(_) => todo!("implement passing callables as arguments"),
+                Value::Struct(_) => {
+                    todo!("implement passing struct definitions as arguments")
+                }
+                Value::Empty => todo!(),
+            })
+            .collect::<Vec<BasicMetadataValueEnum>>();
+        let call_result = self
+            .context
+            .builder
+            .build_call(
+                function.get_or_create_in_module(module, &self.context),
+                &call_arguments,
+                &format!("call_result_{}", position.as_id()),
+            )
+            .map_err(|e| e.into_compile_error_at(compiled_function.handle.fqname, position))?;
+        let call_result = call_result.as_any_value_enum();
+        let value = match function.return_type {
+            types::Type::Unit => Value::Empty,
+            types::Type::Object(item_path) => Value::Reference(RcValue::from_pointer(
+                call_result.into_pointer_value(),
+                self.context
+                    .global_scope
+                    .get_value(item_path)
+                    .unwrap()
+                    .as_struct()
+                    .unwrap(),
+            )),
+            types::Type::Array(_) => todo!(),
+            types::Type::StructDescriptor(_) => todo!(),
+            types::Type::Callable { .. } => todo!(),
+            types::Type::U64 => todo!(),
+            types::Type::U8 => todo!(),
+            types::Type::Pointer(_) => todo!(),
+        };
+        Ok(value)
     }
 }

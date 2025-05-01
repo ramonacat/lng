@@ -110,14 +110,14 @@ impl Default for GlobalScope<'_> {
 }
 
 impl<'ctx> GlobalScope<'ctx> {
-    pub fn create_module(
+    pub(super) fn get_or_create_module(
         &mut self,
         path: types::FQName,
-        llvm_module: Module<'ctx>,
+        create_llvm_module: impl FnOnce() -> Module<'ctx>,
     ) -> &mut CompiledModule<'ctx> {
         self.modules
             .entry(path)
-            .or_insert_with(|| CompiledModule::new(path, self.scope.child(), llvm_module))
+            .or_insert_with(|| CompiledModule::new(path, self.scope.child(), create_llvm_module()))
     }
 
     pub fn get_module(&self, path: types::FQName) -> Option<&CompiledModule<'ctx>> {
@@ -132,12 +132,5 @@ impl<'ctx> GlobalScope<'ctx> {
 
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
         self.modules.into_values()
-    }
-
-    pub(crate) fn get_module_mut(
-        &mut self,
-        path: types::FQName,
-    ) -> Option<&mut CompiledModule<'ctx>> {
-        self.modules.get_mut(&path)
     }
 }

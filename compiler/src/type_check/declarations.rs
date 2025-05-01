@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{ast, types};
+use crate::{
+    ast,
+    types::{self, FQName},
+};
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredArgument {
@@ -67,11 +70,13 @@ impl std::fmt::Debug for DeclaredModule {
 
 impl DeclaredModule {
     pub(super) fn import_predeclared(&mut self, module: &types::Module) {
+        let root_name = FQName::parse("");
+
         for (item_name, item) in module.items() {
             let visibility = item.visibility;
 
             self.declare(
-                item_name,
+                root_name.with_part(item_name),
                 DeclaredItem {
                     kind: DeclaredItemKind::Predeclared(item.clone()),
                     visibility,
