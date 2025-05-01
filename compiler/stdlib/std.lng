@@ -1,5 +1,5 @@
-fn println_impl(value: string): () extern;
-fn u64_to_string_impl(value: u64): string extern;
+fn println_impl(value: string): () extern(println_impl);
+fn u64_to_string_impl(value: u64): string extern(u64_to_string_impl);
 
 export fn println(value: string): () {
     println_impl(value);

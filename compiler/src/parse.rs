@@ -229,7 +229,7 @@ fn parse_function(function: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     })
 }
 
-fn parse_function_body(name: String, element: Pair<Rule>) -> Result<FunctionBody, ParseError<'_>> {
+fn parse_function_body(element: Pair<Rule>) -> Result<FunctionBody, ParseError<'_>> {
     let position = find_source_position(&element);
     let Some(inner_expression) = element.clone().into_inner().next() else {
         return Err(ParseError::InternalError(
@@ -237,49 +237,58 @@ fn parse_function_body(name: String, element: Pair<Rule>) -> Result<FunctionBody
         ));
     };
 
-    if Rule::keyword_extern == inner_expression.as_rule() {
-        // TODO extern should actually have the foreign name as a separate parameter in
-        // the syntax
-        return Ok(FunctionBody::Extern(
-            name,
-            find_source_position(&inner_expression),
-        ));
-    }
+    match inner_expression.as_rule() {
+        Rule::function_body_extern => {
+            let position = find_source_position(&inner_expression);
+            let external_name = inner_expression
+                .into_inner()
+                .next()
+                .unwrap()
+                .as_str()
+                .to_string();
 
-    let mut statements = vec![];
-    for statement in inner_expression.into_inner() {
-        for expression in statement.into_inner() {
-            match expression.as_rule() {
-                Rule::expression => {
-                    let position = find_source_position(&expression);
-                    statements.push(Statement::Expression(
-                        parse_expression(expression)?,
-                        position,
-                    ));
-                }
-                Rule::statement_let => {
-                    let mut inner = expression.into_inner();
+            Ok(FunctionBody::Extern(external_name, position))
+        }
+        Rule::function_body_statements => {
+            let mut statements = vec![];
+            for statement in inner_expression.into_inner() {
+                for expression in statement.into_inner() {
+                    match expression.as_rule() {
+                        Rule::expression => {
+                            let position = find_source_position(&expression);
+                            statements.push(Statement::Expression(
+                                parse_expression(expression)?,
+                                position,
+                            ));
+                        }
+                        Rule::statement_let => {
+                            let mut inner = expression.into_inner();
 
-                    let declared_name = inner.next().unwrap().as_str().to_string();
-                    let type_ = parse_type(inner.next().unwrap().as_str());
-                    let expression = parse_expression(inner.next().unwrap())?;
+                            let declared_name = inner.next().unwrap().as_str().to_string();
+                            let type_ = parse_type(inner.next().unwrap().as_str());
+                            let expression = parse_expression(inner.next().unwrap())?;
 
-                    statements.push(Statement::Let(declared_name, type_, expression));
-                }
-                Rule::statement_return => {
-                    let inner = expression.into_inner().next().unwrap();
+                            statements.push(Statement::Let(declared_name, type_, expression));
+                        }
+                        Rule::statement_return => {
+                            let inner = expression.into_inner().next().unwrap();
 
-                    statements.push(Statement::Return(parse_expression(inner)?, position));
-                }
-                _ => {
-                    return Err(ParseError::InternalError(InternalError::UnexpectedRule(
-                        expression,
-                    )));
+                            statements.push(Statement::Return(parse_expression(inner)?, position));
+                        }
+                        _ => {
+                            return Err(ParseError::InternalError(InternalError::UnexpectedRule(
+                                expression,
+                            )));
+                        }
+                    }
                 }
             }
+            Ok(FunctionBody::Statements(statements, position))
         }
+        _ => Err(ParseError::InternalError(InternalError::UnexpectedRule(
+            element,
+        ))),
     }
-    Ok(FunctionBody::Statements(statements, position))
 }
 
 fn parse_function_inner(
@@ -321,7 +330,7 @@ fn parse_function_inner(
                 });
             }
             Rule::function_body => {
-                body = Some(parse_function_body(name.clone(), element)?);
+                body = Some(parse_function_body(element)?);
             }
             Rule::keyword_export => {
                 export = true;
