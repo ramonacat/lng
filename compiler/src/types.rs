@@ -207,6 +207,21 @@ impl Type {
             Self::Pointer(_) => todo!(),
         }
     }
+
+    pub(crate) fn instance_type(&self) -> Self {
+        match &self {
+            Self::Unit => todo!(),
+            Self::Object(_) => todo!(),
+            Self::Array(_) => todo!(),
+            Self::StructDescriptor(struct_descriptor_type) => {
+                Self::Object(struct_descriptor_type.name)
+            }
+            Self::Callable { .. } => todo!(),
+            Self::U64 => todo!(),
+            Self::U8 => todo!(),
+            Self::Pointer(_) => todo!(),
+        }
+    }
 }
 
 impl Display for Type {

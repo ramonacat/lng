@@ -4,15 +4,70 @@ use crate::{
     ast,
     compile::ErrorLocation,
     std::{TYPE_NAME_STRING, TYPE_NAME_U64},
-    types::{self, AssociatedFunction, FQName},
+    types::{self, AssociatedFunction, FQName, Identifier},
 };
 
 use super::{
-    DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition, DeclaredImport,
-    DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStruct, DeclaredStructField,
-    convert_type,
+    DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
+    DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStruct,
+    DeclaredStructField,
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
+
+struct Locals<'globals> {
+    values: HashMap<types::Identifier, types::Type>,
+    globals: &'globals DeclaredModule,
+    scope_module_name: FQName,
+}
+
+impl<'globals> Locals<'globals> {
+    fn from_globals(root_module: &'globals DeclaredModule, module_name: FQName) -> Self {
+        Self {
+            values: HashMap::new(),
+            globals: root_module,
+            scope_module_name: module_name,
+        }
+    }
+
+    fn push_arguments(&mut self, arguments: &[DeclaredArgument]) {
+        for argument in arguments {
+            self.values.insert(argument.name, argument.type_.clone());
+        }
+    }
+
+    fn resolve_type(&self, type_: &ast::TypeDescription) -> Option<types::Type> {
+        match type_ {
+            ast::TypeDescription::Array(type_description) => Some(types::Type::Array(Box::new(
+                self.resolve_type(type_description)?,
+            ))),
+            ast::TypeDescription::Named(name) => {
+                let id = Identifier::parse(name);
+
+                self.values
+                    .get(&id)
+                    .cloned()
+                    // TODO should this type_ method be integrated into this?
+                    .or_else(|| {
+                        self.globals
+                            .get_item(self.scope_module_name.with_part(id))
+                            .map(|x| x.type_(self.globals))
+                    })
+            }
+        }
+    }
+
+    fn push_variable(&mut self, name: Identifier, r#type: types::Type) {
+        self.values.insert(name, r#type);
+    }
+
+    fn get(&self, id: Identifier) -> Option<types::Type> {
+        self.values.get(&id).cloned().or_else(|| {
+            self.globals
+                .get_item(self.scope_module_name.with_part(id))
+                .map(|x| x.type_(self.globals))
+        })
+    }
+}
 
 pub(super) struct DefinitionChecker {
     root_module_declaration: DeclaredModule,
@@ -242,31 +297,9 @@ impl DefinitionChecker {
         module: types::FQName,
         error_location: ErrorLocation,
     ) -> Result<types::FunctionDefinition, TypeCheckError> {
-        let mut locals: HashMap<types::Identifier, types::Type> = HashMap::new();
+        let mut locals = Locals::from_globals(&self.root_module_declaration, module);
 
-        if let Some(DeclaredItem {
-            kind: DeclaredItemKind::Module(local_module),
-            visibility: _,
-        }) = self.root_module_declaration.get_item(module)
-        {
-            // TODO locals should be a struct that handles this
-            for global in &local_module.items {
-                match &global.1.kind {
-                    DeclaredItemKind::Function(_)
-                    | DeclaredItemKind::Struct(_)
-                    | DeclaredItemKind::Import(_)
-                    | DeclaredItemKind::Predeclared(_) => {
-                        locals.insert(*global.0, global.1.type_(&self.root_module_declaration));
-                    }
-                    DeclaredItemKind::Module(_) => {} // TODO we want to include modules here as well,
-                                                      // once they exist as objects in the type system
-                }
-            }
-        }
-
-        for argument in &declared_function.arguments {
-            locals.insert(argument.name, argument.type_.clone());
-        }
+        locals.push_arguments(&declared_function.arguments);
 
         let body = match &declared_function.ast.body {
             ast::FunctionBody::Statements(body_statements, _) => {
@@ -288,9 +321,8 @@ impl DefinitionChecker {
                                 &locals,
                                 error_location.clone(),
                             )?;
-                            // TODO we should resolve the FQDN by looking at locals, then imports, instead of
-                            // convert_type just assuming current module!
-                            let type_ = convert_type(module, type_);
+
+                            let type_ = locals.resolve_type(type_).unwrap().instance_type();
 
                             if checked_expression.type_ != type_ {
                                 return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
@@ -301,7 +333,7 @@ impl DefinitionChecker {
                                 .at(error_location));
                             }
 
-                            locals.insert(types::Identifier::parse(name), type_);
+                            locals.push_variable(types::Identifier::parse(name), type_);
 
                             types::Statement::Let(types::LetStatement {
                                 binding: types::Identifier::parse(name),
@@ -358,7 +390,7 @@ impl DefinitionChecker {
     fn type_check_expression(
         &self,
         expression: &ast::Expression,
-        locals: &HashMap<types::Identifier, types::Type>,
+        locals: &Locals,
         error_location: ErrorLocation,
     ) -> Result<types::Expression, TypeCheckError> {
         let position = expression.position;
@@ -392,12 +424,9 @@ impl DefinitionChecker {
             ast::ExpressionKind::VariableReference(name) => {
                 let id = types::Identifier::parse(name);
 
-                let value_type = locals
-                    .get(&id)
-                    .ok_or_else(|| {
-                        TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location.clone())
-                    })
-                    .cloned()?;
+                let value_type = locals.get(id).ok_or_else(|| {
+                    TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location.clone())
+                })?;
 
                 Ok(types::Expression {
                     position,
@@ -410,12 +439,11 @@ impl DefinitionChecker {
 
                 let types::Type::StructDescriptor(types::StructDescriptorType { name, fields: _ }) =
                     locals
-                        .get(&id)
+                        .get(id)
                         .ok_or_else(|| {
                             TypeCheckErrorDescription::UndeclaredVariable(id)
                                 .at(error_location.clone())
                         })
-                        .cloned()
                         .unwrap()
                 else {
                     todo!();
@@ -476,7 +504,7 @@ impl DefinitionChecker {
         &self,
         target: &ast::Expression,
         passed_arguments: &[ast::Expression],
-        locals: &HashMap<types::Identifier, types::Type>,
+        locals: &Locals,
 
         error_location: ErrorLocation,
         position: ast::SourceRange,
