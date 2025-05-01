@@ -24,6 +24,7 @@ use value::{FunctionHandle, StructHandle, Value};
 
 use crate::{
     ast::SourceRange,
+    errors::ErrorLocation,
     runtime::register_mappings,
     std::compile_std,
     types::{self, FQName, Identifier, Visibility},
@@ -90,26 +91,6 @@ type RegisterGlobalMappings = Option<Box<dyn FnOnce(&ExecutionEngine, &Module)>>
 
 pub(crate) struct Compiler<'ctx> {
     context: CompilerContext<'ctx>,
-}
-
-#[derive(Debug, Clone)]
-// TODO move this out of the compiler, it's also used by typecheck!
-pub enum ErrorLocation {
-    Position(FQName, SourceRange),
-    Indeterminate,
-    ItemOnly(FQName),
-}
-
-impl Display for ErrorLocation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Position(fqname, source_range) => {
-                write!(f, "{source_range} in module {fqname}")
-            }
-            Self::Indeterminate => write!(f, "indeterminate"),
-            Self::ItemOnly(fqname) => write!(f, "{fqname}"),
-        }
-    }
 }
 
 #[derive(Debug)]

@@ -4,6 +4,7 @@
 
 mod ast;
 pub mod compile;
+mod errors;
 mod name_mangler;
 pub mod parse;
 pub mod runtime;

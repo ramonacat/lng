@@ -96,7 +96,6 @@ impl<'ctx> StructTypeHandle<'ctx> {
     ) -> (BasicTypeEnum<'ctx>, PointerValue<'ctx>) {
         let index = self.field_indices.get(&field).unwrap();
 
-        // TODO why does const_gep not work here?
         let pointer = unsafe {
             context.builder.build_gep(
                 self.llvm_type,

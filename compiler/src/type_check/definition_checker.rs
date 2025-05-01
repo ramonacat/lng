@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast,
-    compile::ErrorLocation,
+    errors::ErrorLocation,
     std::{TYPE_NAME_STRING, TYPE_NAME_U64},
     types::{self, AssociatedFunction, FQName, Identifier},
 };

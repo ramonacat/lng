@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{ast, compile::ErrorLocation, types};
+use crate::{ast, errors::ErrorLocation, types};
 
 use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,

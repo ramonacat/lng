@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display};
 
-use crate::{ast, compile::ErrorLocation, types};
+use crate::{ast, errors::ErrorLocation, types};
 
 #[derive(Debug)]
 pub struct TypeCheckError {
