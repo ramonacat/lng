@@ -7,7 +7,7 @@ pub fn import_function_from_nested() {
     let main = "
         import main::test::my_println;
 
-        fn main(): () {
+        export fn main(): () {
             my_println(\"hello\");
         }
     ";
@@ -32,7 +32,7 @@ pub fn import_aliased() {
     let main = "
         import main::test::my_println as just_println;
 
-        fn main(): () {
+        export fn main(): () {
             just_println(\"hello\");
         }
     ";

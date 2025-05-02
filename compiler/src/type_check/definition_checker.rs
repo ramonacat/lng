@@ -4,7 +4,7 @@ use crate::{
     ast,
     errors::ErrorLocation,
     std::{TYPE_NAME_STRING, TYPE_NAME_U64},
-    types::{self, AssociatedFunction, FQName, Identifier},
+    types::{self, AssociatedFunction, FQName, Identifier, RootModule},
 };
 
 use super::{
@@ -72,11 +72,23 @@ impl<'globals> Locals<'globals> {
 pub(super) struct DefinitionChecker {
     root_module_declaration: DeclaredModule,
     declared_impls: HashMap<types::FQName, DeclaredAssociatedFunction>,
+    main: Option<FQName>,
 }
 
 impl DefinitionChecker {
-    pub(super) fn check(&self) -> Result<types::Module, TypeCheckError> {
-        self.type_check_definitions(&self.root_module_declaration, None)
+    pub(super) fn check(&self) -> Result<types::RootModule, TypeCheckError> {
+        let root_module = self.type_check_definitions(&self.root_module_declaration, None)?;
+
+        if let Some(main) = self.main {
+            return Ok(RootModule::App {
+                main,
+                module: root_module,
+            });
+        }
+
+        Ok(RootModule::Library {
+            module: root_module,
+        })
     }
 
     fn type_check_definitions(
@@ -123,17 +135,19 @@ impl DefinitionChecker {
                     self.type_check_import(&mut root_module, *item_path, *imported_item, position);
                 }
                 DeclaredItemKind::Predeclared(_) => {}
-                DeclaredItemKind::Module(module_declaration) => root_module.declare_item(
-                    *item_path,
-                    // TODO ensure the visibility here is set correctly
-                    types::Item {
-                        kind: types::ItemKind::Module(
-                            self.type_check_definitions(module_declaration, Some(root_path))
-                                .unwrap(),
-                        ),
-                        visibility: types::Visibility::Export,
-                    },
-                ),
+                DeclaredItemKind::Module(module_declaration) => {
+                    let submodule_root = self
+                        .type_check_definitions(module_declaration, Some(root_path))
+                        .unwrap();
+                    root_module.declare_item(
+                        *item_path,
+                        // TODO ensure the visibility here is set correctly
+                        types::Item {
+                            kind: types::ItemKind::Module(submodule_root),
+                            visibility: types::Visibility::Export,
+                        },
+                    );
+                }
             }
         }
 
@@ -605,10 +619,12 @@ impl DefinitionChecker {
     pub(super) const fn new(
         root_module_declaration: DeclaredModule,
         declared_impls: HashMap<FQName, DeclaredAssociatedFunction>,
+        main: Option<FQName>,
     ) -> Self {
         Self {
             root_module_declaration,
             declared_impls,
+            main,
         }
     }
 }

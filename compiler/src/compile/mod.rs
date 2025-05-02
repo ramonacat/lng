@@ -33,17 +33,29 @@ use crate::{
 // TODO instead of executing the code, this should return some object that exposes the
 // executable code with a safe interface
 pub fn compile(
-    program: &types::Module,
-    std_program: &types::Module,
+    program: &types::RootModule,
+    std_program: &types::RootModule,
     register_global_mappings: RegisterGlobalMappings,
 ) -> Result<(), CompileError> {
     let context = Context::create();
     let std = compile_std(std_program, &context)?;
 
-    let compiler = Compiler::new(&context, Some(std));
+    let CompiledRootModule::Library { scope: std_scope } = std else {
+        todo!();
+    };
 
-    let global_scope = compiler.compile(program)?;
+    let compiler = Compiler::new(&context, Some(std_scope));
+
+    let compiled_root_module = compiler.compile(program)?;
     let root_module = context.create_module("root");
+
+    let CompiledRootModule::App {
+        scope: global_scope,
+        main,
+    } = compiled_root_module
+    else {
+        todo!();
+    };
 
     for module in global_scope.into_modules() {
         println!("{}", module.to_ir());
@@ -76,10 +88,7 @@ pub fn compile(
 
     unsafe {
         let main = execution_engine
-            // TODO we should allow for main to be in any module, not just "main"
-            .get_function::<unsafe extern "C" fn()>(
-                types::FQName::parse("main.main").into_mangled().as_str(),
-            )
+            .get_function::<unsafe extern "C" fn()>(main.into_mangled().as_str())
             .unwrap();
         main.call();
     }
@@ -219,6 +228,16 @@ impl<'ctx> CompiledFunction<'ctx> {
     }
 }
 
+pub enum CompiledRootModule<'ctx> {
+    App {
+        scope: GlobalScope<'ctx>,
+        main: FQName,
+    },
+    Library {
+        scope: GlobalScope<'ctx>,
+    },
+}
+
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
         let builtins = Builtins {
@@ -245,12 +264,29 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    pub fn compile(mut self, program: &types::Module) -> Result<GlobalScope<'ctx>, CompileError> {
-        self.declare_items(program, FQName::parse(""));
-        self.resolve_imports(program, FQName::parse(""))?;
-        self.define_items(program, FQName::parse(""))?;
+    pub fn compile(
+        mut self,
+        program: &types::RootModule,
+    ) -> Result<CompiledRootModule<'ctx>, CompileError> {
+        let (root_module, main) = match program {
+            types::RootModule::App { module, main } => (module, Some(*main)),
+            types::RootModule::Library { module } => (module, None),
+        };
 
-        Ok(self.context.global_scope)
+        self.declare_items(root_module, FQName::parse(""));
+        self.resolve_imports(root_module, FQName::parse(""))?;
+        self.define_items(root_module, FQName::parse(""))?;
+
+        if let Some(main) = main {
+            Ok(CompiledRootModule::App {
+                scope: self.context.global_scope,
+                main,
+            })
+        } else {
+            Ok(CompiledRootModule::Library {
+                scope: self.context.global_scope,
+            })
+        }
     }
 
     fn define_items(&self, program: &types::Module, root_path: FQName) -> Result<(), CompileError> {
@@ -358,11 +394,14 @@ impl<'ctx> Compiler<'ctx> {
             match &declaration.kind {
                 types::ItemKind::Function(function) => {
                     let function_handle = FunctionHandle {
-                        // TODO main should be detected during typecheck (with signature
-                        // verification, checks that only one exists in the program, etc.)
-                        visibility: if function.name.last().raw() == "main"
-                            || matches!(function.definition.body, types::FunctionBody::Extern(_))
-                        {
+                        // TODO should the extern check be done here, or is it just a
+                        // compilation-internal concern?
+                        // TODO should we throw an error if function is declared extern, but
+                        // Visibility is not export?
+                        visibility: if matches!(
+                            function.definition.body,
+                            types::FunctionBody::Extern(_)
+                        ) {
                             Visibility::Export
                         } else {
                             declaration.visibility

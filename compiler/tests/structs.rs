@@ -15,7 +15,7 @@ pub fn method_call() {
             }
         }
 
-        fn main(): () {
+        export fn main(): () {
             let greeter:Greeter = Greeter {};
             greeter.greet(\"hello\");
         }

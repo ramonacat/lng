@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{ast, errors::ErrorLocation, types};
+use crate::{
+    ast,
+    errors::ErrorLocation,
+    std::TYPE_NAME_STRING,
+    types::{self, FQName},
+};
 
 use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
@@ -13,13 +18,10 @@ use super::{
 pub(super) struct DeclarationChecker {
     root_module_declaration: DeclaredModule,
     declared_impls: HashMap<types::FQName, DeclaredAssociatedFunction>,
+    main: Option<FQName>,
 }
 
 impl DeclarationChecker {
-    pub(super) fn into_definition_checker(self) -> DefinitionChecker {
-        DefinitionChecker::new(self.root_module_declaration, self.declared_impls)
-    }
-
     fn type_check_module_declarations(&mut self, program: &[ast::SourceFile]) {
         // this is equivalent-ish to topo-sort, as fewer parts in the name means it is higher in the
         // hierarchy (i.e. main.test will definitely appear after main)
@@ -211,6 +213,33 @@ impl DeclarationChecker {
                             declaration.position,
                         )?;
 
+                        if function_declaration.name.last() == types::Identifier::parse("main")
+                            && declaration.visibility == ast::Visibility::Export
+                        {
+                            if function_declaration.definition.arguments.len() == 1 {
+                                if let Some(argument) =
+                                    function_declaration.definition.arguments.first()
+                                {
+                                    if let types::Type::Array(ref array_item_type) = argument.type_
+                                    {
+                                        if let types::Type::Object(obj_type) = **array_item_type {
+                                            if obj_type == *TYPE_NAME_STRING {
+                                                if self.main.is_some() {
+                                                    todo!(
+                                                        "show a nice error here, main is already defined"
+                                                    );
+                                                }
+
+                                                self.main = Some(function_declaration.name);
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if function_declaration.definition.arguments.is_empty() {
+                                self.main = Some(function_declaration.name);
+                            }
+                        }
+
                         self.root_module_declaration.declare(
                             module_path.with_part(types::Identifier::parse(&function.name)),
                             DeclaredItem {
@@ -336,15 +365,23 @@ impl DeclarationChecker {
         Self {
             root_module_declaration,
             declared_impls: HashMap::new(),
+            main: None,
         }
     }
 
-    pub(crate) fn check(&mut self, program: &[ast::SourceFile]) -> Result<(), TypeCheckError> {
+    pub(crate) fn check(
+        mut self,
+        program: &[ast::SourceFile],
+    ) -> Result<DefinitionChecker, TypeCheckError> {
         self.type_check_module_declarations(program);
         self.type_check_declarations(program)?;
         self.type_check_impl_declarations(program)?;
         self.type_check_imports(program)?;
 
-        Ok(())
+        Ok(DefinitionChecker::new(
+            self.root_module_declaration,
+            self.declared_impls,
+            self.main,
+        ))
     }
 }

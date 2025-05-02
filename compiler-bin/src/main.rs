@@ -18,7 +18,7 @@ fn main() {
             }
         }
 
-        fn main(args:string[]): () {
+        export fn main(args:string[]): () {
             let greeter:Greeter = Greeter {};
             greeter.greet(\"henlo\");
 

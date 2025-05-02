@@ -51,17 +51,21 @@ fn convert_type(module: types::FQName, type_: &ast::TypeDescription) -> types::T
 
 pub fn type_check(
     program: &[ast::SourceFile],
-    std: Option<&types::Module>,
-) -> Result<types::Module, TypeCheckError> {
+    std: Option<&types::RootModule>,
+) -> Result<types::RootModule, TypeCheckError> {
     let mut root_module_declaration = DeclaredModule::new();
 
     if let Some(std) = std {
-        root_module_declaration.import_predeclared(std);
+        match std {
+            types::RootModule::App { .. } => todo!(),
+            types::RootModule::Library { module } => {
+                root_module_declaration.import_predeclared(module);
+            }
+        }
     }
 
-    let mut type_checker = DeclarationChecker::new(root_module_declaration);
-    type_checker.check(program)?;
+    let type_checker = DeclarationChecker::new(root_module_declaration);
 
-    let definition_checker = type_checker.into_definition_checker();
+    let definition_checker = type_checker.check(program)?;
     definition_checker.check()
 }

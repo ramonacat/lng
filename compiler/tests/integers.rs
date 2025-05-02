@@ -7,7 +7,7 @@ pub fn integer_to_string() {
     let main = "
         import std::println;
 
-        fn main(): () {
+        export fn main(): () {
             println(5.to_string());
         }
     ";

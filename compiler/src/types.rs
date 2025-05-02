@@ -422,6 +422,11 @@ pub enum Visibility {
     Internal,
 }
 
+pub enum RootModule {
+    App { main: FQName, module: Module },
+    Library { module: Module },
+}
+
 #[derive(Clone)]
 pub struct Module {
     items: HashMap<Identifier, Item>,
