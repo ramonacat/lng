@@ -9,11 +9,7 @@ use crate::{
     types::{self, FQName, Identifier, Visibility},
 };
 
-use super::{
-    context::{CompiledStruct, CompilerContext},
-    module::CompiledModule,
-    rc_builder::RcValue,
-};
+use super::{context::CompilerContext, module::CompiledModule, rc_builder::RcValue};
 
 #[derive(Clone)]
 pub struct FunctionHandle {
@@ -66,7 +62,10 @@ impl<'ctx> StructHandle<'ctx> {
         binding_name: &str,
         mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
-        let llvm_type = self.llvm_type(context);
+        let llvm_type = {
+            let this = &self;
+            context.make_struct_type(this.description.name, &this.description.fields)
+        };
 
         let instance = context
             .builder
@@ -78,7 +77,9 @@ impl<'ctx> StructHandle<'ctx> {
 
         for field in self.description.fields.iter().filter(|x| !x.static_) {
             let field_value = field_values.remove(&field.name).unwrap();
-            let (_, field_pointer) = llvm_type.field_pointer(field.name, instance, context);
+            let (_, field_pointer) = llvm_type
+                .field_pointer(field.name, instance, context)
+                .unwrap();
 
             context
                 .builder
@@ -96,9 +97,12 @@ impl<'ctx> StructHandle<'ctx> {
         binding_name: &str,
         context: &CompilerContext<'ctx>,
     ) -> BasicValueEnum<'ctx> {
-        let (field_type, field_pointer) = self
-            .llvm_type(context)
-            .field_pointer(field, instance, context);
+        let (field_type, field_pointer) = {
+            let this = &self;
+            context.make_struct_type(this.description.name, &this.description.fields)
+        }
+        .field_pointer(field, instance, context)
+        .unwrap();
 
         context
             .builder
@@ -113,9 +117,12 @@ impl<'ctx> StructHandle<'ctx> {
         value: BasicValueEnum<'ctx>,
         context: &CompilerContext<'ctx>,
     ) {
-        let (_, field_pointer) = self
-            .llvm_type(context)
-            .field_pointer(field_name, instance, context);
+        let (_, field_pointer) = {
+            let this = &self;
+            context.make_struct_type(this.description.name, &this.description.fields)
+        }
+        .field_pointer(field_name, instance, context)
+        .unwrap();
 
         context.builder.build_store(field_pointer, value).unwrap();
     }
@@ -163,11 +170,6 @@ impl<'ctx> StructHandle<'ctx> {
             description,
             static_fields,
         }
-    }
-
-    // TODO inline this???
-    fn llvm_type(&self, context: &CompilerContext<'ctx>) -> CompiledStruct<'ctx> {
-        context.make_struct_type(&self.description.fields)
     }
 }
 

@@ -120,6 +120,7 @@ pub enum CompileErrorDescription {
         module_name: FQName,
         struct_name: types::Identifier,
     },
+    FieldNotFound(FQName, Identifier),
 }
 
 impl CompileErrorDescription {
@@ -165,6 +166,9 @@ impl Display for CompileErrorDescription {
                 module_name,
                 struct_name: function_name,
             } => write!(f, "Struct {function_name} not found in {module_name}"),
+            Self::FieldNotFound(struct_name, field_name) => {
+                write!(f, "Field {field_name} not found on struct {struct_name}")
+            }
         }
     }
 }

@@ -9,9 +9,9 @@ use inkwell::{
     values::PointerValue,
 };
 
-use crate::types::{self, Identifier};
+use crate::types::{self, FQName, Identifier};
 
-use super::{scope::GlobalScope, value::StructHandle};
+use super::{CompileError, CompileErrorDescription, scope::GlobalScope, value::StructHandle};
 
 pub struct Builtins<'ctx> {
     pub rc_handle: StructHandle<'ctx>,
@@ -65,7 +65,11 @@ impl<'ctx> CompilerContext<'ctx> {
         }
     }
 
-    pub fn make_struct_type(&self, fields: &[types::StructField]) -> CompiledStruct<'ctx> {
+    pub fn make_struct_type(
+        &self,
+        struct_name: FQName,
+        fields: &[types::StructField],
+    ) -> CompiledStruct<'ctx> {
         let mut field_types = vec![];
         let mut field_indices = HashMap::new();
 
@@ -77,24 +81,27 @@ impl<'ctx> CompilerContext<'ctx> {
         CompiledStruct {
             llvm_type: self.llvm_context.struct_type(&field_types, false),
             field_indices,
+            struct_name,
         }
     }
 }
 
 pub struct CompiledStruct<'ctx> {
+    struct_name: FQName,
     llvm_type: StructType<'ctx>,
     field_indices: HashMap<Identifier, u32>,
 }
 
 impl<'ctx> CompiledStruct<'ctx> {
-    // TODO return Result (error if there's no such field)
     pub fn field_pointer(
         &self,
         field: Identifier,
         instance: PointerValue<'ctx>,
         context: &CompilerContext<'ctx>,
-    ) -> (BasicTypeEnum<'ctx>, PointerValue<'ctx>) {
-        let index = self.field_indices.get(&field).unwrap();
+    ) -> Result<(BasicTypeEnum<'ctx>, PointerValue<'ctx>), CompileError> {
+        let index = self.field_indices.get(&field).ok_or_else(|| {
+            CompileErrorDescription::FieldNotFound(self.struct_name, field).at_indeterminate()
+        })?;
 
         let pointer = unsafe {
             context.builder.build_gep(
@@ -120,10 +127,10 @@ impl<'ctx> CompiledStruct<'ctx> {
         }
         .unwrap();
 
-        (
+        Ok((
             self.llvm_type.get_field_type_at_index(*index).unwrap(),
             pointer,
-        )
+        ))
     }
 
     pub(crate) const fn as_llvm_type(&self) -> StructType<'ctx> {
