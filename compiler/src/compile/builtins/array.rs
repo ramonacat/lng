@@ -61,31 +61,15 @@ impl ArrayValue {
             .builder
             .build_array_malloc(
                 items_type,
-                context.llvm_context.i64_type().const_int(1, false),
+                context.const_u64(1),
                 &unique_name("string_items"),
             )
             .unwrap();
         let mut field_values = HashMap::new();
         field_values.insert(*ITEMS_FIELD, items.as_basic_value_enum());
 
-        // TODO context.const_u64(0) to make the const IntValue easier to construct here and
-        // everyhwere
-        field_values.insert(
-            *LENGTH_FIELD,
-            context
-                .llvm_context
-                .i64_type()
-                .const_int(0, false)
-                .as_basic_value_enum(),
-        );
-        field_values.insert(
-            *CAPACITY_FIELD,
-            context
-                .llvm_context
-                .i64_type()
-                .const_int(1, false)
-                .as_basic_value_enum(),
-        );
+        field_values.insert(*LENGTH_FIELD, context.const_u64(0).as_basic_value_enum());
+        field_values.insert(*CAPACITY_FIELD, context.const_u64(1).as_basic_value_enum());
 
         let array_struct = describe_structure();
         let array_value =

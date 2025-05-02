@@ -5,7 +5,7 @@ use inkwell::{
     builder::Builder,
     context::Context,
     types::{BasicType, BasicTypeEnum, FunctionType, StructType},
-    values::PointerValue,
+    values::{IntValue, PointerValue},
 };
 
 use crate::types::{self, FQName, Identifier};
@@ -27,6 +27,16 @@ pub struct CompilerContext<'ctx> {
 }
 
 impl<'ctx> CompilerContext<'ctx> {
+    pub fn const_u64(&self, value: u64) -> IntValue<'ctx> {
+        self.llvm_context.i64_type().const_int(value, false)
+    }
+
+    fn const_u32(&self, value: u32) -> IntValue<'ctx> {
+        self.llvm_context
+            .i32_type()
+            .const_int(u64::from(value), false)
+    }
+
     pub fn get_std_type(&self, name: &str) -> Option<StructHandle<'ctx>> {
         self.global_scope
             .get_value(types::FQName::parse("std").with_part(Identifier::parse(name)))
@@ -111,13 +121,7 @@ impl<'ctx> CompiledStruct<'ctx> {
             context.builder.build_gep(
                 self.llvm_type,
                 instance,
-                &[
-                    context.llvm_context.i32_type().const_int(0, false),
-                    context
-                        .llvm_context
-                        .i32_type()
-                        .const_int(u64::from(*index), false),
-                ],
+                &[context.const_u32(0), context.const_u32(*index)],
                 &unique_name(field.raw().as_str()),
             )
         }

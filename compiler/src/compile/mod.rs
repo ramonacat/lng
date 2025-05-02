@@ -613,11 +613,7 @@ impl<'ctx> Compiler<'ctx> {
                     None,
                     Value::Primitive(
                         self.context.get_std_type("u64").unwrap(),
-                        self.context
-                            .llvm_context
-                            .i64_type()
-                            .const_int(*value, false)
-                            .as_basic_value_enum(),
+                        self.context.const_u64(*value).as_basic_value_enum(),
                     ),
                 )),
             },

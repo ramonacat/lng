@@ -54,14 +54,7 @@ impl<'ctx> RcValue<'ctx> {
         'src: 'ctx,
     {
         let mut field_values = HashMap::new();
-        field_values.insert(
-            *REFCOUNT_FIELD,
-            context
-                .llvm_context
-                .i64_type()
-                .const_int(1, false)
-                .as_basic_value_enum(),
-        );
+        field_values.insert(*REFCOUNT_FIELD, context.const_u64(1).as_basic_value_enum());
         field_values.insert(*POINTEE_FIELD, value.as_basic_value_enum());
         let rc = context
             .builtins
@@ -122,7 +115,7 @@ pub fn build_cleanup<'ctx>(
             .builder
             .build_int_sub(
                 old_refcount,
-                context.llvm_context.i64_type().const_int(1, false),
+                context.const_u64(1),
                 &(name.to_string() + "refcount_decremented"),
             )
             .unwrap();
@@ -132,7 +125,7 @@ pub fn build_cleanup<'ctx>(
             .build_int_compare(
                 inkwell::IntPredicate::EQ,
                 new_refcount,
-                context.llvm_context.i64_type().const_int(0, false),
+                context.const_u64(0),
                 &(name.to_string() + "refcount_iszero"),
             )
             .unwrap();
@@ -212,7 +205,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             .builder
             .build_int_add(
                 init_refcount.into_int_value(),
-                context.llvm_context.i64_type().const_int(1, false),
+                context.const_u64(1),
                 &format!("{name}_init_refcount_incremented"),
             )
             .unwrap();
