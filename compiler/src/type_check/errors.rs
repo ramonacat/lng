@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display};
 
-use crate::{ast, errors::ErrorLocation, types};
+use crate::{errors::ErrorLocation, types};
 
 #[derive(Debug)]
 pub struct TypeCheckError {
@@ -18,7 +18,7 @@ impl Display for TypeCheckError {
 #[derive(Debug)]
 pub enum TypeCheckErrorDescription {
     UnexpectedArgumentTypeInCall {
-        target: ast::Expression,
+        target: types::Type,
         argument_name: types::Identifier,
         expected_type: types::Type,
         actual_type: types::Type,

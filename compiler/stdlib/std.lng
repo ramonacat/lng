@@ -5,7 +5,8 @@ export fn println(value: string): () {
     println_impl(value);
 }
 
-struct u64 {}
+export struct string {}
+export struct u64 {}
 
 impl u64 {
     export fn to_string(self:u64):string {

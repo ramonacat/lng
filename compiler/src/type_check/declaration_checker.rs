@@ -8,6 +8,7 @@ use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
     DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStruct,
     DeclaredStructField, convert_type,
+    declarations::resolve_type,
     definition_checker::DefinitionChecker,
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
@@ -40,81 +41,33 @@ impl DeclarationChecker {
         }
     }
 
-    fn type_check_imports(&mut self, program: &[ast::SourceFile]) -> Result<(), TypeCheckError> {
+    fn type_check_imports(&mut self, program: &[ast::SourceFile]) {
         for file in program {
-            let module_path = types::FQName::parse(&file.name);
-
             for import in &file.imports {
                 let (name, path) = import.path.split_last().unwrap();
                 let exporting_module_name =
                     types::FQName::from_parts(path.iter().map(String::as_str));
                 let item_name = types::Identifier::parse(name);
 
-                let exported_item_path = exporting_module_name.with_part(item_name);
-                let imported_item_path = module_path.with_part(item_name);
-
-                let Some(imported_item) = self.root_module_declaration.get_item(exported_item_path)
-                else {
-                    return Err(
-                        TypeCheckErrorDescription::ItemDoesNotExist(exported_item_path)
-                            .at(ErrorLocation::Position(imported_item_path, import.position)),
-                    );
-                };
-
-                match &imported_item.kind {
-                    DeclaredItemKind::Function(DeclaredFunction { .. })
-                    | DeclaredItemKind::Struct { .. }
-                    | DeclaredItemKind::Predeclared(types::Item {
-                        kind:
-                            types::ItemKind::Function(types::Function { .. })
-                            | types::ItemKind::Struct(types::Struct { .. }),
-                        ..
-                    }) => {
-                        if imported_item.visibility != types::Visibility::Export {
-                            return Err(TypeCheckErrorDescription::ItemNotExported(
-                                exporting_module_name,
-                                item_name,
-                            )
-                            .at(ErrorLocation::Position(imported_item_path, import.position)));
-                        }
-                        let importing_module_path = types::FQName::parse(&file.name);
-                        let imported_as = importing_module_path.with_part(
-                            import
-                                .alias
-                                .as_ref()
-                                .map_or_else(|| item_name, |x| types::Identifier::parse(x)),
-                        );
-                        self.root_module_declaration.declare(
-                            imported_as,
-                            DeclaredItem {
-                                kind: DeclaredItemKind::Import(DeclaredImport {
-                                    position: import.position,
-                                    imported_item: exporting_module_name.with_part(item_name),
-                                }),
-                                visibility: imported_item.visibility,
-                            },
-                        );
-                    }
-                    DeclaredItemKind::Import(_)
-                    | DeclaredItemKind::Predeclared(types::Item {
-                        kind: types::ItemKind::Import(_),
-                        ..
-                    }) => {
-                        return Err(TypeCheckErrorDescription::ItemDoesNotExist(
-                            exported_item_path,
-                        )
-                        .at(ErrorLocation::Position(imported_item_path, import.position)));
-                    }
-                    DeclaredItemKind::Module(_)
-                    | DeclaredItemKind::Predeclared(types::Item {
-                        kind: types::ItemKind::Module(_),
-                        visibility: _,
-                    }) => todo!(),
-                }
+                let importing_module_path = types::FQName::parse(&file.name);
+                let imported_as = importing_module_path.with_part(
+                    import
+                        .alias
+                        .as_ref()
+                        .map_or_else(|| item_name, |x| types::Identifier::parse(x)),
+                );
+                self.root_module_declaration.declare(
+                    imported_as,
+                    DeclaredItem {
+                        kind: DeclaredItemKind::Import(DeclaredImport {
+                            position: import.position,
+                            imported_item: exporting_module_name.with_part(item_name),
+                        }),
+                        visibility: types::Visibility::Internal,
+                    },
+                );
             }
         }
-
-        Ok(())
     }
 
     fn type_check_impl_declarations(
@@ -146,6 +99,39 @@ impl DeclarationChecker {
                             })
                             .collect::<Result<Vec<_>, _>>()?;
 
+                        let mut fields_to_add = HashMap::new();
+                        for function in &functions {
+                            fields_to_add.insert(
+                                function.name,
+                                DeclaredStructField {
+                                    type_: types::Type::Callable {
+                                        arguments: function
+                                            .definition
+                                            .arguments
+                                            .iter()
+                                            .map(|x| types::Argument {
+                                                name: x.name,
+                                                type_: resolve_type(
+                                                    &self.root_module_declaration,
+                                                    module_path,
+                                                    &x.type_,
+                                                )
+                                                .instance_type(),
+                                                position,
+                                            })
+                                            .collect(),
+                                        return_type: Box::new(
+                                            function.definition.return_type.clone(),
+                                        ),
+                                    },
+                                    static_: true,
+                                },
+                            );
+
+                            self.declared_impls
+                                .insert(struct_path.with_part(function.name), function.clone());
+                        }
+
                         let Some(struct_) = self.root_module_declaration.get_item_mut(struct_path)
                         else {
                             return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
@@ -161,31 +147,8 @@ impl DeclarationChecker {
                                 .at(error_location));
                         };
 
-                        for function in &functions {
-                            fields.insert(
-                                function.name,
-                                DeclaredStructField {
-                                    type_: types::Type::Callable {
-                                        arguments: function
-                                            .definition
-                                            .arguments
-                                            .iter()
-                                            .map(|x| types::Argument {
-                                                name: x.name,
-                                                type_: x.type_.clone(),
-                                                position,
-                                            })
-                                            .collect(),
-                                        return_type: Box::new(
-                                            function.definition.return_type.clone(),
-                                        ),
-                                    },
-                                    static_: true,
-                                },
-                            );
-
-                            self.declared_impls
-                                .insert(struct_path.with_part(function.name), function.clone());
+                        for (field_name, field) in fields_to_add {
+                            fields.insert(field_name, field);
                         }
                     }
                 }
@@ -209,7 +172,7 @@ impl DeclarationChecker {
                             function,
                             module_path,
                             declaration.position,
-                        )?;
+                        );
 
                         if function_declaration.name.last() == types::Identifier::parse("main")
                             && declaration.visibility == ast::Visibility::Export
@@ -218,9 +181,15 @@ impl DeclarationChecker {
                                 if let Some(argument) =
                                     function_declaration.definition.arguments.first()
                                 {
-                                    if let types::Type::Array(ref array_item_type) = argument.type_
-                                    {
-                                        if let types::Type::Object(obj_type) = **array_item_type {
+                                    if let types::Type::Array(ref array_item_type) = resolve_type(
+                                        &self.root_module_declaration,
+                                        module_path,
+                                        &argument.type_,
+                                    ) {
+                                        if let types::Type::StructDescriptor(
+                                            types::StructDescriptorType { name: obj_type, .. },
+                                        ) = **array_item_type
+                                        {
                                             if obj_type == *TYPE_NAME_STRING {
                                                 if self.main.is_some() {
                                                     todo!(
@@ -328,7 +297,7 @@ impl DeclarationChecker {
 
             arguments.push(DeclaredArgument {
                 name: types::Identifier::parse(&arg.name),
-                type_: convert_type(self_type.without_last(), &arg.type_),
+                type_: arg.type_.clone(),
                 position: arg.position,
             });
         }
@@ -350,30 +319,21 @@ impl DeclarationChecker {
         function: &ast::Function,
         module_path: types::FQName,
         position: ast::SourceRange,
-    ) -> Result<DeclaredFunction, TypeCheckError> {
+    ) -> DeclaredFunction {
         let function_name = types::Identifier::parse(&function.name);
         let function_path = module_path.with_part(function_name);
 
         let mut arguments = vec![];
 
         for arg in &function.arguments {
-            let type_ = convert_type(module_path, &arg.type_);
-
-            if type_ == types::Type::Unit {
-                return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
-                    argument_name: types::Identifier::parse(&arg.name),
-                }
-                .at(ErrorLocation::Position(function_path, arg.position)));
-            }
-
             arguments.push(DeclaredArgument {
                 name: types::Identifier::parse(&arg.name),
-                type_: convert_type(module_path, &arg.type_),
+                type_: arg.type_.clone(),
                 position: arg.position,
             });
         }
 
-        Ok(DeclaredFunction {
+        DeclaredFunction {
             name: function_path,
             definition: DeclaredFunctionDefinition {
                 arguments,
@@ -381,7 +341,7 @@ impl DeclarationChecker {
                 ast: function.clone(),
                 position,
             },
-        })
+        }
     }
 
     pub(crate) fn new(root_module_declaration: DeclaredModule) -> Self {
@@ -397,9 +357,9 @@ impl DeclarationChecker {
         program: &[ast::SourceFile],
     ) -> Result<DefinitionChecker, TypeCheckError> {
         self.type_check_module_declarations(program);
+        self.type_check_imports(program);
         self.type_check_declarations(program)?;
         self.type_check_impl_declarations(program)?;
-        self.type_check_imports(program)?;
 
         Ok(DefinitionChecker::new(
             self.root_module_declaration,

@@ -11,7 +11,7 @@ use declarations::{
 };
 use errors::TypeCheckError;
 
-use crate::{ast, std::TYPE_NAME_STRING, types};
+use crate::{ast, types};
 
 impl types::Item {
     fn type_(&self, root_module: &DeclaredModule) -> types::Type {
@@ -32,9 +32,6 @@ impl types::Item {
     }
 }
 
-// TODO there should be a separate function to canonicalize a local identifier based on the scope,
-// and only that should be passed to convert_type (which in turn will be able to drop the module
-// argument)
 fn convert_type(module: types::FQName, type_: &ast::TypeDescription) -> types::Type {
     match type_ {
         ast::TypeDescription::Array(type_description) => {
@@ -42,11 +39,8 @@ fn convert_type(module: types::FQName, type_: &ast::TypeDescription) -> types::T
         }
         ast::TypeDescription::Named(name) if name == "()" => types::Type::Unit,
         ast::TypeDescription::Named(name) if name == "u64" => types::Type::U64,
-        // TODO instead of special-casing the types, do an automatic import?
-        ast::TypeDescription::Named(name) if name == "string" => {
-            types::Type::Object(*TYPE_NAME_STRING)
-        }
         ast::TypeDescription::Named(name) => {
+            // TODO we should also check the local scope, as values can be struct descriptor
             types::Type::Object(module.with_part(types::Identifier::parse(name)))
         }
     }

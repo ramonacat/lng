@@ -11,6 +11,7 @@ use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
     DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStruct,
     DeclaredStructField,
+    declarations::resolve_type,
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
 
@@ -31,7 +32,8 @@ impl<'globals> Locals<'globals> {
 
     fn push_arguments(&mut self, arguments: &[DeclaredArgument]) {
         for argument in arguments {
-            self.values.insert(argument.name, argument.type_.clone());
+            self.values
+                .insert(argument.name, self.resolve_type(&argument.type_).unwrap());
         }
     }
 
@@ -43,14 +45,15 @@ impl<'globals> Locals<'globals> {
             ast::TypeDescription::Named(name) => {
                 let id = Identifier::parse(name);
 
+                dbg!(&id, self.scope_module_name);
                 self.values
                     .get(&id)
                     .cloned()
                     // TODO should this type_ method be integrated into this?
                     .or_else(|| {
-                        self.globals
+                        dbg!(self.globals)
                             .get_item(self.scope_module_name.with_part(id))
-                            .map(|x| x.type_(self.globals))
+                            .map(|x| x.type_(self.globals).instance_type())
                     })
             }
         }
@@ -123,7 +126,7 @@ impl DefinitionChecker {
                     name: struct_name,
                     fields,
                 }) => {
-                    let struct_impls = impls.remove(struct_name).unwrap();
+                    let struct_impls = impls.remove(struct_name).unwrap_or_default();
                     let item =
                         Self::type_check_struct(*struct_name, fields, struct_impls, declared_item);
                     root_module.declare_item(*item_path, item);
@@ -136,9 +139,8 @@ impl DefinitionChecker {
                 }
                 DeclaredItemKind::Predeclared(_) => {}
                 DeclaredItemKind::Module(module_declaration) => {
-                    let submodule_root = self
-                        .type_check_definitions(module_declaration, Some(root_path))
-                        .unwrap();
+                    let submodule_root =
+                        self.type_check_definitions(module_declaration, Some(root_path))?;
                     root_module.declare_item(
                         *item_path,
                         // TODO ensure the visibility here is set correctly
@@ -306,6 +308,7 @@ impl DefinitionChecker {
             visibility: declared_function.visibility,
         })
     }
+
     fn type_check_function_definition(
         &self,
         declared_function: &DeclaredFunctionDefinition,
@@ -326,6 +329,7 @@ impl DefinitionChecker {
                             types::Statement::Expression(self.type_check_expression(
                                 expression,
                                 &locals,
+                                module,
                                 error_location.clone(),
                             )?)
                         }
@@ -334,10 +338,11 @@ impl DefinitionChecker {
                             let checked_expression = self.type_check_expression(
                                 expression,
                                 &locals,
+                                module,
                                 error_location.clone(),
                             )?;
 
-                            let type_ = locals.resolve_type(type_).unwrap().instance_type();
+                            let type_ = locals.resolve_type(type_).unwrap();
 
                             if checked_expression.type_ != type_ {
                                 return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
@@ -360,6 +365,7 @@ impl DefinitionChecker {
                             let checked_expression = self.type_check_expression(
                                 expression,
                                 &locals,
+                                module,
                                 error_location.clone(),
                             )?;
 
@@ -393,7 +399,8 @@ impl DefinitionChecker {
                 .iter()
                 .map(|argument| types::Argument {
                     name: argument.name,
-                    type_: argument.type_.clone(),
+                    type_: resolve_type(&self.root_module_declaration, module, &argument.type_)
+                        .instance_type(),
                     position: argument.position,
                 })
                 .collect(),
@@ -402,10 +409,12 @@ impl DefinitionChecker {
             position: declared_function.position,
         })
     }
+
     fn type_check_expression(
         &self,
         expression: &ast::Expression,
         locals: &Locals,
+        module_path: FQName,
         error_location: ErrorLocation,
     ) -> Result<types::Expression, TypeCheckError> {
         let position = expression.position;
@@ -419,9 +428,11 @@ impl DefinitionChecker {
                     target,
                     passed_arguments,
                     locals,
+                    module_path,
                     error_location,
                     position,
                 )?;
+
                 Ok(expression_type)
             }
             ast::ExpressionKind::Literal(literal) => match literal {
@@ -471,7 +482,8 @@ impl DefinitionChecker {
                 })
             }
             ast::ExpressionKind::FieldAccess { target, field_name } => {
-                let target = self.type_check_expression(target, locals, error_location)?;
+                let target =
+                    self.type_check_expression(target, locals, module_path, error_location)?;
 
                 let type_name = match &target.type_ {
                     types::Type::Unit => todo!(),
@@ -515,16 +527,18 @@ impl DefinitionChecker {
             }
         }
     }
+
     fn type_check_call(
         &self,
         target: &ast::Expression,
         passed_arguments: &[ast::Expression],
         locals: &Locals,
-
+        module_path: FQName,
         error_location: ErrorLocation,
         position: ast::SourceRange,
     ) -> Result<types::Expression, TypeCheckError> {
-        let checked_target = self.type_check_expression(target, locals, error_location.clone())?;
+        let checked_target =
+            self.type_check_expression(target, locals, module_path, error_location.clone())?;
         let types::Type::Callable {
             arguments: ref callable_arguments,
             ref return_type,
@@ -557,24 +571,15 @@ impl DefinitionChecker {
         if let Some(self_argument) = self_argument {
             let mut callable_arguments_iter = callable_arguments.into_iter();
 
-            callable_arguments_iter.next().unwrap();
+            let first_argument = callable_arguments_iter.next().unwrap();
 
             callable_arguments = callable_arguments_iter.collect();
 
-            let types::Type::StructDescriptor(target_struct_type_descriptor) = self
-                .root_module_declaration
-                .get_item(self_argument.type_.name())
-                .unwrap()
-                .type_(&self.root_module_declaration)
-            else {
-                todo!("{:?}", self_argument.type_);
-            };
-
-            let expected_type = target_struct_type_descriptor.object_type();
+            let expected_type = first_argument.type_;
 
             if self_argument.type_ != expected_type {
                 return Err(TypeCheckErrorDescription::UnexpectedArgumentTypeInCall {
-                    target: target.clone(),
+                    target: checked_target.type_,
                     argument_name: self_argument.name,
                     expected_type,
                     actual_type: self_argument.type_,
@@ -588,15 +593,17 @@ impl DefinitionChecker {
                 kind: types::ExpressionKind::SelfAccess,
             });
         }
+
         for (argument, called_function_argument) in passed_arguments.iter().zip(callable_arguments)
         {
             let checked_argument =
-                self.type_check_expression(argument, locals, error_location.clone())?;
+                self.type_check_expression(argument, locals, module_path, error_location.clone())?;
+
             let expected_type = &called_function_argument.type_;
 
             if &checked_argument.type_ != expected_type {
                 return Err(TypeCheckErrorDescription::UnexpectedArgumentTypeInCall {
-                    target: target.clone(),
+                    target: checked_target.type_,
                     argument_name: called_function_argument.name,
                     expected_type: expected_type.clone(),
                     actual_type: checked_argument.type_,

@@ -6,6 +6,7 @@ use compiler::{compile::compile, parse::parse_file, std::type_check_std, type_ch
 
 fn main() {
     let program = "
+        import std::string;
         import std::println;
         import main::printer::my_println;
 
@@ -28,6 +29,7 @@ fn main() {
     ";
 
     let printer = "
+        import std::string;
         import std::println;
 
         export fn my_println(arg: string): () {

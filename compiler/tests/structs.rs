@@ -5,6 +5,7 @@ mod common;
 #[test]
 pub fn method_call() {
     let main = "
+        import std::string;
         import std::println;
 
         struct Greeter {}

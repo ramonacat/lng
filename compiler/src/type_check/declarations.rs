@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{ast, types};
+use crate::{ast, std::TYPE_NAME_U64, types};
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredArgument {
     pub(super) name: types::Identifier,
-    pub(super) type_: types::Type,
+    pub(super) type_: ast::TypeDescription,
     pub(super) position: ast::SourceRange,
 }
 
@@ -200,7 +200,12 @@ impl DeclaredItem {
                     .iter()
                     .map(|declaration| types::Argument {
                         name: declaration.name,
-                        type_: declaration.type_.clone(),
+                        type_: resolve_type(
+                            root_module,
+                            declared_function.name.without_last(),
+                            &declaration.type_,
+                        )
+                        .instance_type(),
                         position: declaration.position,
                     })
                     .collect(),
@@ -227,6 +232,78 @@ impl DeclaredItem {
                 .type_(root_module),
             DeclaredItemKind::Predeclared(item) => item.type_(root_module),
             DeclaredItemKind::Module(_) => todo!(),
+        }
+    }
+}
+
+pub(super) fn resolve_type(
+    root_module: &DeclaredModule,
+    current_module: types::FQName,
+    r#type: &ast::TypeDescription,
+) -> types::Type {
+    match r#type {
+        ast::TypeDescription::Array(type_description) => types::Type::Array(Box::new(
+            resolve_type(root_module, current_module, type_description),
+        )),
+        ast::TypeDescription::Named(name) if name == "()" => todo!(),
+        ast::TypeDescription::Named(name) if name == "u64" => root_module
+            .get_item(*TYPE_NAME_U64)
+            .unwrap()
+            .type_(root_module),
+        ast::TypeDescription::Named(name) => {
+            let name = types::Identifier::parse(name);
+            let item = root_module
+                .get_item(current_module.with_part(name))
+                // TODO should there be a keyword for global scope access instead of this or_else?
+                .or_else(|| {
+                    root_module.get_item(types::FQName::from_parts(std::iter::once(&name.raw())))
+                })
+                .unwrap();
+
+            match item.kind {
+                DeclaredItemKind::Function(declared_function) => types::Type::Callable {
+                    arguments: declared_function
+                        .definition
+                        .arguments
+                        .iter()
+                        .map(|a| types::Argument {
+                            name: a.name,
+                            type_: resolve_type(
+                                root_module,
+                                declared_function.name.without_last(),
+                                &a.type_,
+                            )
+                            .instance_type(),
+                            position: a.position,
+                        })
+                        .collect(),
+                    // TODO the type should probably also be resolve_type'd
+                    return_type: Box::new(declared_function.definition.return_type),
+                },
+                DeclaredItemKind::Struct(declared_struct) => {
+                    types::Type::StructDescriptor(types::StructDescriptorType {
+                        name: declared_struct.name,
+                        fields: declared_struct
+                            .fields
+                            .iter()
+                            .map(|(name, field)| types::StructField {
+                                struct_name: declared_struct.name,
+                                name: *name,
+                                // TODO field.type_ should also probably be resolve_type'd
+                                type_: field.type_.clone(),
+                                static_: field.static_,
+                            })
+                            .collect(),
+                    })
+                }
+                DeclaredItemKind::Predeclared(item) => item.type_(root_module),
+                DeclaredItemKind::Import(declared_import) => {
+                    let imported_item = root_module.get_item(declared_import.imported_item);
+
+                    imported_item.unwrap().type_(root_module)
+                }
+                DeclaredItemKind::Module(_) => todo!(),
+            }
         }
     }
 }

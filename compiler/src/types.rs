@@ -63,6 +63,7 @@ impl Display for FQName {
 }
 
 impl FQName {
+    // TODO add from_identifier and check all usages of parse&from_parts that can be simplified
     pub fn parse(raw: &str) -> Self {
         let interned = IDENTIFIERS.write().unwrap().get_or_intern(raw);
 
@@ -135,6 +136,7 @@ pub struct StructDescriptorType {
 }
 
 impl StructDescriptorType {
+    // TODO rename -> instance_type
     pub fn object_type(&self) -> Type {
         // TODO can we avoid special-casing the types here? perhaps take the object type as an
         // argument?
@@ -212,9 +214,13 @@ impl Type {
         match &self {
             Self::Unit => todo!(),
             Self::Object(_) => todo!(),
-            Self::Array(_) => todo!(),
+            Self::Array(inner) => Self::Array(Box::new(inner.instance_type())),
             Self::StructDescriptor(struct_descriptor_type) => {
-                Self::Object(struct_descriptor_type.name)
+                if struct_descriptor_type.name == *TYPE_NAME_U64 {
+                    Self::U64
+                } else {
+                    Self::Object(struct_descriptor_type.name)
+                }
             }
             Self::Callable { .. } => todo!(),
             Self::U64 => todo!(),

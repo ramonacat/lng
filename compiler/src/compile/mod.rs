@@ -68,6 +68,7 @@ pub fn compile(
         main,
     } = compiled_root_module
     else {
+        dbg!(compiled_root_module);
         todo!();
     };
 
@@ -246,6 +247,7 @@ impl<'ctx> CompiledFunction<'ctx> {
     }
 }
 
+#[derive(Debug)]
 pub enum CompiledRootModule<'ctx> {
     App {
         scope: GlobalScope<'ctx>,
@@ -267,16 +269,7 @@ impl<'ctx> Compiler<'ctx> {
             context: CompilerContext {
                 llvm_context: context,
                 builder: context.create_builder(),
-                global_scope: std.unwrap_or_else(|| {
-                    let mut scope = GlobalScope::default();
-                    scope
-                        .get_or_create_module(FQName::parse("std"), || context.create_module("std"))
-                        .set_variable(
-                            Identifier::parse("string"),
-                            Value::Struct(builtins.string_handle.clone()),
-                        );
-                    scope
-                }),
+                global_scope: std.unwrap_or_default(),
                 builtins,
             },
         }
