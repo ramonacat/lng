@@ -16,7 +16,7 @@ use inkwell::{
     builder::BuilderError,
     context::Context,
     execution_engine::ExecutionEngine,
-    module::Module,
+    module::{Linkage, Module},
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum},
 };
 use module::CompiledModule;
@@ -29,7 +29,7 @@ use crate::{
     errors::ErrorLocation,
     runtime::register_mappings,
     std::compile_std,
-    types::{self, FQName, Identifier, Visibility},
+    types::{self, FQName, Identifier},
 };
 
 // TODO use this for all LLVM IR variable names instead of location
@@ -381,7 +381,7 @@ impl<'ctx> Compiler<'ctx> {
 
                             let function_value = Value::Function(FunctionHandle {
                                 fqname: function.fqname,
-                                visibility: function.visibility,
+                                linkage: Linkage::External,
                                 name: function.name.clone(),
                                 return_type: function.return_type,
                                 position: import.position,
@@ -412,17 +412,12 @@ impl<'ctx> Compiler<'ctx> {
             match &declaration.kind {
                 types::ItemKind::Function(function) => {
                     let function_handle = FunctionHandle {
-                        // TODO should the extern check be done here, or is it just a
-                        // compilation-internal concern?
-                        // TODO should we throw an error if function is declared extern, but
-                        // Visibility is not export?
-                        visibility: if matches!(
-                            function.definition.body,
-                            types::FunctionBody::Extern(_)
-                        ) {
-                            Visibility::Export
+                        linkage: if declaration.visibility == types::Visibility::Export
+                            || matches!(function.definition.body, types::FunctionBody::Extern(_))
+                        {
+                            Linkage::External
                         } else {
-                            declaration.visibility
+                            Linkage::Internal
                         },
                         name: function.mangled_name(),
                         fqname: function.name,
@@ -440,7 +435,11 @@ impl<'ctx> Compiler<'ctx> {
                         .map(|(name, impl_)| {
                             let handle = FunctionHandle {
                                 fqname: struct_.name.with_part(*name),
-                                visibility: impl_.visibility,
+                                linkage: if impl_.visibility == types::Visibility::Export {
+                                    Linkage::External
+                                } else {
+                                    Linkage::Internal
+                                },
                                 name: impl_.mangled_name(),
                                 return_type: impl_.definition.return_type.clone(),
                                 arguments: impl_.definition.arguments.clone(),

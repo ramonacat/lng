@@ -59,18 +59,12 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub fn declare_function(
         &self,
-        export: bool,
+        linkage: Linkage,
         name: &MangledIdentifier,
         arguments: &[types::Argument],
         return_type: &types::Type,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let linkage = if export {
-            Linkage::External
-        } else {
-            Linkage::Internal
-        };
-
         self.declare_function_inner(name, arguments, return_type, linkage, context)
     }
 
@@ -131,9 +125,9 @@ impl<'ctx> CompiledModule<'ctx> {
 
                     Value::Reference(rc)
                 }
-                types::Type::Array(a) => {
-                    Value::Reference(builtins::array::ArrayValue::build_instance(a, context))
-                }
+                types::Type::Array(a) => Value::Reference(
+                    builtins::array::ArrayValue::build_instance(a.as_ref(), context),
+                ),
                 types::Type::StructDescriptor(_) => todo!(),
                 types::Type::Callable { .. } => todo!(),
                 types::Type::U64 => {
@@ -183,7 +177,7 @@ impl<'ctx> CompiledModule<'ctx> {
             .get_function(handle.name.as_str())
             .unwrap_or_else(|| {
                 self.declare_function(
-                    handle.visibility == types::Visibility::Export,
+                    handle.linkage,
                     &handle.name,
                     &handle.arguments,
                     &handle.return_type,

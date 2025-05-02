@@ -1,12 +1,15 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use inkwell::values::{BasicValue as _, BasicValueEnum, PointerValue};
+use inkwell::{
+    module::Linkage,
+    values::{BasicValue as _, BasicValueEnum, PointerValue},
+};
 use itertools::Itertools;
 
 use crate::{
     ast::SourceRange,
     name_mangler::MangledIdentifier,
-    types::{self, FQName, Identifier, Visibility},
+    types::{self, FQName, Identifier},
 };
 
 use super::{builtins::rc::RcValue, context::CompilerContext, module::CompiledModule};
@@ -18,8 +21,7 @@ pub struct FunctionHandle {
     pub position: SourceRange,
     pub arguments: Vec<types::Argument>,
     pub return_type: types::Type,
-    // TODO this should be handled in Scope
-    pub visibility: Visibility,
+    pub linkage: Linkage,
 }
 
 impl Debug for FunctionHandle {
