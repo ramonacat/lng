@@ -1,12 +1,15 @@
+mod builtins;
 mod context;
 mod module;
-mod rc_builder;
 pub(crate) mod scope;
-mod string_builder;
 mod value;
 
 use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
 
+use builtins::{
+    rc::{self, RcValue},
+    string::{self, StringValue},
+};
 use context::{Builtins, CompilerContext};
 use inkwell::{
     basic_block::BasicBlock,
@@ -17,9 +20,7 @@ use inkwell::{
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum},
 };
 use module::CompiledModule;
-use rc_builder::RcValue;
 use scope::{GlobalScope, Scope};
-use string_builder::StringValue;
 use value::{FunctionHandle, StructHandle, Value};
 
 use crate::{
@@ -245,8 +246,8 @@ pub enum CompiledRootModule<'ctx> {
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
         let builtins = Builtins {
-            string_handle: string_builder::describe_structure(),
-            rc_handle: rc_builder::describe_structure(),
+            string_handle: string::describe_structure(),
+            rc_handle: rc::describe_structure(),
         };
 
         Self {
@@ -507,7 +508,7 @@ impl<'ctx> Compiler<'ctx> {
                 }
             }
         }
-        let cleanup_label = rc_builder::build_cleanup(
+        let cleanup_label = rc::build_cleanup(
             &self.context,
             &compiled_function
                 .rcs

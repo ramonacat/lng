@@ -5,9 +5,10 @@ use inkwell::{
     values::{BasicValue, PointerValue},
 };
 
-use crate::types::{self, FQName, Identifier};
-
-use super::{StructHandle, context::CompilerContext};
+use crate::{
+    compile::{context::CompilerContext, value::StructHandle},
+    types::{self, FQName, Identifier},
+};
 
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {

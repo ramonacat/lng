@@ -9,7 +9,7 @@ use crate::{
     types::{self, FQName, Identifier, Visibility},
 };
 
-use super::{context::CompilerContext, module::CompiledModule, rc_builder::RcValue};
+use super::{builtins::rc::RcValue, context::CompilerContext, module::CompiledModule};
 
 #[derive(Clone)]
 pub struct FunctionHandle {

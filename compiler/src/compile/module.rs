@@ -3,7 +3,7 @@ use std::rc::Rc;
 use super::{
     CompiledFunction, FunctionHandle, Scope, Value,
     context::CompilerContext,
-    rc_builder::{self, RcValue},
+    rc::{self, RcValue},
 };
 use crate::{name_mangler::MangledIdentifier, types};
 use inkwell::{
@@ -166,7 +166,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
         context.builder.position_at_end(entry_block);
 
-        rc_builder::build_prologue(&rcs, context);
+        rc::build_prologue(&rcs, context);
 
         CompiledFunction {
             handle,

@@ -3,11 +3,12 @@ use std::collections::HashMap;
 use inkwell::values::BasicValue as _;
 
 use crate::{
+    compile::{context::CompilerContext, value::StructHandle},
     std::TYPE_NAME_STRING,
     types::{self, Identifier},
 };
 
-use super::{context::CompilerContext, rc_builder::RcValue, value::StructHandle};
+use super::rc::RcValue;
 
 pub struct StringValue {
     value: String,
