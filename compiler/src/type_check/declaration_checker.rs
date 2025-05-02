@@ -1,11 +1,8 @@
+// TODO add checking around the correctnes of visibility (i.e. that only visible items can be
+// imported)
 use std::collections::HashMap;
 
-use crate::{
-    ast,
-    errors::ErrorLocation,
-    std::TYPE_NAME_STRING,
-    types::{self, FQName},
-};
+use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
 
 use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
@@ -18,7 +15,7 @@ use super::{
 pub(super) struct DeclarationChecker {
     root_module_declaration: DeclaredModule,
     declared_impls: HashMap<types::FQName, DeclaredAssociatedFunction>,
-    main: Option<FQName>,
+    main: Option<types::FQName>,
 }
 
 impl DeclarationChecker {
@@ -141,7 +138,8 @@ impl DeclarationChecker {
                             .iter()
                             .map(|f| {
                                 Self::type_check_associated_function_declaration(
-                                    f,
+                                    f.0,
+                                    &f.1,
                                     struct_path,
                                     position,
                                 )
@@ -309,6 +307,7 @@ impl DeclarationChecker {
     }
 
     fn type_check_associated_function_declaration(
+        visibility: ast::Visibility,
         function: &ast::Function,
         self_type: types::FQName,
         position: ast::SourceRange,
@@ -343,6 +342,7 @@ impl DeclarationChecker {
                 ast: function.clone(),
                 position,
             },
+            visibility: Self::convert_visibility(visibility),
         })
     }
 

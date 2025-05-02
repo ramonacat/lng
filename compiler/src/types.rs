@@ -292,6 +292,7 @@ pub struct AssociatedFunction {
     pub struct_: FQName,
     pub name: Identifier,
     pub definition: FunctionDefinition,
+    pub visibility: Visibility,
 }
 impl AssociatedFunction {
     pub(crate) fn type_(&self) -> Type {

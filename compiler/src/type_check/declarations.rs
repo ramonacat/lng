@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    ast,
-    types::{self, FQName},
-};
+use crate::{ast, types};
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredArgument {
@@ -31,6 +28,7 @@ pub(super) struct DeclaredAssociatedFunction {
     pub(super) struct_: types::FQName,
     pub(super) name: types::Identifier,
     pub(super) definition: DeclaredFunctionDefinition,
+    pub(super) visibility: types::Visibility,
 }
 
 #[derive(Debug, Clone)]
@@ -70,7 +68,7 @@ impl std::fmt::Debug for DeclaredModule {
 
 impl DeclaredModule {
     pub(super) fn import_predeclared(&mut self, module: &types::Module) {
-        let root_name = FQName::parse("");
+        let root_name = types::FQName::parse("");
 
         for (item_name, item) in module.items() {
             let visibility = item.visibility;

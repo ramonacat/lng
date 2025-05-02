@@ -105,7 +105,10 @@ fn parse_impl(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     for item in item.into_inner() {
         match item.as_rule() {
             Rule::identifier => struct_name = item.as_str().to_string(),
-            Rule::function_declaration => functions.push(parse_function_inner(item)?.2),
+            Rule::function_declaration => {
+                let (_, visibility, function) = parse_function_inner(item)?;
+                functions.push((visibility, function));
+            }
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     item,
@@ -132,6 +135,7 @@ fn parse_struct(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     let position = find_source_position(&item);
     let mut name = String::new();
     let mut fields = vec![];
+    let mut export = false;
 
     for item in item.into_inner() {
         match item.as_rule() {
@@ -158,6 +162,9 @@ fn parse_struct(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
                     position,
                 });
             }
+            Rule::keyword_export => {
+                export = true;
+            }
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
                     item,
@@ -171,7 +178,11 @@ fn parse_struct(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
     Ok(Declaration {
         kind: crate::ast::DeclarationKind::Struct(struct_),
         // TODO we should acutally allow the export keyword and decide based on that
-        visibility: Visibility::Export,
+        visibility: if export {
+            Visibility::Export
+        } else {
+            Visibility::Internal
+        },
         position,
     })
 }

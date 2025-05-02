@@ -440,7 +440,7 @@ impl<'ctx> Compiler<'ctx> {
                         .map(|(name, impl_)| {
                             let handle = FunctionHandle {
                                 fqname: struct_.name.with_part(*name),
-                                visibility: declaration.visibility,
+                                visibility: impl_.visibility,
                                 name: impl_.mangled_name(),
                                 return_type: impl_.definition.return_type.clone(),
                                 arguments: impl_.definition.arguments.clone(),

@@ -303,6 +303,7 @@ impl DefinitionChecker {
             struct_: declared_function.struct_,
             name: declared_function.name,
             definition,
+            visibility: declared_function.visibility,
         })
     }
     fn type_check_function_definition(

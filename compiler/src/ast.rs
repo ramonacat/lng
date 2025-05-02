@@ -142,7 +142,7 @@ pub struct Struct {
 #[derive(Debug, Clone)]
 pub struct Impl {
     pub struct_name: String,
-    pub functions: Vec<Function>,
+    pub functions: Vec<(Visibility, Function)>,
 }
 
 #[derive(Debug, Clone)]
