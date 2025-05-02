@@ -105,7 +105,7 @@ impl<'ctx> CompiledModule<'ctx> {
         let mut rcs = vec![];
         let scope = self.scope.child();
 
-        let llvm_function = handle.get_or_create_in_module(self, context);
+        let llvm_function = self.get_or_create_function(&handle, context);
         for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
         {
             let value = match &argument.type_ {
@@ -188,10 +188,22 @@ impl<'ctx> CompiledModule<'ctx> {
         self.path
     }
 
-    // TODO this is a kinda weird API, FunctionHandle should manage the FunctionValue by itself
-    // probably?
-    pub(crate) fn get_llvm_function(&self, name: &str) -> Option<FunctionValue<'ctx>> {
-        self.llvm_module.get_function(name)
+    pub(crate) fn get_or_create_function(
+        &self,
+        handle: &FunctionHandle,
+        context: &CompilerContext<'ctx>,
+    ) -> FunctionValue<'ctx> {
+        self.llvm_module
+            .get_function(handle.name.as_str())
+            .unwrap_or_else(|| {
+                self.declare_function(
+                    handle.visibility == types::Visibility::Export,
+                    &handle.name,
+                    &handle.arguments,
+                    &handle.return_type,
+                    context,
+                )
+            })
     }
 
     pub(crate) fn debug_print(

@@ -686,7 +686,7 @@ impl<'ctx> Compiler<'ctx> {
             .context
             .builder
             .build_call(
-                function.get_or_create_in_module(module, &self.context),
+                module.get_or_create_function(&function, &self.context),
                 &call_arguments,
                 &format!("call_result_{}", position.as_id()),
             )

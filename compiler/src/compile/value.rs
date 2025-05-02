@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use inkwell::values::{BasicValue as _, BasicValueEnum, FunctionValue, PointerValue};
+use inkwell::values::{BasicValue as _, BasicValueEnum, PointerValue};
 use itertools::Itertools;
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
 };
 
 use super::{
-    context::{CompilerContext, CompiledStruct},
+    context::{CompiledStruct, CompilerContext},
     module::CompiledModule,
     rc_builder::RcValue,
 };
@@ -35,27 +35,6 @@ impl Debug for FunctionHandle {
             .join(", ");
 
         write!(f, "Fn<{}({})>", self.name.as_str(), arguments)
-    }
-}
-
-impl<'ctx> FunctionHandle {
-    // TODO should this be moved to the module? so that it handles the creation?
-    pub fn get_or_create_in_module(
-        &self,
-        module: &CompiledModule<'ctx>,
-        context: &CompilerContext<'ctx>,
-    ) -> FunctionValue<'ctx> {
-        module
-            .get_llvm_function(self.name.as_str())
-            .unwrap_or_else(|| {
-                module.declare_function(
-                    self.visibility == Visibility::Export,
-                    &self.name,
-                    &self.arguments,
-                    &self.return_type,
-                    context,
-                )
-            })
     }
 }
 
