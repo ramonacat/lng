@@ -53,6 +53,7 @@ impl StringValue {
 pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
     StructHandle::new(types::Struct {
         name: *TYPE_NAME_STRING,
+        // TODO also store the length, in order to avoid using 0-termination
         fields: vec![types::StructField {
             struct_name: *TYPE_NAME_STRING,
             name: Identifier::parse("characters"),

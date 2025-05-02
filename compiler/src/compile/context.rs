@@ -1,4 +1,3 @@
-use rand::Rng;
 use std::collections::HashMap;
 
 use inkwell::{
@@ -11,7 +10,9 @@ use inkwell::{
 
 use crate::types::{self, FQName, Identifier};
 
-use super::{CompileError, CompileErrorDescription, scope::GlobalScope, value::StructHandle};
+use super::{
+    CompileError, CompileErrorDescription, scope::GlobalScope, unique_name, value::StructHandle,
+};
 
 pub struct Builtins<'ctx> {
     pub rc_handle: StructHandle<'ctx>,
@@ -37,7 +38,6 @@ impl<'ctx> CompilerContext<'ctx> {
             types::Type::Unit | types::Type::U8 => Box::new(self.llvm_context.i8_type()),
             types::Type::StructDescriptor(_) => todo!(),
             types::Type::U64 => Box::new(self.llvm_context.i64_type()),
-            // TODO arrays should be structs that have bounds, not just ptrs
             types::Type::Callable { .. }
             | types::Type::Pointer(_)
             | types::Type::Array(_)
@@ -84,6 +84,10 @@ impl<'ctx> CompilerContext<'ctx> {
             struct_name,
         }
     }
+
+    pub(crate) fn make_object_type(&self, item_type: &types::Type) -> BasicTypeEnum<'ctx> {
+        self.type_to_llvm(item_type).as_basic_type_enum()
+    }
 }
 
 pub struct CompiledStruct<'ctx> {
@@ -114,15 +118,7 @@ impl<'ctx> CompiledStruct<'ctx> {
                         .i32_type()
                         .const_int(u64::from(*index), false),
                 ],
-                &format!(
-                    "{}_{}",
-                    field.raw().as_str(),
-                    rand::rng()
-                        .sample_iter(rand::distr::Alphanumeric)
-                        .take(8)
-                        .map(char::from)
-                        .collect::<String>()
-                ),
+                &unique_name(field.raw().as_str()),
             )
         }
         .unwrap();

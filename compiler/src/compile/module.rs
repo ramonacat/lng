@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use super::{
-    CompiledFunction, FunctionHandle, Scope, Value,
+    CompiledFunction, FunctionHandle, Scope, Value, builtins,
     context::CompilerContext,
     rc::{self, RcValue},
 };
@@ -124,26 +124,9 @@ impl<'ctx> CompiledModule<'ctx> {
 
                     Value::Reference(rc)
                 }
-                // TODO there should be a built-in object for arrays that has bounds, etc. and
-                // this object should be passed to the function, instead to a reference
-                types::Type::Array(a) => match &**a {
-                    types::Type::Unit => todo!(),
-                    types::Type::Object(identifier) => Value::Reference(RcValue::from_pointer(
-                        argument_value.into_pointer_value(),
-                        context
-                            .global_scope
-                            .get_value(*identifier)
-                            .unwrap()
-                            .as_struct()
-                            .unwrap(),
-                    )),
-                    types::Type::Array(_) => todo!(),
-                    types::Type::StructDescriptor(_) => todo!(),
-                    types::Type::Callable { .. } => todo!(),
-                    types::Type::U64 => todo!(),
-                    types::Type::Pointer(_) => todo!(),
-                    types::Type::U8 => todo!(),
-                },
+                types::Type::Array(a) => Value::Reference(
+                    builtins::array::ArrayValue {}.build_instance(*a.clone(), context),
+                ),
                 types::Type::StructDescriptor(_) => todo!(),
                 types::Type::Callable { .. } => todo!(),
                 types::Type::U64 => {

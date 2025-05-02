@@ -20,6 +20,7 @@ use inkwell::{
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum},
 };
 use module::CompiledModule;
+use rand::Rng;
 use scope::{GlobalScope, Scope};
 use value::{FunctionHandle, StructHandle, Value};
 
@@ -30,6 +31,18 @@ use crate::{
     std::compile_std,
     types::{self, FQName, Identifier, Visibility},
 };
+
+// TODO use this for all LLVM IR variable names instead of location
+fn unique_name(prefix: &str) -> String {
+    format!(
+        "{prefix}_{}",
+        rand::rng()
+            .sample_iter(rand::distr::Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect::<String>()
+    )
+}
 
 // TODO instead of executing the code, this should return some object that exposes the
 // executable code with a safe interface
