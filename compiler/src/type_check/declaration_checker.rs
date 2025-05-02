@@ -250,7 +250,6 @@ impl DeclarationChecker {
                     }
                     ast::DeclarationKind::Struct(struct_) => {
                         let mut fields = HashMap::new();
-                        // TODO check the types exist, possibly in separate pass
                         for field in &struct_.fields {
                             fields.insert(
                                 types::Identifier::parse(&field.name),
@@ -271,6 +270,30 @@ impl DeclarationChecker {
                         );
                     }
                     ast::DeclarationKind::Impl(_) => {}
+                }
+            }
+        }
+
+        for file in program {
+            let module_path = types::FQName::parse(&file.name);
+
+            for declaration in &file.declarations {
+                match &declaration.kind {
+                    ast::DeclarationKind::Struct(struct_) => {
+                        for field in &struct_.fields {
+                            let type_name = convert_type(module_path, &field.type_).name();
+                            if self.root_module_declaration.get_item(type_name).is_none() {
+                                // TODO there should be a function that can canonicalize this name!
+                                return Err(TypeCheckErrorDescription::ItemDoesNotExist(type_name)
+                                    .at(ErrorLocation::Position(
+                                        module_path
+                                            .with_part(types::Identifier::parse(&struct_.name)),
+                                        declaration.position,
+                                    )));
+                            }
+                        }
+                    }
+                    ast::DeclarationKind::Function(_) | ast::DeclarationKind::Impl(_) => {}
                 }
             }
         }

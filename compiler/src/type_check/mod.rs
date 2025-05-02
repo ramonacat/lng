@@ -32,6 +32,9 @@ impl types::Item {
     }
 }
 
+// TODO there should be a separate function to canonicalize a local identifier based on the scope,
+// and only that should be passed to convert_type (which in turn will be able to drop the module
+// argument)
 fn convert_type(module: types::FQName, type_: &ast::TypeDescription) -> types::Type {
     match type_ {
         ast::TypeDescription::Array(type_description) => {

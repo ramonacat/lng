@@ -106,6 +106,13 @@ impl<'ctx> CompiledModule<'ctx> {
         let scope = self.scope.child();
 
         let llvm_function = self.get_or_create_function(&handle, context);
+
+        let entry_block = context
+            .llvm_context
+            .append_basic_block(llvm_function, "entry");
+
+        context.builder.position_at_end(entry_block);
+
         for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
         {
             let value = match &argument.type_ {
@@ -124,9 +131,9 @@ impl<'ctx> CompiledModule<'ctx> {
 
                     Value::Reference(rc)
                 }
-                types::Type::Array(a) => Value::Reference(
-                    builtins::array::ArrayValue {}.build_instance(*a.clone(), context),
-                ),
+                types::Type::Array(a) => {
+                    Value::Reference(builtins::array::ArrayValue::build_instance(a, context))
+                }
                 types::Type::StructDescriptor(_) => todo!(),
                 types::Type::Callable { .. } => todo!(),
                 types::Type::U64 => {
@@ -138,10 +145,6 @@ impl<'ctx> CompiledModule<'ctx> {
 
             scope.set_value(argument.name, value);
         }
-
-        let entry_block = context
-            .llvm_context
-            .append_basic_block(llvm_function, "entry");
 
         let end_block = context
             .llvm_context

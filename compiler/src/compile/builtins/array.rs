@@ -9,7 +9,7 @@ use crate::{
 
 use super::rc::RcValue;
 
-pub(crate) static TYPE_NAME_ARRAY: LazyLock<types::FQName> =
+pub static TYPE_NAME_ARRAY: LazyLock<types::FQName> =
     LazyLock::new(|| types::FQName::parse("std.array"));
 static ITEMS_FIELD: LazyLock<types::Identifier> =
     LazyLock::new(|| types::Identifier::parse("items"));
@@ -52,11 +52,10 @@ pub struct ArrayValue {}
 
 impl ArrayValue {
     pub fn build_instance<'ctx>(
-        &self,
-        item_type: types::Type,
+        item_type: &types::Type,
         context: &CompilerContext<'ctx>,
     ) -> RcValue<'ctx> {
-        let items_type = context.make_object_type(&item_type);
+        let items_type = context.make_object_type(item_type);
         // TODO add freeing of this array once destructors are in place
         let items = context
             .builder
