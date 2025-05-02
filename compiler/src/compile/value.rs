@@ -10,7 +10,7 @@ use crate::{
 };
 
 use super::{
-    context::{CompilerContext, StructTypeHandle},
+    context::{CompilerContext, CompiledStruct},
     module::CompiledModule,
     rc_builder::RcValue,
 };
@@ -39,6 +39,7 @@ impl Debug for FunctionHandle {
 }
 
 impl<'ctx> FunctionHandle {
+    // TODO should this be moved to the module? so that it handles the creation?
     pub fn get_or_create_in_module(
         &self,
         module: &CompiledModule<'ctx>,
@@ -79,7 +80,6 @@ impl Debug for StructHandle<'_> {
     }
 }
 
-// TODO cleanup all the read field methods
 impl<'ctx> StructHandle<'ctx> {
     pub fn build_heap_instance(
         &self,
@@ -157,6 +157,7 @@ impl<'ctx> StructHandle<'ctx> {
         importing_module.set_variable(self.description.name.last(), Value::Struct(self.clone()));
     }
 
+    // TODO this should be integrated with build_field_load perhaps?
     pub fn read_field_value(
         &self,
         _instance: Value<'ctx>,
@@ -186,7 +187,7 @@ impl<'ctx> StructHandle<'ctx> {
     }
 
     // TODO inline this???
-    fn llvm_type(&self, context: &CompilerContext<'ctx>) -> StructTypeHandle<'ctx> {
+    fn llvm_type(&self, context: &CompilerContext<'ctx>) -> CompiledStruct<'ctx> {
         context.make_struct_type(&self.description.fields)
     }
 }

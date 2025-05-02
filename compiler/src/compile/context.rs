@@ -65,7 +65,7 @@ impl<'ctx> CompilerContext<'ctx> {
         }
     }
 
-    pub fn make_struct_type(&self, fields: &[types::StructField]) -> StructTypeHandle<'ctx> {
+    pub fn make_struct_type(&self, fields: &[types::StructField]) -> CompiledStruct<'ctx> {
         let mut field_types = vec![];
         let mut field_indices = HashMap::new();
 
@@ -74,19 +74,19 @@ impl<'ctx> CompilerContext<'ctx> {
             field_indices.insert(field.name, u32::try_from(index).unwrap());
         }
 
-        StructTypeHandle {
+        CompiledStruct {
             llvm_type: self.llvm_context.struct_type(&field_types, false),
             field_indices,
         }
     }
 }
 
-pub struct StructTypeHandle<'ctx> {
+pub struct CompiledStruct<'ctx> {
     llvm_type: StructType<'ctx>,
     field_indices: HashMap<Identifier, u32>,
 }
 
-impl<'ctx> StructTypeHandle<'ctx> {
+impl<'ctx> CompiledStruct<'ctx> {
     // TODO return Result (error if there's no such field)
     pub fn field_pointer(
         &self,
