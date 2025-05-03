@@ -15,14 +15,14 @@ use super::{
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
 
-struct Locals<'globals> {
+struct Locals<'globals, 'pre> {
     values: HashMap<types::Identifier, types::Type>,
-    globals: &'globals DeclaredModule,
+    globals: &'globals DeclaredModule<'pre>,
     scope_module_name: FQName,
 }
 
-impl<'globals> Locals<'globals> {
-    fn from_globals(root_module: &'globals DeclaredModule, module_name: FQName) -> Self {
+impl<'globals, 'pre> Locals<'globals, 'pre> {
+    fn from_globals(root_module: &'globals DeclaredModule<'pre>, module_name: FQName) -> Self {
         Self {
             values: HashMap::new(),
             globals: root_module,
@@ -96,13 +96,13 @@ impl<'globals> Locals<'globals> {
     }
 }
 
-pub(super) struct DefinitionChecker {
-    root_module_declaration: DeclaredModule,
+pub(super) struct DefinitionChecker<'pre> {
+    root_module_declaration: DeclaredModule<'pre>,
     declared_impls: HashMap<types::FQName, DeclaredAssociatedFunction>,
     main: Option<FQName>,
 }
 
-impl DefinitionChecker {
+impl<'pre> DefinitionChecker<'pre> {
     pub(super) fn check(&self) -> Result<types::RootModule, TypeCheckError> {
         let root_module = self.type_check_definitions(&self.root_module_declaration, None)?;
 
@@ -405,7 +405,7 @@ impl DefinitionChecker {
         declared_function: &DeclaredFunctionDefinition,
         module: FQName,
         error_location: ErrorLocation,
-        locals: &mut Locals<'_>,
+        locals: &mut Locals<'_, 'pre>,
         function_name: FQName,
         statement: &ast::Statement,
     ) -> Result<types::Statement, TypeCheckError> {
@@ -668,7 +668,7 @@ impl DefinitionChecker {
     }
 
     pub(super) const fn new(
-        root_module_declaration: DeclaredModule,
+        root_module_declaration: DeclaredModule<'pre>,
         declared_impls: HashMap<FQName, DeclaredAssociatedFunction>,
         main: Option<FQName>,
     ) -> Self {

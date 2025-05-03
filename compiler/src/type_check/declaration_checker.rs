@@ -18,13 +18,13 @@ use super::{
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
 
-pub(super) struct DeclarationChecker {
-    root_module_declaration: DeclaredModule,
+pub(super) struct DeclarationChecker<'pre> {
+    root_module_declaration: DeclaredModule<'pre>,
     declared_impls: HashMap<types::FQName, DeclaredAssociatedFunction>,
     main: Option<types::FQName>,
 }
 
-impl DeclarationChecker {
+impl<'pre> DeclarationChecker<'pre> {
     fn type_check_module_declarations(&mut self, program: &[ast::SourceFile]) {
         // this is equivalent-ish to topo-sort, as fewer parts in the name means it is higher in the
         // hierarchy (i.e. main.test will definitely appear after main)
@@ -402,7 +402,7 @@ impl DeclarationChecker {
         }
     }
 
-    pub(crate) fn new(root_module_declaration: DeclaredModule) -> Self {
+    pub(crate) fn new(root_module_declaration: DeclaredModule<'pre>) -> Self {
         Self {
             root_module_declaration,
             declared_impls: HashMap::new(),
@@ -412,8 +412,8 @@ impl DeclarationChecker {
 
     pub(crate) fn check(
         mut self,
-        program: &[ast::SourceFile],
-    ) -> Result<DefinitionChecker, TypeCheckError> {
+        program: &'pre [ast::SourceFile],
+    ) -> Result<DefinitionChecker<'pre>, TypeCheckError> {
         self.type_check_module_declarations(program);
         self.type_check_imports(program);
         self.type_check_declarations(program)?;

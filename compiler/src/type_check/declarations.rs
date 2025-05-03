@@ -58,11 +58,11 @@ pub(super) struct DeclaredStruct {
 }
 
 #[derive(Clone)]
-pub(super) struct DeclaredModule {
-    pub(super) items: HashMap<types::Identifier, DeclaredItem>,
+pub(super) struct DeclaredModule<'pre> {
+    pub(super) items: HashMap<types::Identifier, DeclaredItem<'pre>>,
 }
 
-impl std::fmt::Debug for DeclaredModule {
+impl std::fmt::Debug for DeclaredModule<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut struct_ = f.debug_struct("DeclaredModule");
 
@@ -74,8 +74,8 @@ impl std::fmt::Debug for DeclaredModule {
     }
 }
 
-impl DeclaredModule {
-    pub(super) fn import_predeclared(&mut self, module: &types::Module) {
+impl<'pre> DeclaredModule<'pre> {
+    pub(super) fn import_predeclared(&mut self, module: &'pre types::Module) {
         let root_name = types::FQName::parse("");
 
         for (item_name, item) in module.items() {
@@ -84,14 +84,14 @@ impl DeclaredModule {
             self.declare(
                 root_name.with_part(item_name),
                 DeclaredItem {
-                    kind: DeclaredItemKind::Predeclared(item.clone()),
+                    kind: DeclaredItemKind::Predeclared(item),
                     visibility,
                 },
             );
         }
     }
 
-    pub(super) fn declare(&mut self, name: types::FQName, item: DeclaredItem) {
+    pub(super) fn declare(&mut self, name: types::FQName, item: DeclaredItem<'pre>) {
         if name.len() == 1 {
             let old = self.items.insert(name.last(), item);
             assert!(old.is_none());
@@ -120,7 +120,7 @@ impl DeclaredModule {
         }
     }
 
-    pub(super) fn get_item_mut(&mut self, name: types::FQName) -> Option<&mut DeclaredItem> {
+    pub(super) fn get_item_mut(&mut self, name: types::FQName) -> Option<&mut DeclaredItem<'pre>> {
         if name.len() == 1 {
             return self.items.get_mut(&name.last());
         }
@@ -152,7 +152,7 @@ impl DeclaredModule {
                 kind: types::ItemKind::Module(m),
                 visibility,
             }) => Some(DeclaredItem {
-                kind: DeclaredItemKind::Predeclared(m.get_item(rest).unwrap().clone()),
+                kind: DeclaredItemKind::Predeclared(m.get_item(rest).unwrap()),
                 visibility: *visibility,
             }),
             _ => todo!(),
@@ -165,21 +165,21 @@ impl DeclaredModule {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum DeclaredItemKind {
+pub(super) enum DeclaredItemKind<'pre> {
     Function(DeclaredFunction),
     Struct(DeclaredStruct),
     Import(DeclaredImport),
-    Predeclared(types::Item),
-    Module(DeclaredModule),
+    Predeclared(&'pre types::Item),
+    Module(DeclaredModule<'pre>),
 }
 
 #[derive(Clone)]
-pub(super) struct DeclaredItem {
-    pub(super) kind: DeclaredItemKind,
+pub(super) struct DeclaredItem<'pre> {
+    pub(super) kind: DeclaredItemKind<'pre>,
     pub(super) visibility: types::Visibility,
 }
 
-impl std::fmt::Debug for DeclaredItem {
+impl std::fmt::Debug for DeclaredItem<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             DeclaredItemKind::Function(declared_function) => {
@@ -197,7 +197,7 @@ impl std::fmt::Debug for DeclaredItem {
     }
 }
 
-impl DeclaredItem {
+impl DeclaredItem<'_> {
     pub(super) fn type_(
         &self,
         root_module: &DeclaredModule,
