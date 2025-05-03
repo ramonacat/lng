@@ -39,9 +39,7 @@ impl Debug for FunctionHandle {
 #[derive(Clone)]
 pub struct StructHandle<'ctx> {
     description: types::Struct,
-    // TODO rename to static_values?
-    // TODO ensure that this object can only be created when all values are set
-    static_fields: HashMap<types::Identifier, Value<'ctx>>,
+    static_field_values: HashMap<types::Identifier, Value<'ctx>>,
 }
 
 impl Debug for StructHandle<'_> {
@@ -130,7 +128,7 @@ impl<'ctx> StructHandle<'ctx> {
     }
 
     pub fn import(&self, importing_module: &CompiledModule<'ctx>, context: &CompilerContext<'ctx>) {
-        for impl_ in self.static_fields.values() {
+        for impl_ in self.static_field_values.values() {
             match impl_ {
                 Value::Primitive(_, _) => todo!(),
                 Value::Reference(_) => todo!(),
@@ -154,7 +152,7 @@ impl<'ctx> StructHandle<'ctx> {
         let field = self.description.fields.iter().find(|f| f.name == name)?;
 
         if field.static_ {
-            return self.static_fields.get(&name).cloned();
+            return self.static_field_values.get(&name).cloned();
         }
 
         todo!("support reading non-static fields!");
@@ -170,7 +168,7 @@ impl<'ctx> StructHandle<'ctx> {
     ) -> Self {
         Self {
             description,
-            static_fields,
+            static_field_values: static_fields,
         }
     }
 }

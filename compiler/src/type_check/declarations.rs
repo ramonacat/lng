@@ -169,7 +169,6 @@ pub(super) enum DeclaredItemKind {
     Function(DeclaredFunction),
     Struct(DeclaredStruct),
     Import(DeclaredImport),
-    // TODO make this a reference, so we don't have to clone?
     Predeclared(types::Item),
     Module(DeclaredModule),
 }

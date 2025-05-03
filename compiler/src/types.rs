@@ -136,12 +136,15 @@ pub struct StructDescriptorType {
 }
 
 impl StructDescriptorType {
-    // TODO rename -> instance_type
-    pub fn object_type(&self) -> Type {
+    pub fn instance_type(&self) -> Type {
         // TODO can we avoid special-casing the types here? perhaps take the object type as an
         // argument?
         if self.name == *TYPE_NAME_U64 {
             return Type::U64;
+        }
+
+        if self.name == *TYPE_NAME_UNIT {
+            return Type::Unit;
         }
 
         Type::Object(self.name)

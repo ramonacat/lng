@@ -90,8 +90,6 @@ impl<'globals> Locals<'globals> {
             .or_else(|| {
                 self.globals
                     .get_item(self.scope_module_name.with_part(id))
-                    // TODO should we actually return an error here? Should this be
-                    // Result<Option<types::Type>, TypeCheckError>?
                     .map(|x| x.type_(self.globals, error_location))
             })
             .transpose()
