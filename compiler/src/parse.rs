@@ -23,8 +23,15 @@ pub enum InternalError<'parser> {
 
 impl Display for InternalError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO: mayhaps a more reader friendly representation
-        write!(f, "{self:?}")
+        match self {
+            InternalError::UnexpectedRule(pair) => {
+                write!(f, "unexpected rule: {:?}", pair.as_rule())
+            }
+            InternalError::MissingExpectedRule(pair) => {
+                write!(f, "missing an expected rule: {:?}", pair.as_rule())
+            }
+            InternalError::MissingRootRules => write!(f, "missing root rules"),
+        }
     }
 }
 
@@ -177,7 +184,6 @@ fn parse_struct(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
 
     Ok(Declaration {
         kind: crate::ast::DeclarationKind::Struct(struct_),
-        // TODO we should acutally allow the export keyword and decide based on that
         visibility: if export {
             Visibility::Export
         } else {
