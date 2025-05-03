@@ -4,7 +4,9 @@ use crate::{
     ast,
     errors::ErrorLocation,
     std::TYPE_NAME_STRING,
-    types::{self, AssociatedFunction, FQName, Identifier, RootModule, TypeArgumentValues},
+    types::{
+        self, AssociatedFunction, FQName, Identifier, RootModule, TypeArgumentValues, TypeArguments,
+    },
 };
 
 use super::{
@@ -253,6 +255,8 @@ impl<'pre> DefinitionChecker<'pre> {
                 name: struct_name,
                 fields,
                 impls,
+                // TODO those should come from the declaration
+                type_arguments: TypeArguments::new_empty(),
             }),
             visibility: declared_item.visibility,
         }

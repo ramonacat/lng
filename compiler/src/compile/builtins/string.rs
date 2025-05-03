@@ -5,7 +5,7 @@ use inkwell::values::BasicValue as _;
 use crate::{
     compile::{context::CompilerContext, value::StructHandle},
     std::TYPE_NAME_STRING,
-    types::{self, Identifier},
+    types::{self, Identifier, TypeArguments},
 };
 
 use super::rc::RcValue;
@@ -44,6 +44,7 @@ impl StringValue {
         let literal_value = context.builtins.string_handle.build_heap_instance(
             context,
             &(name.to_string() + "_value"),
+            &types::TypeArgumentValues::new_empty(),
             field_values,
         );
 
@@ -59,6 +60,7 @@ impl StringValue {
 pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
     StructHandle::new(types::Struct {
         name: *TYPE_NAME_STRING,
+        type_arguments: TypeArguments::new_empty(),
         fields: vec![
             types::StructField {
                 struct_name: *TYPE_NAME_STRING,

@@ -9,7 +9,7 @@ use itertools::Itertools;
 use crate::{
     ast::SourceRange,
     name_mangler::MangledIdentifier,
-    types::{self, FQName, Identifier},
+    types::{self, FQName, Identifier, TypeArgumentValues},
 };
 
 use super::{builtins::rc::RcValue, context::CompilerContext, module::CompiledModule};
@@ -60,11 +60,16 @@ impl<'ctx> StructHandle<'ctx> {
         &self,
         context: &CompilerContext<'ctx>,
         binding_name: &str,
+        type_argument_values: &types::TypeArgumentValues,
         mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
         let llvm_type = {
             let this = &self;
-            context.make_struct_type(this.description.name, &this.description.fields)
+            context.make_struct_type(
+                this.description.name,
+                &this.description.fields,
+                type_argument_values,
+            )
         };
 
         let instance = context
@@ -90,16 +95,23 @@ impl<'ctx> StructHandle<'ctx> {
         instance
     }
 
+    // TODO perhaps have a type for instance that can hold both the pointer and type_argument
+    // values?
     pub fn build_field_load(
         &self,
         field: Identifier,
         instance: PointerValue<'ctx>,
         binding_name: &str,
+        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> BasicValueEnum<'ctx> {
         let (field_type, field_pointer) = {
             let this = &self;
-            context.make_struct_type(this.description.name, &this.description.fields)
+            context.make_struct_type(
+                this.description.name,
+                &this.description.fields,
+                type_argument_values,
+            )
         }
         .field_pointer(field, instance, context)
         .unwrap();
@@ -115,11 +127,16 @@ impl<'ctx> StructHandle<'ctx> {
         field_name: Identifier,
         instance: PointerValue<'ctx>,
         value: BasicValueEnum<'ctx>,
+        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) {
         let (_, field_pointer) = {
             let this = &self;
-            context.make_struct_type(this.description.name, &this.description.fields)
+            context.make_struct_type(
+                this.description.name,
+                &this.description.fields,
+                type_argument_values,
+            )
         }
         .field_pointer(field_name, instance, context)
         .unwrap();
@@ -133,7 +150,13 @@ impl<'ctx> StructHandle<'ctx> {
                 Value::Primitive(_, _) => todo!(),
                 Value::Reference(_) => todo!(),
                 Value::Function(function_handle) => {
-                    importing_module.import_function(function_handle, context)
+                    // TODO the import should be actually executed on call, so that the type
+                    // arguments can be set
+                    importing_module.import_function(
+                        function_handle,
+                        &TypeArgumentValues::new_empty(),
+                        context,
+                    )
                 }
                 Value::Struct(_) => todo!(),
                 Value::Empty => todo!(),
@@ -169,6 +192,14 @@ impl<'ctx> StructHandle<'ctx> {
         Self {
             description,
             static_field_values: static_fields,
+        }
+    }
+
+    pub(crate) fn type_descriptor(&self) -> types::StructDescriptorType {
+        types::StructDescriptorType {
+            name: self.description.name,
+            fields: self.description.fields.clone(),
+            type_arguments: self.description.type_arguments.clone(),
         }
     }
 }

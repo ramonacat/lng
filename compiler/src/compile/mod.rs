@@ -28,7 +28,7 @@ use crate::{
     ast::SourceRange,
     errors::ErrorLocation,
     std::{compile_std, runtime::register_mappings},
-    types::{self, FQName, Identifier},
+    types::{self, FQName, Identifier, TypeArgumentValues},
 };
 
 fn unique_name(parts: &[&str]) -> String {
@@ -306,6 +306,8 @@ impl<'ctx> Compiler<'ctx> {
 
             match &item.kind {
                 types::ItemKind::Function(function) => {
+                    // TODO this should happen on call, so that the generics can be resolved and
+                    // the correct implementation can be instantiated
                     self.compile_function(
                         module
                             .get_variable(item_name)
@@ -314,10 +316,13 @@ impl<'ctx> Compiler<'ctx> {
                             .unwrap(),
                         module,
                         &function.definition,
+                        &types::TypeArgumentValues::new_empty(),
                     )?;
                 }
                 types::ItemKind::Struct(struct_) => {
                     for (impl_name, impl_) in &struct_.impls {
+                        // TODO this should happen when the struct is instantiated or on call, so that the generics can be resolved and
+                        // the correct implementation can be instantiated
                         self.compile_function(
                             module
                                 .get_variable(item_name)
@@ -330,6 +335,7 @@ impl<'ctx> Compiler<'ctx> {
                                 .unwrap(),
                             module,
                             &impl_.definition,
+                            &TypeArgumentValues::new_empty(),
                         )?;
                     }
                 }
@@ -368,7 +374,13 @@ impl<'ctx> Compiler<'ctx> {
                         Value::Primitive(_, _) => todo!(),
                         Value::Reference(_) => todo!(),
                         Value::Function(function) => {
-                            module.import_function(&function, &self.context);
+                            // TODO the import should really be resolved on access, so that we can
+                            // actually declare with correct TypeArgumentValues
+                            module.import_function(
+                                &function,
+                                &TypeArgumentValues::new_empty(),
+                                &self.context,
+                            );
 
                             let function_value = Value::Function(FunctionHandle {
                                 fqname: function.fqname,
@@ -471,11 +483,13 @@ impl<'ctx> Compiler<'ctx> {
         handle: FunctionHandle,
         module: &module::CompiledModule<'ctx>,
         function: &types::FunctionDefinition,
+        type_argument_values: &types::TypeArgumentValues,
     ) -> Result<(), CompileError> {
         let types::FunctionBody::Statements(statements) = &function.body else {
             return Ok(());
         };
-        let mut compiled_function = module.begin_compile_function(handle, function, &self.context);
+        let mut compiled_function =
+            module.begin_compile_function(handle, function, type_argument_values, &self.context);
 
         for statement in statements {
             let self_value = compiled_function.scope.get_value(Identifier::parse("self"));
@@ -625,6 +639,8 @@ impl<'ctx> Compiler<'ctx> {
                 let value = s.build_heap_instance(
                     &self.context,
                     &unique_name(&[&name.raw()]),
+                    // TODO the expression should contain values for the type arguments
+                    &types::TypeArgumentValues::new_empty(),
                     field_values,
                 );
 
@@ -690,7 +706,13 @@ impl<'ctx> Compiler<'ctx> {
             .context
             .builder
             .build_call(
-                module.get_or_create_function(&function, &self.context),
+                // TODO the type argument values should come from the call expression and be set
+                // here!
+                module.get_or_create_function(
+                    &function,
+                    &TypeArgumentValues::new_empty(),
+                    &self.context,
+                ),
                 &call_arguments,
                 &unique_name(&["call_result"]),
             )
@@ -716,6 +738,7 @@ impl<'ctx> Compiler<'ctx> {
             types::Type::U64 => todo!(),
             types::Type::U8 => todo!(),
             types::Type::Pointer(_) => todo!(),
+            types::Type::Generic(_) => todo!(),
         };
         Ok(value)
     }

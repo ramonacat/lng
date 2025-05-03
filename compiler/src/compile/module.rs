@@ -49,9 +49,11 @@ impl<'ctx> CompiledModule<'ctx> {
         arguments: &[types::Argument],
         return_type: &types::Type,
         linkage: Linkage,
+        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let function_type = context.make_function_type(arguments, return_type);
+        let function_type =
+            context.make_function_type(arguments, return_type, type_argument_values);
 
         self.llvm_module
             .add_function(name.as_str(), function_type, Some(linkage))
@@ -63,14 +65,23 @@ impl<'ctx> CompiledModule<'ctx> {
         name: &MangledIdentifier,
         arguments: &[types::Argument],
         return_type: &types::Type,
+        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
-        self.declare_function_inner(name, arguments, return_type, linkage, context)
+        self.declare_function_inner(
+            name,
+            arguments,
+            return_type,
+            linkage,
+            type_argument_values,
+            context,
+        )
     }
 
     pub fn import_function(
         &self,
         function: &FunctionHandle,
+        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.declare_function_inner(
@@ -78,6 +89,7 @@ impl<'ctx> CompiledModule<'ctx> {
             &function.arguments,
             &function.return_type,
             Linkage::External,
+            type_argument_values,
             context,
         )
     }
@@ -94,12 +106,13 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         handle: FunctionHandle,
         function: &types::FunctionDefinition,
+        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
         let mut rcs = vec![];
         let scope = self.scope.child();
 
-        let llvm_function = self.get_or_create_function(&handle, context);
+        let llvm_function = self.get_or_create_function(&handle, type_argument_values, context);
 
         let entry_block = context
             .llvm_context
@@ -138,6 +151,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 }
                 types::Type::Pointer(_) => todo!(),
                 types::Type::U8 => todo!(),
+                types::Type::Generic(_) => todo!(),
             };
 
             scope.set_value(argument.name, value);
@@ -174,6 +188,7 @@ impl<'ctx> CompiledModule<'ctx> {
     pub(crate) fn get_or_create_function(
         &self,
         handle: &FunctionHandle,
+        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.llvm_module
@@ -184,6 +199,7 @@ impl<'ctx> CompiledModule<'ctx> {
                     &handle.name,
                     &handle.arguments,
                     &handle.return_type,
+                    type_argument_values,
                     context,
                 )
             })

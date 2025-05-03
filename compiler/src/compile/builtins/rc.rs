@@ -7,7 +7,7 @@ use inkwell::{
 
 use crate::{
     compile::{context::CompilerContext, unique_name, value::StructHandle},
-    types::{self, FQName, Identifier},
+    types::{self, FQName, Identifier, TypeArgumentValues},
 };
 
 #[derive(Debug, Clone)]
@@ -21,8 +21,10 @@ static POINTEE_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse(
 
 pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
     let struct_name = FQName::parse("std.rc");
+    let type_argument = types::TypeArgument::new(Identifier::parse("TPointee"));
     StructHandle::new(types::Struct {
         name: struct_name,
+        type_arguments: types::TypeArguments::new(vec![type_argument]),
         fields: vec![
             types::StructField {
                 struct_name,
@@ -33,9 +35,7 @@ pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
             types::StructField {
                 struct_name,
                 name: *POINTEE_FIELD,
-                // TODO this is not the right type, but righttyping this requires that we
-                // have generics (because pointee is dependant on the type here)
-                type_: types::Type::Pointer(Box::new(types::Type::U8)),
+                type_: types::Type::Pointer(Box::new(types::Type::Generic(type_argument))),
                 static_: false,
             },
         ],
@@ -53,13 +53,20 @@ impl<'ctx> RcValue<'ctx> {
     where
         'src: 'ctx,
     {
+        let mut tav = HashMap::new();
+        tav.insert(
+            types::TypeArgument::new(types::Identifier::parse("TPointee")),
+            types::Type::StructDescriptor(value_type.type_descriptor()),
+        );
+        let tav = types::TypeArgumentValues::new(tav);
         let mut field_values = HashMap::new();
         field_values.insert(*REFCOUNT_FIELD, context.const_u64(1).as_basic_value_enum());
         field_values.insert(*POINTEE_FIELD, value.as_basic_value_enum());
+
         let rc = context
             .builtins
             .rc_handle
-            .build_heap_instance(context, name, field_values);
+            .build_heap_instance(context, name, &tav, field_values);
 
         Self {
             pointer: rc,
@@ -108,6 +115,8 @@ pub fn build_cleanup<'ctx>(
                 *REFCOUNT_FIELD,
                 rc.pointer,
                 &unique_name(&["refcount_old"]),
+                // TODO the actual values should be stored in the RcValue!
+                &TypeArgumentValues::new_empty(),
                 context,
             )
             .into_int_value();
@@ -154,6 +163,7 @@ pub fn build_cleanup<'ctx>(
                 *POINTEE_FIELD,
                 rc.pointer,
                 &unique_name(&["free_rc_pointee_value"]),
+                &TypeArgumentValues::new_empty(),
                 context,
             )
             .into_pointer_value();
@@ -170,6 +180,7 @@ pub fn build_cleanup<'ctx>(
             *REFCOUNT_FIELD,
             rc.pointer,
             new_refcount.as_basic_value_enum(),
+            &TypeArgumentValues::new_empty(),
             context,
         );
 
@@ -199,6 +210,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             *REFCOUNT_FIELD,
             rc.pointer,
             &unique_name(&[&name, "init_refcount"]),
+            &types::TypeArgumentValues::new_empty(),
             context,
         );
 
@@ -215,6 +227,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             *REFCOUNT_FIELD,
             rc.pointer,
             incremented_refcount.as_basic_value_enum(),
+            &types::TypeArgumentValues::new_empty(),
             context,
         );
     }

@@ -4,7 +4,7 @@ use inkwell::values::BasicValue;
 
 use crate::{
     compile::{context::CompilerContext, unique_name, value::StructHandle},
-    types,
+    types::{self, Identifier, TypeArgument, TypeArgumentValues},
 };
 
 use super::rc::RcValue;
@@ -21,14 +21,15 @@ static CAPACITY_FIELD: LazyLock<types::Identifier> =
 // TODO A macro that generates both the struct on rust side and the StructHandle from a single
 // definition
 pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
+    let type_argument_name = types::TypeArgument::new(types::Identifier::parse("TItem"));
     StructHandle::new(types::Struct {
         name: *TYPE_NAME_ARRAY,
+        type_arguments: types::TypeArguments::new(vec![type_argument_name]),
         fields: vec![
             types::StructField {
                 struct_name: *TYPE_NAME_ARRAY,
                 name: *ITEMS_FIELD,
-                // TODO fix the type once generics are in place
-                type_: types::Type::Pointer(Box::new(types::Type::U8)),
+                type_: types::Type::Pointer(Box::new(types::Type::Generic(type_argument_name))),
                 static_: false,
             },
             types::StructField {
@@ -55,7 +56,13 @@ impl ArrayValue {
         item_type: &types::Type,
         context: &CompilerContext<'ctx>,
     ) -> RcValue<'ctx> {
-        let items_type = context.make_object_type(item_type);
+        let mut tav = HashMap::new();
+        tav.insert(
+            TypeArgument::new(Identifier::parse("TItem")),
+            item_type.clone(),
+        );
+        let tav = TypeArgumentValues::new(tav);
+        let items_type = context.make_object_type(item_type, &tav);
         // TODO add freeing of this array once destructors are in place
         let items = context
             .builder
@@ -72,8 +79,12 @@ impl ArrayValue {
         field_values.insert(*CAPACITY_FIELD, context.const_u64(1).as_basic_value_enum());
 
         let array_struct = describe_structure();
-        let array_value =
-            array_struct.build_heap_instance(context, &unique_name(&["string"]), field_values);
+        let array_value = array_struct.build_heap_instance(
+            context,
+            &unique_name(&["string"]),
+            &tav,
+            field_values,
+        );
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),

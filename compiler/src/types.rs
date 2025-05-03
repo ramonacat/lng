@@ -134,6 +134,10 @@ impl TypeArguments {
     pub(crate) const fn new_empty() -> Self {
         Self(vec![])
     }
+
+    pub(crate) const fn new(arguments: Vec<TypeArgument>) -> Self {
+        Self(arguments)
+    }
 }
 
 impl std::fmt::Display for TypeArguments {
@@ -177,6 +181,12 @@ impl StructDescriptorType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeArgument(Identifier);
 
+impl TypeArgument {
+    pub const fn new(name: Identifier) -> Self {
+        Self(name)
+    }
+}
+
 impl std::fmt::Display for TypeArgument {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -188,6 +198,14 @@ pub struct TypeArgumentValues(HashMap<TypeArgument, Type>);
 impl TypeArgumentValues {
     pub(crate) fn new_empty() -> Self {
         Self(HashMap::new())
+    }
+
+    pub(crate) fn get(&self, type_argument: TypeArgument) -> Option<&Type> {
+        self.0.get(&type_argument)
+    }
+
+    pub(crate) const fn new(tav: HashMap<TypeArgument, Type>) -> Self {
+        Self(tav)
     }
 }
 
@@ -211,6 +229,7 @@ impl std::fmt::Display for TypeArgumentValues {
 // TODO support generics
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
+    Generic(TypeArgument),
     Unit,
     Object {
         type_name: FQName,
@@ -231,7 +250,6 @@ pub enum Type {
     // TODO add float
     U64,
     U8,
-
     Pointer(Box<Type>),
 }
 impl Type {
@@ -264,6 +282,7 @@ impl Type {
             Self::U64 => "u64".to_string(),
             Self::U8 => "u8".to_string(),
             Self::Pointer(inner) => format!("*{}", inner.debug_name()),
+            Self::Generic(type_argument) => format!("Generic({type_argument})"),
         }
     }
 
@@ -281,6 +300,7 @@ impl Type {
             Self::U64 => *TYPE_NAME_U64,
             Self::U8 => todo!(),
             Self::Pointer(_) => todo!(),
+            Self::Generic(_) => todo!(),
         }
     }
 
@@ -301,6 +321,7 @@ impl Type {
             Self::U64 => todo!(),
             Self::U8 => todo!(),
             Self::Pointer(_) => todo!(),
+            Self::Generic(_) => todo!(),
         }
     }
 }
@@ -338,6 +359,7 @@ impl Display for Type {
             Self::U8 => write!(f, "u8"),
             Self::U64 => write!(f, "u64"),
             Self::Pointer(to) => write!(f, "*{to}"),
+            Self::Generic(name) => write!(f, "{name}"),
         }
     }
 }
@@ -477,6 +499,7 @@ pub struct StructField {
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: FQName,
+    pub type_arguments: TypeArguments,
     pub fields: Vec<StructField>,
     pub impls: HashMap<Identifier, AssociatedFunction>,
 }
