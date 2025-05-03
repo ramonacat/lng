@@ -31,7 +31,6 @@ pub struct LngRc<T: Debug> {
 
 #[unsafe(no_mangle)]
 extern "C" fn println(arg: *const LngRc<LngString>) {
-    // TODO the pointer dance should be hidden inside LngString
     let pointee = unsafe { &*(*arg).pointee };
 
     println!("{pointee}");

@@ -219,16 +219,7 @@ impl Type {
             Self::Object(_) => todo!(),
             Self::Array(inner) => Self::Array(Box::new(inner.instance_type())),
             Self::StructDescriptor(struct_descriptor_type) => {
-                // TODO can we get rid of this if and somehow make this automagical? perhaps by
-                // having an attribute in the declaration of structs that tells the compiler which
-                // builtin type they're standing for?
-                if struct_descriptor_type.name == *TYPE_NAME_U64 {
-                    Self::U64
-                } else if struct_descriptor_type.name == *TYPE_NAME_UNIT {
-                    Self::Unit
-                } else {
-                    Self::Object(struct_descriptor_type.name)
-                }
+                struct_descriptor_type.instance_type()
             }
             Self::Callable { .. } => todo!(),
             Self::U64 => todo!(),
@@ -300,7 +291,6 @@ pub struct Function {
     pub definition: FunctionDefinition,
 }
 
-// TODO is AssociatedFunction really a separate entity from Function?
 #[derive(Debug, Clone)]
 pub struct AssociatedFunction {
     pub struct_: FQName,
@@ -437,9 +427,46 @@ pub enum Visibility {
     Internal,
 }
 
+pub struct AppModule {
+    main: FQName,
+    module: Module,
+}
+pub struct LibraryModule {
+    module: Module,
+}
+
 pub enum RootModule {
-    App { main: FQName, module: Module },
-    Library { module: Module },
+    App(AppModule),
+    Library(LibraryModule),
+}
+
+impl RootModule {
+    pub(crate) const fn main(&self) -> Option<FQName> {
+        match self {
+            Self::App(app_module) => Some(app_module.main),
+            Self::Library(_) => None,
+        }
+    }
+
+    pub(crate) const fn root_module(&self) -> &Module {
+        match self {
+            Self::App(app_module) => &app_module.module,
+            Self::Library(library_module) => &library_module.module,
+        }
+    }
+
+    pub(crate) const fn new_app(main: FQName, root_module: Module) -> Self {
+        Self::App(AppModule {
+            main,
+            module: root_module,
+        })
+    }
+
+    pub(crate) const fn new_library(root_module: Module) -> Self {
+        Self::Library(LibraryModule {
+            module: root_module,
+        })
+    }
 }
 
 #[derive(Clone)]

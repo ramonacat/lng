@@ -279,10 +279,8 @@ impl<'ctx> Compiler<'ctx> {
         mut self,
         program: &types::RootModule,
     ) -> Result<CompiledRootModule<'ctx>, CompileError> {
-        let (root_module, main) = match program {
-            types::RootModule::App { module, main } => (module, Some(*main)),
-            types::RootModule::Library { module } => (module, None),
-        };
+        let main = program.main();
+        let root_module = program.root_module();
 
         self.declare_items(root_module, FQName::parse(""));
         self.resolve_imports(root_module, FQName::parse(""))?;

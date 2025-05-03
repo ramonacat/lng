@@ -107,15 +107,10 @@ impl<'pre> DefinitionChecker<'pre> {
         let root_module = self.type_check_definitions(&self.root_module_declaration, None)?;
 
         if let Some(main) = self.main {
-            return Ok(RootModule::App {
-                main,
-                module: root_module,
-            });
+            return Ok(RootModule::new_app(main, root_module));
         }
 
-        Ok(RootModule::Library {
-            module: root_module,
-        })
+        Ok(RootModule::new_library(root_module))
     }
 
     fn type_check_definitions(

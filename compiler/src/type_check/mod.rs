@@ -45,13 +45,8 @@ pub fn type_check(
 ) -> Result<types::RootModule, TypeCheckError> {
     let mut root_module_declaration = DeclaredModule::new();
 
-    if let Some(std) = std {
-        match std {
-            types::RootModule::App { .. } => todo!(),
-            types::RootModule::Library { module } => {
-                root_module_declaration.import_predeclared(module);
-            }
-        }
+    if let Some(std) = std.map(types::RootModule::root_module) {
+        root_module_declaration.import_predeclared(std);
     }
 
     let type_checker = DeclarationChecker::new(root_module_declaration);
