@@ -598,7 +598,9 @@ impl<'ctx> Compiler<'ctx> {
                 types::Literal::UnsignedInteger(value) => Ok((
                     None,
                     Value::Primitive(
-                        self.context.get_std_type("u64").unwrap(),
+                        self.context
+                            .get_std_type("u64", types::TypeArgumentValues::new_empty())
+                            .unwrap(),
                         self.context.const_u64(*value).as_basic_value_enum(),
                     ),
                 )),

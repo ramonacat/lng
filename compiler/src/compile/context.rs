@@ -38,13 +38,15 @@ impl<'ctx> CompilerContext<'ctx> {
             .const_int(u64::from(value), false)
     }
 
-    pub fn get_std_type(&self, name: &str) -> Option<InstantiatedStructHandle<'ctx>> {
+    pub fn get_std_type(
+        &self,
+        name: &str,
+        type_argument_values: TypeArgumentValues,
+    ) -> Option<InstantiatedStructHandle<'ctx>> {
         self.global_scope
             .get_value(types::FQName::parse("std").with_part(Identifier::parse(name)))
             .map(|x| x.as_struct().unwrap())
-            // TODO we should probably take the type arguments as a parameter, as there could be
-            // std types that have type arguments
-            .map(|x| InstantiatedStructHandle::new(x, types::TypeArgumentValues::new_empty()))
+            .map(|x| InstantiatedStructHandle::new(x, type_argument_values))
     }
 
     fn type_to_llvm(
