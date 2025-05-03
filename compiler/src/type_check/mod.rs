@@ -11,10 +11,14 @@ use declarations::{
 };
 use errors::{TypeCheckError, TypeCheckErrorDescription};
 
-use crate::{ast, types};
+use crate::{ast, errors::ErrorLocation, types};
 
 impl types::Item {
-    fn type_(&self, root_module: &DeclaredModule) -> Result<types::Type, TypeCheckError> {
+    fn type_(
+        &self,
+        root_module: &DeclaredModule,
+        error_location: ErrorLocation,
+    ) -> Result<types::Type, TypeCheckError> {
         match &self.kind {
             types::ItemKind::Function(function) => Ok(function.type_()),
             types::ItemKind::Struct(struct_) => {
@@ -28,9 +32,9 @@ impl types::Item {
                 // TODO pass the error location as an argument here
                 .ok_or_else(|| {
                     TypeCheckErrorDescription::ItemDoesNotExist(import.imported_item)
-                        .at(crate::errors::ErrorLocation::Indeterminate)
+                        .at(error_location)
                 })?
-                .type_(root_module),
+                .type_(root_module, error_location),
             types::ItemKind::Module(_) => todo!(),
         }
     }

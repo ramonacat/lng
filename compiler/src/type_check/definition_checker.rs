@@ -32,15 +32,25 @@ impl<'globals> Locals<'globals> {
 
     fn push_arguments(&mut self, arguments: &[DeclaredArgument]) {
         for argument in arguments {
-            self.values
-                .insert(argument.name, self.resolve_type(&argument.type_).unwrap());
+            self.values.insert(
+                argument.name,
+                self.resolve_type(
+                    &argument.type_,
+                    ErrorLocation::Position(argument.function_name, argument.position),
+                )
+                .unwrap(),
+            );
         }
     }
 
-    fn resolve_type(&self, type_: &ast::TypeDescription) -> Result<types::Type, TypeCheckError> {
+    fn resolve_type(
+        &self,
+        type_: &ast::TypeDescription,
+        error_location: ErrorLocation,
+    ) -> Result<types::Type, TypeCheckError> {
         match type_ {
             ast::TypeDescription::Array(type_description) => Ok(types::Type::Array(Box::new(
-                self.resolve_type(type_description)?,
+                self.resolve_type(type_description, error_location)?,
             ))),
             ast::TypeDescription::Named(name) => {
                 let id = Identifier::parse(name);
@@ -53,7 +63,7 @@ impl<'globals> Locals<'globals> {
                     .or_else(|| {
                         self.globals
                             .get_item(self.scope_module_name.with_part(id))
-                            .map(|x| Ok(x.type_(self.globals)?.instance_type()))
+                            .map(|x| Ok(x.type_(self.globals, error_location)?.instance_type()))
                     })
                     // TODO pass the real ErrorLocation here
                     .unwrap_or_else(|| {
@@ -70,11 +80,13 @@ impl<'globals> Locals<'globals> {
         self.values.insert(name, r#type);
     }
 
-    fn get(&self, id: Identifier) -> Option<types::Type> {
+    fn get(&self, id: Identifier, error_location: ErrorLocation) -> Option<types::Type> {
         self.values.get(&id).cloned().or_else(|| {
             self.globals
                 .get_item(self.scope_module_name.with_part(id))
-                .and_then(|x| x.type_(self.globals).ok())
+                // TODO should we actually return an error here? Should this be
+                // Result<Option<types::Type>, TypeCheckError>?
+                .and_then(|x| x.type_(self.globals, error_location).ok())
         })
     }
 }
@@ -323,6 +335,7 @@ impl DefinitionChecker {
         error_location: ErrorLocation,
     ) -> Result<types::FunctionDefinition, TypeCheckError> {
         let mut locals = Locals::from_globals(&self.root_module_declaration, module);
+        let function_name = module.with_part(Identifier::parse(&declared_function.ast.name));
 
         locals.push_arguments(&declared_function.arguments);
 
@@ -331,69 +344,16 @@ impl DefinitionChecker {
                 let mut checked_statements = vec![];
 
                 for statement in body_statements {
-                    let checked_statement = match statement {
-                        ast::Statement::Expression(expression, _) => {
-                            types::Statement::Expression(self.type_check_expression(
-                                expression,
-                                &locals,
-                                module,
-                                error_location.clone(),
-                            )?)
-                        }
+                    let type_check_statement = self.type_check_statement(
+                        declared_function,
+                        module,
+                        error_location,
+                        &mut locals,
+                        function_name,
+                        statement,
+                    )?;
 
-                        ast::Statement::Let(name, type_, expression) => {
-                            let checked_expression = self.type_check_expression(
-                                expression,
-                                &locals,
-                                module,
-                                error_location.clone(),
-                            )?;
-
-                            let type_ = locals.resolve_type(type_).unwrap();
-
-                            if checked_expression.type_ != type_ {
-                                return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
-                                    target_variable: types::Identifier::parse(name),
-                                    variable_type: type_,
-                                    assigned_type: checked_expression.type_,
-                                }
-                                .at(error_location));
-                            }
-
-                            locals.push_variable(types::Identifier::parse(name), type_);
-
-                            types::Statement::Let(types::LetStatement {
-                                binding: types::Identifier::parse(name),
-                                value: checked_expression,
-                            })
-                        }
-                        ast::Statement::Return(expression, _) => {
-                            // TODO verify that all paths return a value
-                            let checked_expression = self.type_check_expression(
-                                expression,
-                                &locals,
-                                module,
-                                error_location.clone(),
-                            )?;
-
-                            let resolved_return_type = resolve_type(
-                                &self.root_module_declaration,
-                                module,
-                                &declared_function.return_type,
-                            )?;
-                            if checked_expression.type_ != resolved_return_type {
-                                return Err(TypeCheckErrorDescription::MismatchedReturnType {
-                                    actual: checked_expression.type_,
-                                    expected: resolved_return_type,
-                                }
-                                .at(error_location));
-                            }
-
-                            types::Statement::Return(checked_expression)
-                        }
-                    };
-
-                    checked_statements.push(checked_statement);
+                    checked_statements.push(type_check_statement);
                 }
 
                 types::FunctionBody::Statements(checked_statements)
@@ -414,6 +374,7 @@ impl DefinitionChecker {
                             &self.root_module_declaration,
                             module,
                             &argument.type_,
+                            ErrorLocation::Position(function_name, argument.position),
                         )?
                         .instance_type(),
                         position: argument.position,
@@ -424,10 +385,78 @@ impl DefinitionChecker {
                 &self.root_module_declaration,
                 module,
                 &declared_function.return_type,
+                // TODO the position here should point at the actual return type, not the whole
+                // function
+                ErrorLocation::Position(function_name, declared_function.ast.position),
             )?
             .instance_type(),
             body,
             position: declared_function.position,
+        })
+    }
+
+    fn type_check_statement(
+        &self,
+        declared_function: &DeclaredFunctionDefinition,
+        module: FQName,
+        error_location: ErrorLocation,
+        locals: &mut Locals<'_>,
+        function_name: FQName,
+        statement: &ast::Statement,
+    ) -> Result<types::Statement, TypeCheckError> {
+        Ok(match statement {
+            ast::Statement::Expression(expression, _) => types::Statement::Expression(
+                self.type_check_expression(expression, &*locals, module, error_location)?,
+            ),
+
+            ast::Statement::Let(name, type_, expression) => {
+                let checked_expression =
+                    self.type_check_expression(expression, &*locals, module, error_location)?;
+
+                let type_ = locals
+                    .resolve_type(
+                        type_,
+                        ErrorLocation::Position(function_name, expression.position),
+                    )
+                    .unwrap();
+
+                if checked_expression.type_ != type_ {
+                    return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
+                        target_variable: types::Identifier::parse(name),
+                        variable_type: type_,
+                        assigned_type: checked_expression.type_,
+                    }
+                    .at(error_location));
+                }
+
+                locals.push_variable(types::Identifier::parse(name), type_);
+
+                types::Statement::Let(types::LetStatement {
+                    binding: types::Identifier::parse(name),
+                    value: checked_expression,
+                })
+            }
+            ast::Statement::Return(expression, _) => {
+                // TODO verify that all paths return a value
+                let checked_expression =
+                    self.type_check_expression(expression, &*locals, module, error_location)?;
+
+                let resolved_return_type = resolve_type(
+                    &self.root_module_declaration,
+                    module,
+                    &declared_function.return_type,
+                    ErrorLocation::Position(function_name, expression.position),
+                )?;
+                if checked_expression.type_ != resolved_return_type {
+                    return Err(TypeCheckErrorDescription::MismatchedReturnType {
+                        actual: checked_expression.type_,
+                        expected: resolved_return_type,
+                    }
+                    .at(error_location));
+                }
+
+                types::Statement::Return(checked_expression)
+            }
         })
     }
 
@@ -471,8 +500,8 @@ impl DefinitionChecker {
             ast::ExpressionKind::VariableReference(name) => {
                 let id = types::Identifier::parse(name);
 
-                let value_type = locals.get(id).ok_or_else(|| {
-                    TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location.clone())
+                let value_type = locals.get(id, error_location).ok_or_else(|| {
+                    TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
                 })?;
 
                 Ok(types::Expression {
@@ -486,10 +515,9 @@ impl DefinitionChecker {
 
                 let types::Type::StructDescriptor(types::StructDescriptorType { name, fields: _ }) =
                     locals
-                        .get(id)
+                        .get(id, error_location)
                         .ok_or_else(|| {
-                            TypeCheckErrorDescription::UndeclaredVariable(id)
-                                .at(error_location.clone())
+                            TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
                         })
                         .unwrap()
                 else {
@@ -513,7 +541,7 @@ impl DefinitionChecker {
                         TypeCheckErrorDescription::ItemDoesNotExist(target.type_.name())
                             .at(ErrorLocation::Position(module_path, position))
                     })?
-                    .type_(&self.root_module_declaration)?;
+                    .type_(&self.root_module_declaration, error_location)?;
                 let types::Type::StructDescriptor(types::StructDescriptorType { name: _, fields }) =
                     target_type
                 else {
@@ -551,7 +579,7 @@ impl DefinitionChecker {
         position: ast::SourceRange,
     ) -> Result<types::Expression, TypeCheckError> {
         let checked_target =
-            self.type_check_expression(target, locals, module_path, error_location.clone())?;
+            self.type_check_expression(target, locals, module_path, error_location)?;
         let types::Type::Callable {
             arguments: ref callable_arguments,
             ref return_type,
@@ -610,7 +638,7 @@ impl DefinitionChecker {
         for (argument, called_function_argument) in passed_arguments.iter().zip(callable_arguments)
         {
             let checked_argument =
-                self.type_check_expression(argument, locals, module_path, error_location.clone())?;
+                self.type_check_expression(argument, locals, module_path, error_location)?;
 
             let expected_type = &called_function_argument.type_;
 

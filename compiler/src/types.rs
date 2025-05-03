@@ -482,9 +482,7 @@ impl Module {
 
         let (first, rest) = imported_item.split_first();
 
-        // TODO check visibility?
-        // TODO perhaps don't create modules on the fly and actually let the user figure it out, by
-        // declaring modules in the code?
+        // TODO check visibility
         let Item {
             kind: ItemKind::Module(module),
             visibility: _,

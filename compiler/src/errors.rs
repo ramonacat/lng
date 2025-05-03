@@ -1,6 +1,6 @@
 use crate::{ast, types};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum ErrorLocation {
     Position(types::FQName, ast::SourceRange),
     Indeterminate,

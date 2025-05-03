@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast,
+    errors::ErrorLocation,
     std::{TYPE_NAME_U64, TYPE_NAME_UNIT},
     types,
 };
@@ -10,6 +11,7 @@ use super::errors::TypeCheckError;
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredArgument {
+    pub(super) function_name: types::FQName,
     pub(super) name: types::Identifier,
     pub(super) type_: ast::TypeDescription,
     pub(super) position: ast::SourceRange,
@@ -200,6 +202,7 @@ impl DeclaredItem {
     pub(super) fn type_(
         &self,
         root_module: &DeclaredModule,
+        error_location: ErrorLocation,
     ) -> Result<types::Type, TypeCheckError> {
         match &self.kind {
             DeclaredItemKind::Function(declared_function) => Ok(types::Type::Callable {
@@ -214,6 +217,7 @@ impl DeclaredItem {
                                 root_module,
                                 declared_function.name.without_last(),
                                 &declaration.type_,
+                                error_location,
                             )?
                             .instance_type(),
                             position: declaration.position,
@@ -224,6 +228,7 @@ impl DeclaredItem {
                     root_module,
                     declared_function.name.without_last(),
                     &declared_function.definition.return_type,
+                    error_location,
                 )?),
             }),
             DeclaredItemKind::Struct(declared_struct) => {
@@ -244,8 +249,8 @@ impl DeclaredItem {
             DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => root_module
                 .get_item(*imported_item)
                 .unwrap()
-                .type_(root_module),
-            DeclaredItemKind::Predeclared(item) => item.type_(root_module),
+                .type_(root_module, error_location),
+            DeclaredItemKind::Predeclared(item) => item.type_(root_module, error_location),
             DeclaredItemKind::Module(_) => todo!(),
         }
     }
@@ -255,19 +260,25 @@ pub(super) fn resolve_type(
     root_module: &DeclaredModule,
     current_module: types::FQName,
     r#type: &ast::TypeDescription,
+    error_location: ErrorLocation,
 ) -> Result<types::Type, TypeCheckError> {
     match r#type {
-        ast::TypeDescription::Array(type_description) => Ok(types::Type::Array(Box::new(
-            resolve_type(root_module, current_module, type_description)?,
-        ))),
+        ast::TypeDescription::Array(type_description) => {
+            Ok(types::Type::Array(Box::new(resolve_type(
+                root_module,
+                current_module,
+                type_description,
+                error_location,
+            )?)))
+        }
         ast::TypeDescription::Named(name) if name == "()" => root_module
             .get_item(*TYPE_NAME_UNIT)
             .unwrap()
-            .type_(root_module),
+            .type_(root_module, error_location),
         ast::TypeDescription::Named(name) if name == "u64" => root_module
             .get_item(*TYPE_NAME_U64)
             .unwrap()
-            .type_(root_module),
+            .type_(root_module, error_location),
         ast::TypeDescription::Named(name) => {
             let name = types::Identifier::parse(name);
             let item = root_module
@@ -291,17 +302,18 @@ pub(super) fn resolve_type(
                                     root_module,
                                     declared_function.name.without_last(),
                                     &a.type_,
+                                    error_location,
                                 )?
                                 .instance_type(),
                                 position: a.position,
                             })
                         })
                         .collect::<Result<Vec<_>, _>>()?,
-                    // TODO the type should probably also be resolve_type'd
                     return_type: Box::new(resolve_type(
                         root_module,
                         declared_function.name.without_last(),
                         &declared_function.definition.return_type,
+                        error_location,
                     )?),
                 }),
                 DeclaredItemKind::Struct(declared_struct) => {
@@ -320,11 +332,11 @@ pub(super) fn resolve_type(
                             .collect(),
                     }))
                 }
-                DeclaredItemKind::Predeclared(item) => item.type_(root_module),
+                DeclaredItemKind::Predeclared(item) => item.type_(root_module, error_location),
                 DeclaredItemKind::Import(declared_import) => {
                     let imported_item = root_module.get_item(declared_import.imported_item);
 
-                    imported_item.unwrap().type_(root_module)
+                    imported_item.unwrap().type_(root_module, error_location)
                 }
                 DeclaredItemKind::Module(_) => todo!(),
             }

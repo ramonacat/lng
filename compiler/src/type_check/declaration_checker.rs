@@ -2,7 +2,12 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
+use crate::{
+    ast,
+    errors::ErrorLocation,
+    std::TYPE_NAME_STRING,
+    types::{self, Identifier},
+};
 
 use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
@@ -115,6 +120,10 @@ impl DeclarationChecker {
                                                         &self.root_module_declaration,
                                                         module_path,
                                                         &x.type_,
+                                                        ErrorLocation::Position(
+                                                            module_path.with_part(function.name),
+                                                            x.position,
+                                                        ),
                                                     )?
                                                     .instance_type(),
                                                     position,
@@ -126,6 +135,12 @@ impl DeclarationChecker {
                                                 &self.root_module_declaration,
                                                 module_path,
                                                 &function.definition.return_type,
+                                                // TODO this position should point specifically at
+                                                // the return type, not the whole function
+                                                ErrorLocation::Position(
+                                                    module_path.with_part(function.name),
+                                                    function.definition.position,
+                                                ),
                                             )?
                                             .instance_type(),
                                         ),
@@ -204,6 +219,10 @@ impl DeclarationChecker {
                                         &self.root_module_declaration,
                                         module_path,
                                         &field.type_,
+                                        ErrorLocation::Position(
+                                            module_path.with_part(Identifier::parse(&struct_.name)),
+                                            field.position,
+                                        ),
                                     )?,
 
                                     static_: false,
@@ -235,6 +254,10 @@ impl DeclarationChecker {
                                 &self.root_module_declaration,
                                 module_path,
                                 &field.type_,
+                                ErrorLocation::Position(
+                                    module_path.with_part(Identifier::parse(&struct_.name)),
+                                    field.position,
+                                ),
                             )?
                             .name();
                             if self.root_module_declaration.get_item(type_name).is_none() {
@@ -267,9 +290,12 @@ impl DeclarationChecker {
         {
             if function_declaration.definition.arguments.len() == 1 {
                 if let Some(argument) = function_declaration.definition.arguments.first() {
-                    if let types::Type::Array(ref array_item_type) =
-                        resolve_type(&self.root_module_declaration, module_path, &argument.type_)?
-                    {
+                    if let types::Type::Array(ref array_item_type) = resolve_type(
+                        &self.root_module_declaration,
+                        module_path,
+                        &argument.type_,
+                        ErrorLocation::Position(function_declaration.name, argument.position),
+                    )? {
                         if let types::Type::StructDescriptor(types::StructDescriptorType {
                             name: obj_type,
                             ..
@@ -315,6 +341,7 @@ impl DeclarationChecker {
                 &self.root_module_declaration,
                 self_type.without_last(),
                 &arg.type_,
+                ErrorLocation::Position(function_path, arg.position),
             )?;
 
             if type_ == types::Type::Unit {
@@ -325,6 +352,7 @@ impl DeclarationChecker {
             }
 
             arguments.push(DeclaredArgument {
+                function_name: function_path,
                 name: types::Identifier::parse(&arg.name),
                 type_: arg.type_.clone(),
                 position: arg.position,
@@ -356,6 +384,7 @@ impl DeclarationChecker {
 
         for arg in &function.arguments {
             arguments.push(DeclaredArgument {
+                function_name: function_path,
                 name: types::Identifier::parse(&arg.name),
                 type_: arg.type_.clone(),
                 position: arg.position,
