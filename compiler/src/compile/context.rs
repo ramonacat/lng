@@ -11,18 +11,19 @@ use inkwell::{
 use crate::types::{self, FQName, Identifier, TypeArgumentValues};
 
 use super::{
-    CompileError, CompileErrorDescription, scope::GlobalScope, unique_name, value::StructHandle,
+    CompileError, CompileErrorDescription, scope::GlobalScope, unique_name,
+    value::InstantiatedStructHandle,
 };
 
-pub struct Builtins<'ctx> {
-    pub rc_handle: StructHandle<'ctx>,
-    pub string_handle: StructHandle<'ctx>,
+pub struct Builtins {
+    pub rc_handle: types::Struct,
+    pub string_handle: types::Struct,
 }
 
 pub struct CompilerContext<'ctx> {
     pub llvm_context: &'ctx Context,
     pub builder: Builder<'ctx>,
-    pub builtins: Builtins<'ctx>,
+    pub builtins: Builtins,
     pub global_scope: GlobalScope<'ctx>,
 }
 
@@ -37,10 +38,13 @@ impl<'ctx> CompilerContext<'ctx> {
             .const_int(u64::from(value), false)
     }
 
-    pub fn get_std_type(&self, name: &str) -> Option<StructHandle<'ctx>> {
+    pub fn get_std_type(&self, name: &str) -> Option<InstantiatedStructHandle<'ctx>> {
         self.global_scope
             .get_value(types::FQName::parse("std").with_part(Identifier::parse(name)))
             .map(|x| x.as_struct().unwrap())
+            // TODO we should probably take the type arguments as a parameter, as there could be
+            // std types that have type arguments
+            .map(|x| InstantiatedStructHandle::new(x, types::TypeArgumentValues::new_empty()))
     }
 
     fn type_to_llvm(

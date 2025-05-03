@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::LazyLock};
 use inkwell::values::BasicValue;
 
 use crate::{
-    compile::{context::CompilerContext, unique_name, value::StructHandle},
+    compile::{context::CompilerContext, unique_name, value::InstantiatedStructHandle},
     types::{self, Identifier, TypeArgument, TypeArgumentValues},
 };
 
@@ -20,9 +20,9 @@ static CAPACITY_FIELD: LazyLock<types::Identifier> =
 
 // TODO A macro that generates both the struct on rust side and the StructHandle from a single
 // definition
-pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
+pub fn describe_structure() -> types::Struct {
     let type_argument_name = types::TypeArgument::new(types::Identifier::parse("TItem"));
-    StructHandle::new(types::Struct {
+    types::Struct {
         name: *TYPE_NAME_ARRAY,
         type_arguments: types::TypeArguments::new(vec![type_argument_name]),
         fields: vec![
@@ -46,7 +46,7 @@ pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
             },
         ],
         impls: HashMap::new(),
-    })
+    }
 }
 
 pub struct ArrayValue {}
@@ -78,13 +78,9 @@ impl ArrayValue {
         field_values.insert(*LENGTH_FIELD, context.const_u64(0).as_basic_value_enum());
         field_values.insert(*CAPACITY_FIELD, context.const_u64(1).as_basic_value_enum());
 
-        let array_struct = describe_structure();
-        let array_value = array_struct.build_heap_instance(
-            context,
-            &unique_name(&["string"]),
-            &tav,
-            field_values,
-        );
+        let array_struct = InstantiatedStructHandle::new(describe_structure(), tav);
+        let array_value =
+            array_struct.build_heap_instance(context, &unique_name(&["string"]), field_values);
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),

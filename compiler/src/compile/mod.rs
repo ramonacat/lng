@@ -22,7 +22,7 @@ use inkwell::{
 use module::CompiledModule;
 use rand::Rng;
 use scope::{GlobalScope, Scope};
-use value::{FunctionHandle, StructHandle, Value};
+use value::{FunctionHandle, InstantiatedStructHandle, Value};
 
 use crate::{
     ast::SourceRange,
@@ -323,12 +323,13 @@ impl<'ctx> Compiler<'ctx> {
                     for (impl_name, impl_) in &struct_.impls {
                         // TODO this should happen when the struct is instantiated or on call, so that the generics can be resolved and
                         // the correct implementation can be instantiated
+                        let var_type = module.get_variable(item_name).unwrap().as_struct().unwrap();
+                        let var_type = InstantiatedStructHandle::new(
+                            var_type,
+                            types::TypeArgumentValues::new_empty(),
+                        );
                         self.compile_function(
-                            module
-                                .get_variable(item_name)
-                                .unwrap()
-                                .as_struct()
-                                .unwrap()
+                            var_type
                                 .read_field_value(Value::Empty, *impl_name)
                                 .unwrap()
                                 .as_function()
@@ -394,6 +395,12 @@ impl<'ctx> Compiler<'ctx> {
                             module.set_variable(name, function_value);
                         }
                         Value::Struct(ref struct_) => {
+                            // TODO this should really only happen on instantiation, so that we can
+                            // actually pass the correct type arguments when they're resolved
+                            let struct_ = InstantiatedStructHandle::new(
+                                struct_.clone(),
+                                types::TypeArgumentValues::new_empty(),
+                            );
                             struct_.import(module, &self.context);
                         }
                         Value::Empty => todo!(),
@@ -432,33 +439,7 @@ impl<'ctx> Compiler<'ctx> {
                     module.set_variable(function.name.last(), Value::Function(function_handle));
                 }
                 types::ItemKind::Struct(struct_) => {
-                    let static_fields = struct_
-                        .impls
-                        .iter()
-                        .map(|(name, impl_)| {
-                            let handle = FunctionHandle {
-                                fqname: struct_.name.with_part(*name),
-                                linkage: if impl_.visibility == types::Visibility::Export {
-                                    Linkage::External
-                                } else {
-                                    Linkage::Internal
-                                },
-                                name: impl_.mangled_name(),
-                                return_type: impl_.definition.return_type.clone(),
-                                arguments: impl_.definition.arguments.clone(),
-                                position: impl_.definition.position,
-                            };
-                            (*name, Value::Function(handle))
-                        })
-                        .collect();
-
-                    module.set_variable(
-                        struct_.name.last(),
-                        Value::Struct(StructHandle::new_with_statics(
-                            struct_.clone(),
-                            static_fields,
-                        )),
-                    );
+                    module.set_variable(struct_.name.last(), Value::Struct(struct_.clone()));
                 }
                 types::ItemKind::Import(_) => {}
                 types::ItemKind::Module(module_declaration) => {
@@ -632,6 +613,8 @@ impl<'ctx> Compiler<'ctx> {
                     .unwrap()
                     .as_struct()
                     .unwrap();
+                // TODO get the type argument values from the expression!
+                let s = InstantiatedStructHandle::new(s, types::TypeArgumentValues::new_empty());
 
                 let field_values = HashMap::new();
                 // TODO actually set the field values!
@@ -639,8 +622,6 @@ impl<'ctx> Compiler<'ctx> {
                 let value = s.build_heap_instance(
                     &self.context,
                     &unique_name(&[&name.raw()]),
-                    // TODO the expression should contain values for the type arguments
-                    &types::TypeArgumentValues::new_empty(),
                     field_values,
                 );
 
@@ -721,17 +702,24 @@ impl<'ctx> Compiler<'ctx> {
         let value = match function.return_type {
             types::Type::Unit => Value::Empty,
             types::Type::Object {
-                type_argument_values: _,
+                type_argument_values: object_tav,
                 type_name: item_path,
-            } => Value::Reference(RcValue::from_pointer(
-                call_result.into_pointer_value(),
-                self.context
+            } => {
+                let value_type = self
+                    .context
                     .global_scope
                     .get_value(item_path)
                     .unwrap()
                     .as_struct()
-                    .unwrap(),
-            )),
+                    .unwrap();
+
+                let value_type = InstantiatedStructHandle::new(value_type, object_tav);
+
+                Value::Reference(RcValue::from_pointer(
+                    call_result.into_pointer_value(),
+                    value_type,
+                ))
+            }
             types::Type::Array { .. } => todo!(),
             types::Type::StructDescriptor(_) => todo!(),
             types::Type::Callable { .. } => todo!(),

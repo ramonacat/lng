@@ -37,12 +37,13 @@ impl Debug for FunctionHandle {
 }
 
 #[derive(Clone)]
-pub struct StructHandle<'ctx> {
+pub struct InstantiatedStructHandle<'ctx> {
     description: types::Struct,
     static_field_values: HashMap<types::Identifier, Value<'ctx>>,
+    type_argument_values: types::TypeArgumentValues,
 }
 
-impl Debug for StructHandle<'_> {
+impl Debug for InstantiatedStructHandle<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let fields = self
             .description
@@ -51,16 +52,19 @@ impl Debug for StructHandle<'_> {
             .map(|f| format!("{}:{}", f.name, f.type_.debug_name()))
             .join(", ");
 
-        write!(f, "Struct<{}({})>", self.description.name, fields)
+        write!(
+            f,
+            "Struct{}({}){{{}}}>",
+            self.type_argument_values, self.description.name, fields
+        )
     }
 }
 
-impl<'ctx> StructHandle<'ctx> {
+impl<'ctx> InstantiatedStructHandle<'ctx> {
     pub fn build_heap_instance(
         &self,
         context: &CompilerContext<'ctx>,
         binding_name: &str,
-        type_argument_values: &types::TypeArgumentValues,
         mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
         let llvm_type = {
@@ -68,7 +72,7 @@ impl<'ctx> StructHandle<'ctx> {
             context.make_struct_type(
                 this.description.name,
                 &this.description.fields,
-                type_argument_values,
+                &self.type_argument_values,
             )
         };
 
@@ -102,7 +106,6 @@ impl<'ctx> StructHandle<'ctx> {
         field: Identifier,
         instance: PointerValue<'ctx>,
         binding_name: &str,
-        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> BasicValueEnum<'ctx> {
         let (field_type, field_pointer) = {
@@ -110,7 +113,7 @@ impl<'ctx> StructHandle<'ctx> {
             context.make_struct_type(
                 this.description.name,
                 &this.description.fields,
-                type_argument_values,
+                &self.type_argument_values,
             )
         }
         .field_pointer(field, instance, context)
@@ -163,7 +166,10 @@ impl<'ctx> StructHandle<'ctx> {
             };
         }
 
-        importing_module.set_variable(self.description.name.last(), Value::Struct(self.clone()));
+        importing_module.set_variable(
+            self.description.name.last(),
+            Value::Struct(self.description.clone()),
+        );
     }
 
     // TODO this should be integrated with build_field_load perhaps?
@@ -181,17 +187,44 @@ impl<'ctx> StructHandle<'ctx> {
         todo!("support reading non-static fields!");
     }
 
-    pub(crate) fn new(description: types::Struct) -> Self {
-        Self::new_with_statics(description, HashMap::new())
+    // TODO  remove this, new_with_statics should be the only constructor
+    pub(crate) fn new(description: types::Struct, tav: TypeArgumentValues) -> Self {
+        Self::new_with_statics(description, HashMap::new(), tav)
     }
 
-    pub(crate) const fn new_with_statics(
+    pub(crate) fn new_with_statics(
         description: types::Struct,
-        static_fields: HashMap<Identifier, Value<'ctx>>,
+        mut static_fields: HashMap<Identifier, Value<'ctx>>,
+        tav: TypeArgumentValues,
     ) -> Self {
+        let default_static_fields: Vec<_> = description
+            .impls
+            .iter()
+            .map(|(name, impl_)| {
+                let handle = FunctionHandle {
+                    fqname: description.name.with_part(*name),
+                    linkage: if impl_.visibility == types::Visibility::Export {
+                        Linkage::External
+                    } else {
+                        Linkage::Internal
+                    },
+                    name: impl_.mangled_name(),
+                    return_type: impl_.definition.return_type.clone(),
+                    arguments: impl_.definition.arguments.clone(),
+                    position: impl_.definition.position,
+                };
+                (*name, Value::Function(handle))
+            })
+            .collect();
+
+        for (name, value) in default_static_fields {
+            static_fields.insert(name, value);
+        }
+
         Self {
             description,
             static_field_values: static_fields,
+            type_argument_values: tav,
         }
     }
 
@@ -202,6 +235,11 @@ impl<'ctx> StructHandle<'ctx> {
             type_arguments: self.description.type_arguments.clone(),
         }
     }
+
+    pub(crate) fn instance_type(&self) -> types::Type {
+        self.type_descriptor()
+            .instance_type(self.type_argument_values.clone())
+    }
 }
 
 // TODO The *Handle structs should be lightweight handles, and not copied with the vecs and all
@@ -209,10 +247,10 @@ impl<'ctx> StructHandle<'ctx> {
 #[derive(Clone)]
 pub enum Value<'ctx> {
     Empty,
-    Primitive(StructHandle<'ctx>, BasicValueEnum<'ctx>),
+    Primitive(InstantiatedStructHandle<'ctx>, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     Function(FunctionHandle),
-    Struct(StructHandle<'ctx>),
+    Struct(types::Struct),
 }
 
 impl Debug for Value<'_> {
@@ -252,7 +290,7 @@ impl<'ctx> Value<'ctx> {
         }
     }
 
-    pub fn as_struct(&self) -> Option<StructHandle<'ctx>> {
+    pub fn as_struct(&self) -> Option<types::Struct> {
         if let Value::Struct(handle) = self {
             Some(handle.clone())
         } else {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use inkwell::values::BasicValue as _;
 
 use crate::{
-    compile::{context::CompilerContext, value::StructHandle},
+    compile::{context::CompilerContext, value::InstantiatedStructHandle},
     std::TYPE_NAME_STRING,
     types::{self, Identifier, TypeArguments},
 };
@@ -41,24 +41,22 @@ impl StringValue {
                 .as_basic_value_enum(),
         );
 
-        let literal_value = context.builtins.string_handle.build_heap_instance(
+        let string_handle = InstantiatedStructHandle::new(
+            context.builtins.string_handle.clone(),
+            types::TypeArgumentValues::new_empty(),
+        );
+        let literal_value = string_handle.build_heap_instance(
             context,
             &(name.to_string() + "_value"),
-            &types::TypeArgumentValues::new_empty(),
             field_values,
         );
 
-        RcValue::build_init(
-            name,
-            literal_value,
-            context.builtins.string_handle.clone(),
-            context,
-        )
+        RcValue::build_init(name, literal_value, string_handle, context)
     }
 }
 
-pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
-    StructHandle::new(types::Struct {
+pub fn describe_structure() -> types::Struct {
+    types::Struct {
         name: *TYPE_NAME_STRING,
         type_arguments: TypeArguments::new_empty(),
         fields: vec![
@@ -76,5 +74,5 @@ pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
             },
         ],
         impls: HashMap::new(),
-    })
+    }
 }

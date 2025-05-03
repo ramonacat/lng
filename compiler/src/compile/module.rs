@@ -4,6 +4,7 @@ use super::{
     CompiledFunction, FunctionHandle, Scope, Value, builtins,
     context::CompilerContext,
     rc::{self, RcValue},
+    value::InstantiatedStructHandle,
 };
 use crate::{name_mangler::MangledIdentifier, types};
 use inkwell::{
@@ -126,17 +127,16 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::Unit => todo!(),
                 types::Type::Object {
                     type_name: identifier,
-                    type_argument_values: _,
+                    type_argument_values: object_tav,
                 } => {
-                    let rc = RcValue::from_pointer(
-                        argument_value.into_pointer_value(),
-                        context
-                            .global_scope
-                            .get_value(*identifier)
-                            .unwrap()
-                            .as_struct()
-                            .unwrap(),
-                    );
+                    let value_type = context
+                        .global_scope
+                        .get_value(*identifier)
+                        .unwrap()
+                        .as_struct()
+                        .unwrap();
+                    let value_type = InstantiatedStructHandle::new(value_type, object_tav.clone());
+                    let rc = RcValue::from_pointer(argument_value.into_pointer_value(), value_type);
                     rcs.push(rc.clone());
 
                     Value::Reference(rc)
