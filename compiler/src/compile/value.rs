@@ -36,6 +36,9 @@ impl Debug for FunctionHandle {
     }
 }
 
+// TODO this should not be Clone, but that requires that we have some sort of global storage for
+// the instantiated handles. This being clone can lead to static_field_values getting
+// desynchronized depending on which clone is used.
 #[derive(Clone)]
 pub struct InstantiatedStructHandle<'ctx> {
     description: types::Struct,
