@@ -318,7 +318,6 @@ impl<'ctx> Compiler<'ctx> {
             match &item.kind {
                 types::ItemKind::Function(_) | types::ItemKind::Struct(_) => {}
                 types::ItemKind::Import(import) => {
-                    dbg!(import, root_path);
                     let value = self
                         .context
                         .global_scope
@@ -345,6 +344,7 @@ impl<'ctx> Compiler<'ctx> {
                             module.set_variable(name, Value::Struct(struct_.clone()));
                         }
                         Value::Empty => todo!(),
+                        Value::Callable(_, _) => todo!(),
                     }
                 }
                 types::ItemKind::Module(module) => {
@@ -470,7 +470,8 @@ impl<'ctx> Compiler<'ctx> {
                         Value::Primitive(_, _)
                         | Value::Function(_)
                         | Value::Struct(_)
-                        | Value::Empty => true,
+                        | Value::Empty
+                        | Value::Callable(_, _) => true,
                     }
                 })
                 .cloned()
@@ -555,8 +556,6 @@ impl<'ctx> Compiler<'ctx> {
                 )),
             },
             types::ExpressionKind::VariableAccess(name) => {
-                dbg!(&compiled_function.scope);
-                dbg!(&self.context.global_scope);
                 Ok((None, compiled_function.scope.get_value(*name).unwrap()))
             }
             types::ExpressionKind::StructConstructor(name) => {
@@ -615,12 +614,20 @@ impl<'ctx> Compiler<'ctx> {
         let compiled_target =
             self.compile_expression(target, self_.cloned(), compiled_function, module_path)?;
 
-        let (self_value, Value::Function(function)) = compiled_target else {
-            todo!();
+        let (self_value, function, type_argument_values) = match compiled_target {
+            (_, Value::Empty) => todo!(),
+            (_, Value::Primitive(_, _)) => todo!(),
+            (_, Value::Reference(_)) => todo!(),
+            (self_value, Value::Callable(function_handle, type_argument_values)) => {
+                (self_value, function_handle, type_argument_values)
+            }
+            // TODO we should check here, and throw if the function takes generic arguments
+            (self_value, Value::Function(function_handle)) => {
+                (self_value, function_handle, TypeArgumentValues::new_empty())
+            }
+            (_, Value::Struct(_)) => todo!(),
         };
 
-        // TODO the type arguments should be known here -- self.compile_expression should return an
-        // instantiated type!
         if !self
             .context
             .global_scope
@@ -628,17 +635,16 @@ impl<'ctx> Compiler<'ctx> {
             .unwrap()
             .has_function(&function.name)
         {
-            self.compile_function(&function, &TypeArgumentValues::new_empty())
+            self.compile_function(&function, &type_argument_values)
                 .unwrap();
         }
 
-        // TODO the same typeargumentvalues as for compile_function!
         let compiled_target_function = self
             .context
             .global_scope
             .get_module(module_path)
             .unwrap()
-            .get_or_create_function(&function, &TypeArgumentValues::new_empty(), &self.context);
+            .get_or_create_function(&function, &type_argument_values, &self.context);
 
         self.context
             .builder
@@ -662,6 +668,7 @@ impl<'ctx> Compiler<'ctx> {
                     todo!("implement passing struct definitions as arguments")
                 }
                 Value::Empty => todo!(),
+                Value::Callable(_, _) => todo!(),
             })
             .collect::<Vec<BasicMetadataValueEnum>>();
 
