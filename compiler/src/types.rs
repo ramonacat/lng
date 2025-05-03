@@ -129,14 +129,34 @@ impl FQName {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeArguments(Vec<TypeArgument>);
+impl TypeArguments {
+    pub(crate) const fn new_empty() -> Self {
+        Self(vec![])
+    }
+}
+
+impl std::fmt::Display for TypeArguments {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_empty() {
+            return Ok(());
+        }
+
+        write!(f, "{}", self.0.iter().map(ToString::to_string).join(","))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructDescriptorType {
     pub name: FQName,
     // the fields are a Vec<_>, so that the order is well defined
     pub fields: Vec<StructField>,
+    pub type_arguments: TypeArguments,
 }
 
 impl StructDescriptorType {
-    pub fn instance_type(&self) -> Type {
+    pub fn instance_type(&self, type_argument_values: TypeArgumentValues) -> Type {
+        // TODO verify that the type_argument_values actually match the type_arguments declared
         // TODO can we avoid special-casing the types here? perhaps take the object type as an
         // argument?
         if self.name == *TYPE_NAME_U64 {
@@ -149,12 +169,44 @@ impl StructDescriptorType {
 
         Type::Object {
             type_name: self.name,
+            type_argument_values,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TypeArgument(Identifier);
+
+impl std::fmt::Display for TypeArgument {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeArgumentValues(HashMap<TypeArgument, Type>);
+impl TypeArgumentValues {
+    pub(crate) fn new_empty() -> Self {
+        Self(HashMap::new())
+    }
+}
+
+impl std::fmt::Display for TypeArgumentValues {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.0.is_empty() {
+            return Ok(());
+        }
+
+        write!(
+            f,
+            "<{}>",
+            self.0
+                .iter()
+                .map(|(name, value)| format!("{name}={value}"))
+                .join(", ")
+        )
+    }
+}
 
 // TODO support generics
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +214,7 @@ pub enum Type {
     Unit,
     Object {
         type_name: FQName,
+        type_argument_values: TypeArgumentValues,
     },
     Array {
         element_type: Box<Type>,
@@ -187,11 +240,13 @@ impl Type {
             Self::Unit => "void".to_string(),
             Self::Object {
                 type_name: item_path,
-            } => format!("{item_path}"),
+                type_argument_values,
+            } => format!("{item_path}{type_argument_values}"),
             Self::StructDescriptor(StructDescriptorType {
                 name: item_path,
                 fields: _,
-            }) => format!("Struct<{item_path}>"),
+                type_arguments,
+            }) => format!("Struct{type_arguments}({item_path})"),
             Self::Array {
                 element_type: inner,
             } => format!("{}[]", inner.debug_name()),
@@ -218,6 +273,7 @@ impl Type {
             Self::Unit => todo!(),
             Self::Object {
                 type_name: item_path,
+                type_argument_values: _,
             } => *item_path,
             Self::Array { .. } => todo!(),
             Self::StructDescriptor(_) => todo!(),
@@ -228,7 +284,7 @@ impl Type {
         }
     }
 
-    pub(crate) fn instance_type(&self) -> Self {
+    pub(crate) fn instance_type(&self, type_argument_values: TypeArgumentValues) -> Self {
         match &self {
             Self::Unit => todo!(),
             Self::Object { .. } => todo!(),
@@ -236,10 +292,10 @@ impl Type {
             Self::Array {
                 element_type: inner,
             } => Self::Array {
-                element_type: Box::new(inner.instance_type()),
+                element_type: Box::new(inner.instance_type(type_argument_values)),
             },
             Self::StructDescriptor(struct_descriptor_type) => {
-                struct_descriptor_type.instance_type()
+                struct_descriptor_type.instance_type(type_argument_values)
             }
             Self::Callable { .. } => todo!(),
             Self::U64 => todo!(),
@@ -255,12 +311,17 @@ impl Display for Type {
             Self::Unit => write!(f, "void"),
             Self::Object {
                 type_name: identifier,
-            } => write!(f, "{identifier}"),
+                type_argument_values,
+            } => write!(f, "{identifier}{type_argument_values}"),
             Self::Array {
                 element_type: inner,
             } => write!(f, "{inner}[]"),
-            Self::StructDescriptor(StructDescriptorType { name, fields: _ }) => {
-                write!(f, "StructDescriptor<{name}>")
+            Self::StructDescriptor(StructDescriptorType {
+                name,
+                fields: _,
+                type_arguments,
+            }) => {
+                write!(f, "StructDescriptor{type_arguments}<{name}>")
             }
             Self::Callable {
                 arguments,

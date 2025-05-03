@@ -25,6 +25,7 @@ impl types::Item {
                 Ok(types::Type::StructDescriptor(types::StructDescriptorType {
                     name: struct_.name,
                     fields: struct_.fields.clone(),
+                    type_arguments: types::TypeArguments::new_empty(),
                 }))
             }
             types::ItemKind::Import(import) => root_module

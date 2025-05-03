@@ -6,7 +6,7 @@ use crate::{
     ast,
     errors::ErrorLocation,
     std::TYPE_NAME_STRING,
-    types::{self, Identifier},
+    types::{self, Identifier, TypeArgumentValues},
 };
 
 use super::{
@@ -125,7 +125,7 @@ impl<'pre> DeclarationChecker<'pre> {
                                                             x.position,
                                                         ),
                                                     )?
-                                                    .instance_type(),
+                                                    .instance_type(TypeArgumentValues::new_empty()),
                                                     position,
                                                 })
                                             })
@@ -142,7 +142,7 @@ impl<'pre> DeclarationChecker<'pre> {
                                                     function.definition.position,
                                                 ),
                                             )?
-                                            .instance_type(),
+                                            .instance_type(TypeArgumentValues::new_empty()),
                                         ),
                                     },
                                     static_: true,

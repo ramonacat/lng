@@ -4,7 +4,7 @@ use crate::{
     ast,
     errors::ErrorLocation,
     std::{TYPE_NAME_U64, TYPE_NAME_UNIT},
-    types,
+    types::{self, TypeArgumentValues, TypeArguments},
 };
 
 use super::errors::TypeCheckError;
@@ -218,7 +218,7 @@ impl DeclaredItem<'_> {
                                 &declaration.type_,
                                 error_location,
                             )?
-                            .instance_type(),
+                            .instance_type(TypeArgumentValues::new_empty()),
                             position: declaration.position,
                         })
                     })
@@ -233,6 +233,7 @@ impl DeclaredItem<'_> {
             DeclaredItemKind::Struct(declared_struct) => {
                 Ok(types::Type::StructDescriptor(types::StructDescriptorType {
                     name: declared_struct.name,
+                    type_arguments: TypeArguments::new_empty(),
                     fields: declared_struct
                         .fields
                         .iter()
@@ -303,7 +304,7 @@ pub(super) fn resolve_type(
                                     &a.type_,
                                     error_location,
                                 )?
-                                .instance_type(),
+                                .instance_type(TypeArgumentValues::new_empty()),
                                 position: a.position,
                             })
                         })
@@ -318,6 +319,7 @@ pub(super) fn resolve_type(
                 DeclaredItemKind::Struct(declared_struct) => {
                     Ok(types::Type::StructDescriptor(types::StructDescriptorType {
                         name: declared_struct.name,
+                        type_arguments: TypeArguments::new_empty(),
                         fields: declared_struct
                             .fields
                             .iter()

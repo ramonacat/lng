@@ -4,7 +4,7 @@ use crate::{
     ast,
     errors::ErrorLocation,
     std::TYPE_NAME_STRING,
-    types::{self, AssociatedFunction, FQName, Identifier, RootModule},
+    types::{self, AssociatedFunction, FQName, Identifier, RootModule, TypeArgumentValues},
 };
 
 use super::{
@@ -62,7 +62,10 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
                     .or_else(|| {
                         self.globals
                             .get_item(self.scope_module_name.with_part(id))
-                            .map(|x| Ok(x.type_(self.globals, error_location)?.instance_type()))
+                            .map(|x| {
+                                Ok(x.type_(self.globals, error_location)?
+                                    .instance_type(TypeArgumentValues::new_empty()))
+                            })
                     })
                     .unwrap_or_else(|| {
                         Err(
@@ -376,7 +379,7 @@ impl<'pre> DefinitionChecker<'pre> {
                             &argument.type_,
                             ErrorLocation::Position(function_name, argument.position),
                         )?
-                        .instance_type(),
+                        .instance_type(TypeArgumentValues::new_empty()),
                         position: argument.position,
                     })
                 })
@@ -389,7 +392,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 // function
                 ErrorLocation::Position(function_name, declared_function.ast.position),
             )?
-            .instance_type(),
+            .instance_type(TypeArgumentValues::new_empty()),
             body,
             position: declared_function.position,
         })
@@ -490,6 +493,7 @@ impl<'pre> DefinitionChecker<'pre> {
                     position,
                     type_: types::Type::Object {
                         type_name: *TYPE_NAME_STRING,
+                        type_argument_values: TypeArgumentValues::new_empty(),
                     },
                     kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
                 }),
@@ -515,17 +519,23 @@ impl<'pre> DefinitionChecker<'pre> {
             ast::ExpressionKind::StructConstructor(struct_name) => {
                 let id = types::Identifier::parse(struct_name);
 
-                let types::Type::StructDescriptor(types::StructDescriptorType { name, fields: _ }) =
-                    locals.get(id, error_location)?.ok_or_else(|| {
-                        TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
-                    })?
+                let types::Type::StructDescriptor(types::StructDescriptorType {
+                    name,
+                    fields: _,
+                    type_arguments: _,
+                }) = locals.get(id, error_location)?.ok_or_else(|| {
+                    TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
+                })?
                 else {
                     todo!();
                 };
 
                 Ok(types::Expression {
                     position,
-                    type_: types::Type::Object { type_name: name },
+                    type_: types::Type::Object {
+                        type_name: name,
+                        type_argument_values: TypeArgumentValues::new_empty(),
+                    },
                     kind: types::ExpressionKind::StructConstructor(id),
                 })
             }
@@ -541,8 +551,11 @@ impl<'pre> DefinitionChecker<'pre> {
                             .at(ErrorLocation::Position(module_path, position))
                     })?
                     .type_(&self.root_module_declaration, error_location)?;
-                let types::Type::StructDescriptor(types::StructDescriptorType { name: _, fields }) =
-                    target_type
+                let types::Type::StructDescriptor(types::StructDescriptorType {
+                    name: _,
+                    fields,
+                    type_arguments: _,
+                }) = target_type
                 else {
                     todo!("{target_type}");
                 };

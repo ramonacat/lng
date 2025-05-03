@@ -699,6 +699,7 @@ impl<'ctx> Compiler<'ctx> {
         let value = match function.return_type {
             types::Type::Unit => Value::Empty,
             types::Type::Object {
+                type_argument_values: _,
                 type_name: item_path,
             } => Value::Reference(RcValue::from_pointer(
                 call_result.into_pointer_value(),

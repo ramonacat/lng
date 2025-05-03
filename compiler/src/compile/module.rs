@@ -113,6 +113,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::Type::Unit => todo!(),
                 types::Type::Object {
                     type_name: identifier,
+                    type_argument_values: _,
                 } => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
