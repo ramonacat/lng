@@ -124,6 +124,13 @@ impl<'ctx> GlobalScope<'ctx> {
         self.modules.get(&path)
     }
 
+    pub(crate) fn get_module_mut(
+        &mut self,
+        root_path: FQName,
+    ) -> Option<&mut CompiledModule<'ctx>> {
+        self.modules.get_mut(&root_path)
+    }
+
     pub fn get_value(&self, item_path: FQName) -> Option<Value<'ctx>> {
         self.modules
             .get(&item_path.without_last())

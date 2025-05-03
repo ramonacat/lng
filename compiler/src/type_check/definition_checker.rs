@@ -155,11 +155,8 @@ impl<'pre> DefinitionChecker<'pre> {
                         Self::type_check_struct(*struct_name, fields, struct_impls, declared_item);
                     root_module.declare_item(*item_path, item);
                 }
-                DeclaredItemKind::Import(DeclaredImport {
-                    imported_item,
-                    position,
-                }) => {
-                    self.type_check_import(&mut root_module, *item_path, *imported_item, position);
+                DeclaredItemKind::Import(DeclaredImport { imported_item }) => {
+                    self.type_check_import(&mut root_module, *item_path, *imported_item);
                 }
                 DeclaredItemKind::Predeclared(_) => {}
                 DeclaredItemKind::Module(module_declaration) => {
@@ -267,7 +264,6 @@ impl<'pre> DefinitionChecker<'pre> {
         root_module: &mut types::Module,
         item_path: types::Identifier,
         imported_item: FQName,
-        position: &ast::SourceRange,
     ) {
         let imported_item = self
             .root_module_declaration
@@ -298,7 +294,6 @@ impl<'pre> DefinitionChecker<'pre> {
                 types::Item {
                     kind: types::ItemKind::Import(types::Import {
                         imported_item: *imported_item_name,
-                        position: *position,
                     }),
                     visibility: types::Visibility::Internal, // TODO can imports be reexported?
                 },

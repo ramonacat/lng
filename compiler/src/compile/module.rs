@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 
 use super::{
     CompiledFunction, FunctionHandle, Scope, Value, builtins,
@@ -16,6 +16,7 @@ pub struct CompiledModule<'ctx> {
     path: types::FQName,
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
+    imported_functions: HashMap<types::FQName, FunctionHandle>,
 }
 
 impl std::fmt::Debug for CompiledModule<'_> {
@@ -25,15 +26,12 @@ impl std::fmt::Debug for CompiledModule<'_> {
 }
 
 impl<'ctx> CompiledModule<'ctx> {
-    pub const fn new(
-        path: types::FQName,
-        scope: Rc<Scope<'ctx>>,
-        llvm_module: Module<'ctx>,
-    ) -> Self {
+    pub fn new(path: types::FQName, scope: Rc<Scope<'ctx>>, llvm_module: Module<'ctx>) -> Self {
         Self {
             path,
             llvm_module,
             scope,
+            imported_functions: HashMap::new(),
         }
     }
 
@@ -79,20 +77,8 @@ impl<'ctx> CompiledModule<'ctx> {
         )
     }
 
-    pub fn import_function(
-        &self,
-        function: &FunctionHandle,
-        type_argument_values: &types::TypeArgumentValues,
-        context: &CompilerContext<'ctx>,
-    ) -> FunctionValue<'ctx> {
-        self.declare_function_inner(
-            &function.name,
-            &function.arguments,
-            &function.return_type,
-            Linkage::External,
-            type_argument_values,
-            context,
-        )
+    pub fn import_function(&mut self, function: FunctionHandle) {
+        self.imported_functions.insert(function.fqname, function);
     }
 
     pub fn set_variable(&self, name: types::Identifier, value: Value<'ctx>) {

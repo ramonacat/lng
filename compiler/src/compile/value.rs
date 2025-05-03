@@ -12,7 +12,7 @@ use crate::{
     types::{self, FQName, Identifier, TypeArgumentValues},
 };
 
-use super::{builtins::rc::RcValue, context::CompilerContext, module::CompiledModule};
+use super::{builtins::rc::RcValue, context::CompilerContext};
 
 #[derive(Clone)]
 pub struct FunctionHandle {
@@ -150,33 +150,8 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
         context.builder.build_store(field_pointer, value).unwrap();
     }
 
-    pub fn import(&self, importing_module: &CompiledModule<'ctx>, context: &CompilerContext<'ctx>) {
-        for impl_ in self.static_field_values.values() {
-            match impl_ {
-                Value::Primitive(_, _) => todo!(),
-                Value::Reference(_) => todo!(),
-                Value::Function(function_handle) => {
-                    // TODO the import should be actually executed on call, so that the type
-                    // arguments can be set
-                    importing_module.import_function(
-                        function_handle,
-                        &TypeArgumentValues::new_empty(),
-                        context,
-                    )
-                }
-                Value::Struct(_) => todo!(),
-                Value::Empty => todo!(),
-            };
-        }
-
-        importing_module.set_variable(
-            self.description.name.last(),
-            Value::Struct(self.description.clone()),
-        );
-    }
-
     // TODO this should be integrated with build_field_load perhaps?
-    pub fn read_field_value(
+    pub(crate) fn read_field_value(
         &self,
         _instance: Value<'ctx>,
         name: Identifier,

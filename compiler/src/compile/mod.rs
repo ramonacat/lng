@@ -351,7 +351,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn resolve_imports(
-        &self,
+        &mut self,
         program: &types::Module,
         root_path: FQName,
     ) -> Result<(), CompileError> {
@@ -359,49 +359,30 @@ impl<'ctx> Compiler<'ctx> {
             match &item.kind {
                 types::ItemKind::Function(_) | types::ItemKind::Struct(_) => {}
                 types::ItemKind::Import(import) => {
-                    let Some(module) = self.context.global_scope.get_module(root_path) else {
-                        return Err(
-                            CompileErrorDescription::ModuleNotFound(root_path).at_indeterminate()
-                        );
-                    };
-
                     let value = self
                         .context
                         .global_scope
                         .get_value(import.imported_item)
                         .unwrap();
 
+                    let Some(module) = self.context.global_scope.get_module_mut(root_path) else {
+                        return Err(
+                            CompileErrorDescription::ModuleNotFound(root_path).at_indeterminate()
+                        );
+                    };
+
                     match value {
                         Value::Primitive(_, _) => todo!(),
                         Value::Reference(_) => todo!(),
                         Value::Function(function) => {
-                            // TODO the import should really be resolved on access, so that we can
-                            // actually declare with correct TypeArgumentValues
-                            module.import_function(
-                                &function,
-                                &TypeArgumentValues::new_empty(),
-                                &self.context,
-                            );
+                            module.import_function(function.clone());
 
-                            let function_value = Value::Function(FunctionHandle {
-                                fqname: function.fqname,
-                                linkage: Linkage::External,
-                                name: function.name.clone(),
-                                return_type: function.return_type,
-                                position: import.position,
-                                arguments: function.arguments.clone(),
-                            });
+                            let function_value = Value::Function(function.clone());
 
                             module.set_variable(name, function_value);
                         }
-                        Value::Struct(ref struct_) => {
-                            // TODO this should really only happen on instantiation, so that we can
-                            // actually pass the correct type arguments when they're resolved
-                            let struct_ = InstantiatedStructHandle::new(
-                                struct_.clone(),
-                                types::TypeArgumentValues::new_empty(),
-                            );
-                            struct_.import(module, &self.context);
+                        Value::Struct(struct_) => {
+                            module.set_variable(name, Value::Struct(struct_.clone()));
                         }
                         Value::Empty => todo!(),
                     }

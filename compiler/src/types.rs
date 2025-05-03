@@ -485,7 +485,6 @@ pub struct LetStatement {
 #[derive(Debug, Clone)]
 pub struct Import {
     pub imported_item: FQName,
-    pub position: ast::SourceRange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

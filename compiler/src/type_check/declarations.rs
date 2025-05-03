@@ -48,7 +48,6 @@ pub(super) struct DeclaredStructField {
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredImport {
     pub(super) imported_item: types::FQName,
-    pub(super) position: ast::SourceRange,
 }
 
 #[derive(Debug, Clone)]
