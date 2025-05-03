@@ -22,7 +22,7 @@ use inkwell::{
 use module::CompiledModule;
 use rand::Rng;
 use scope::{GlobalScope, Scope};
-use value::{FunctionHandle, InstantiatedStructHandle, Value};
+use value::{FunctionHandle, InstantiatedStructHandle, StructInstance, Value};
 
 use crate::{
     ast::SourceRange,
@@ -579,8 +579,7 @@ impl<'ctx> Compiler<'ctx> {
 
                 let rc = RcValue::build_init(
                     &unique_name(&[&name.raw(), "rc"]),
-                    value,
-                    s.clone(),
+                    &StructInstance::new(value, s.clone()),
                     &self.context,
                 );
                 compiled_function.rcs.push(rc.clone());

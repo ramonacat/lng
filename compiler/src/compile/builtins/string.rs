@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use inkwell::values::BasicValue as _;
 
 use crate::{
-    compile::{context::CompilerContext, value::InstantiatedStructHandle},
+    compile::{
+        context::CompilerContext,
+        value::{InstantiatedStructHandle, StructInstance},
+    },
     std::TYPE_NAME_STRING,
     types::{self, Identifier, TypeArguments},
 };
@@ -51,7 +54,11 @@ impl StringValue {
             field_values,
         );
 
-        RcValue::build_init(name, literal_value, string_handle, context)
+        RcValue::build_init(
+            name,
+            &StructInstance::new(literal_value, string_handle),
+            context,
+        )
     }
 }
 

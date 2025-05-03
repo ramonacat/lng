@@ -6,7 +6,11 @@ use inkwell::{
 };
 
 use crate::{
-    compile::{context::CompilerContext, unique_name, value::InstantiatedStructHandle},
+    compile::{
+        context::CompilerContext,
+        unique_name,
+        value::{InstantiatedStructHandle, StructInstance},
+    },
     types::{self, FQName, Identifier, TypeArgumentValues},
 };
 
@@ -47,9 +51,7 @@ pub fn describe_structure() -> types::Struct {
 impl<'ctx> RcValue<'ctx> {
     pub fn build_init<'src>(
         name: &str,
-        // TODO should we have a type for (value, value_type)?
-        value: PointerValue<'ctx>,
-        value_type: InstantiatedStructHandle<'ctx>,
+        struct_instance: &StructInstance<'ctx>,
         context: &CompilerContext<'ctx>,
     ) -> Self
     where
@@ -58,19 +60,22 @@ impl<'ctx> RcValue<'ctx> {
         let mut tav = HashMap::new();
         tav.insert(
             types::TypeArgument::new(types::Identifier::parse("TPointee")),
-            types::Type::StructDescriptor(value_type.type_descriptor()),
+            types::Type::StructDescriptor(struct_instance.type_descriptor()),
         );
         let tav = types::TypeArgumentValues::new(tav);
         let mut field_values = HashMap::new();
         field_values.insert(*REFCOUNT_FIELD, context.const_u64(1).as_basic_value_enum());
-        field_values.insert(*POINTEE_FIELD, value.as_basic_value_enum());
+        field_values.insert(
+            *POINTEE_FIELD,
+            struct_instance.value().as_basic_value_enum(),
+        );
 
         let rc = InstantiatedStructHandle::new(context.builtins.rc_handle.clone(), tav)
             .build_heap_instance(context, name, field_values);
 
         Self {
             pointer: rc,
-            value_type,
+            value_type: struct_instance.handle(),
         }
     }
 

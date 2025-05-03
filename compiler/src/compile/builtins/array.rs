@@ -3,7 +3,11 @@ use std::{collections::HashMap, sync::LazyLock};
 use inkwell::values::BasicValue;
 
 use crate::{
-    compile::{context::CompilerContext, unique_name, value::InstantiatedStructHandle},
+    compile::{
+        context::CompilerContext,
+        unique_name,
+        value::{InstantiatedStructHandle, StructInstance},
+    },
     types::{self, Identifier, TypeArgument, TypeArgumentValues},
 };
 
@@ -84,8 +88,7 @@ impl ArrayValue {
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),
-            array_value,
-            array_struct.clone(),
+            &StructInstance::new(array_value, array_struct.clone()),
             context,
         )
     }

@@ -58,12 +58,12 @@ impl<'ctx> Scope<'ctx> {
         })
     }
 
-    pub fn set_value(&self, name: types::Identifier, value: Value<'ctx>) {
+    pub(crate) fn set_value(&self, name: types::Identifier, value: Value<'ctx>) {
         let old = self.locals.write().unwrap().insert(name, value);
         assert!(old.is_none());
     }
 
-    pub fn get_value(&self, name: types::Identifier) -> Option<Value<'ctx>> {
+    pub(crate) fn get_value(&self, name: types::Identifier) -> Option<Value<'ctx>> {
         if let Some(variable) = self.locals.read().unwrap().get(&name) {
             return Some(variable.clone());
         }
@@ -131,7 +131,7 @@ impl<'ctx> GlobalScope<'ctx> {
         self.modules.get_mut(&root_path)
     }
 
-    pub fn get_value(&self, item_path: FQName) -> Option<Value<'ctx>> {
+    pub(crate) fn get_value(&self, item_path: FQName) -> Option<Value<'ctx>> {
         self.modules
             .get(&item_path.without_last())
             .and_then(|x| x.get_variable(item_path.last()))

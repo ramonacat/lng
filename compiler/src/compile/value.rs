@@ -49,6 +49,29 @@ pub struct InstantiatedStructHandle<'ctx> {
     type_argument_values: types::TypeArgumentValues,
 }
 
+pub struct StructInstance<'ctx>(PointerValue<'ctx>, InstantiatedStructHandle<'ctx>);
+
+impl<'ctx> StructInstance<'ctx> {
+    pub(crate) fn type_descriptor(&self) -> types::StructDescriptorType {
+        self.1.type_descriptor()
+    }
+
+    pub(crate) const fn value(&self) -> PointerValue<'ctx> {
+        self.0
+    }
+
+    pub(crate) fn handle(&self) -> InstantiatedStructHandle<'ctx> {
+        self.1.clone()
+    }
+
+    pub(crate) const fn new(
+        pointer: PointerValue<'ctx>,
+        type_: InstantiatedStructHandle<'ctx>,
+    ) -> Self {
+        Self(pointer, type_)
+    }
+}
+
 impl Debug for InstantiatedStructHandle<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let fields = self
@@ -235,6 +258,7 @@ pub enum Value<'ctx> {
     Empty,
     Primitive(InstantiatedStructHandle<'ctx>, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
+    #[allow(unused)]
     Callable(FunctionHandle, TypeArgumentValues),
     Function(FunctionHandle),
     Struct(types::Struct),

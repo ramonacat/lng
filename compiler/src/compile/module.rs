@@ -81,11 +81,11 @@ impl<'ctx> CompiledModule<'ctx> {
         self.imported_functions.insert(function.fqname, function);
     }
 
-    pub fn set_variable(&self, name: types::Identifier, value: Value<'ctx>) {
+    pub(crate) fn set_variable(&self, name: types::Identifier, value: Value<'ctx>) {
         self.scope.set_value(name, value);
     }
 
-    pub fn get_variable(&self, name: types::Identifier) -> Option<Value<'ctx>> {
+    pub(crate) fn get_variable(&self, name: types::Identifier) -> Option<Value<'ctx>> {
         self.scope.get_value(name)
     }
 
