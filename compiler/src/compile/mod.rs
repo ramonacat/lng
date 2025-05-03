@@ -28,7 +28,7 @@ use crate::{
     ast::SourceRange,
     errors::ErrorLocation,
     std::{compile_std, runtime::register_mappings},
-    types::{self, FQName, Identifier, TypeArgumentValues},
+    types::{self, FQName, Identifier, TypeArgumentValues, TypeArguments},
 };
 
 fn unique_name(parts: &[&str]) -> String {
@@ -284,9 +284,20 @@ impl<'ctx> Compiler<'ctx> {
 
         self.declare_items(root_module, FQName::parse(""));
         self.resolve_imports(root_module, FQName::parse(""))?;
-        self.define_items(root_module, FQName::parse(""))?;
+
+        // self.define_items(root_module, FQName::parse(""))?;
 
         if let Some(main) = main {
+            let handle = self
+                .context
+                .global_scope
+                .get_value(main)
+                .unwrap()
+                .as_function()
+                .unwrap();
+            // TODO verify in type_check that main has no generic arguments
+            self.compile_function(&handle, &types::TypeArgumentValues::new_empty())
+                .unwrap();
             Ok(CompiledRootModule::App {
                 scope: self.context.global_scope,
                 main,
@@ -298,58 +309,6 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn define_items(&self, program: &types::Module, root_path: FQName) -> Result<(), CompileError> {
-        for (item_name, item) in program.items() {
-            let Some(module) = self.context.global_scope.get_module(root_path) else {
-                return Err(CompileErrorDescription::ModuleNotFound(root_path).at_indeterminate());
-            };
-
-            match &item.kind {
-                types::ItemKind::Function(function) => {
-                    // TODO this should happen on call, so that the generics can be resolved and
-                    // the correct implementation can be instantiated
-                    self.compile_function(
-                        module
-                            .get_variable(item_name)
-                            .unwrap()
-                            .as_function()
-                            .unwrap(),
-                        module,
-                        &function.definition,
-                        &types::TypeArgumentValues::new_empty(),
-                    )?;
-                }
-                types::ItemKind::Struct(struct_) => {
-                    for (impl_name, impl_) in &struct_.impls {
-                        // TODO this should happen when the struct is instantiated or on call, so that the generics can be resolved and
-                        // the correct implementation can be instantiated
-                        let var_type = module.get_variable(item_name).unwrap().as_struct().unwrap();
-                        let var_type = InstantiatedStructHandle::new(
-                            var_type,
-                            types::TypeArgumentValues::new_empty(),
-                        );
-                        self.compile_function(
-                            var_type
-                                .read_field_value(Value::Empty, *impl_name)
-                                .unwrap()
-                                .as_function()
-                                .unwrap(),
-                            module,
-                            &impl_.definition,
-                            &TypeArgumentValues::new_empty(),
-                        )?;
-                    }
-                }
-                types::ItemKind::Import(_) => {}
-                types::ItemKind::Module(module) => {
-                    self.define_items(module, root_path.with_part(item_name))?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     fn resolve_imports(
         &mut self,
         program: &types::Module,
@@ -359,6 +318,7 @@ impl<'ctx> Compiler<'ctx> {
             match &item.kind {
                 types::ItemKind::Function(_) | types::ItemKind::Struct(_) => {}
                 types::ItemKind::Import(import) => {
+                    dbg!(import, root_path);
                     let value = self
                         .context
                         .global_scope
@@ -403,6 +363,7 @@ impl<'ctx> Compiler<'ctx> {
             match &declaration.kind {
                 types::ItemKind::Function(function) => {
                     let function_handle = FunctionHandle {
+                        definition: function.definition.clone(),
                         linkage: if declaration.visibility == types::Visibility::Export
                             || matches!(function.definition.body, types::FunctionBody::Extern(_))
                         {
@@ -415,6 +376,9 @@ impl<'ctx> Compiler<'ctx> {
                         return_type: function.definition.return_type.clone(),
                         arguments: function.definition.arguments.clone(),
                         position: function.definition.position,
+                        // TODO get the type arguments from the delcaration
+                        type_arguments: TypeArguments::new_empty(),
+                        module_name: function.name.without_last(),
                     };
 
                     module.set_variable(function.name.last(), Value::Function(function_handle));
@@ -441,17 +405,20 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_function(
-        &self,
-        handle: FunctionHandle,
-        module: &module::CompiledModule<'ctx>,
-        function: &types::FunctionDefinition,
+        &mut self,
+        handle: &FunctionHandle,
         type_argument_values: &types::TypeArgumentValues,
     ) -> Result<(), CompileError> {
-        let types::FunctionBody::Statements(statements) = &function.body else {
+        let types::FunctionBody::Statements(statements) = &handle.definition.body else {
             return Ok(());
         };
+
+        let module_path = handle.module_name;
+        self.get_or_create_module(module_path);
+        let module = self.context.global_scope.get_module(module_path).unwrap();
+
         let mut compiled_function =
-            module.begin_compile_function(handle, function, type_argument_values, &self.context);
+            module.begin_compile_function(handle.clone(), type_argument_values, &self.context);
 
         for statement in statements {
             let self_value = compiled_function.scope.get_value(Identifier::parse("self"));
@@ -462,7 +429,7 @@ impl<'ctx> Compiler<'ctx> {
                         expression,
                         self_value,
                         &mut compiled_function,
-                        module,
+                        module_path,
                     )?;
                 }
                 types::Statement::Let(let_) => {
@@ -470,7 +437,7 @@ impl<'ctx> Compiler<'ctx> {
                         &let_.value,
                         self_value,
                         &mut compiled_function,
-                        module,
+                        module_path,
                     )?;
 
                     compiled_function.scope.set_value(let_.binding, value.1);
@@ -480,13 +447,14 @@ impl<'ctx> Compiler<'ctx> {
                         expression,
                         self_value,
                         &mut compiled_function,
-                        module,
+                        module_path,
                     )?;
 
                     compiled_function.set_return_value(value.1);
                 }
             }
         }
+
         let cleanup_label = rc::build_cleanup(
             &self.context,
             &compiled_function
@@ -546,11 +514,11 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_expression(
-        &self,
+        &mut self,
         expression: &types::Expression,
         self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
-        module: &CompiledModule<'ctx>,
+        module_path: FQName,
     ) -> Result<(Option<Value<'ctx>>, Value<'ctx>), CompileError> {
         let position = expression.position;
 
@@ -559,7 +527,7 @@ impl<'ctx> Compiler<'ctx> {
                 let value = self.compile_expression_call(
                     self_.as_ref(),
                     compiled_function,
-                    module,
+                    module_path,
                     position,
                     target,
                     arguments,
@@ -587,6 +555,8 @@ impl<'ctx> Compiler<'ctx> {
                 )),
             },
             types::ExpressionKind::VariableAccess(name) => {
+                dbg!(&compiled_function.scope);
+                dbg!(&self.context.global_scope);
                 Ok((None, compiled_function.scope.get_value(*name).unwrap()))
             }
             types::ExpressionKind::StructConstructor(name) => {
@@ -623,7 +593,7 @@ impl<'ctx> Compiler<'ctx> {
                 field: field_name,
             } => {
                 let (_, target_value) =
-                    self.compile_expression(target, self_, compiled_function, module)?;
+                    self.compile_expression(target, self_, compiled_function, module_path)?;
 
                 let access_result = target_value.read_field_value(*field_name).unwrap();
 
@@ -634,26 +604,54 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_expression_call(
-        &self,
+        &mut self,
         self_: Option<&Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
-        module: &CompiledModule<'ctx>,
+        module_path: FQName,
         position: SourceRange,
         target: &types::Expression,
         arguments: &[types::Expression],
     ) -> Result<Value<'ctx>, CompileError> {
         let compiled_target =
-            self.compile_expression(target, self_.cloned(), compiled_function, module)?;
+            self.compile_expression(target, self_.cloned(), compiled_function, module_path)?;
+
         let (self_value, Value::Function(function)) = compiled_target else {
             todo!();
         };
+
+        // TODO the type arguments should be known here -- self.compile_expression should return an
+        // instantiated type!
+        if !self
+            .context
+            .global_scope
+            .get_module(function.module_name)
+            .unwrap()
+            .has_function(&function.name)
+        {
+            self.compile_function(&function, &TypeArgumentValues::new_empty())
+                .unwrap();
+        }
+
+        // TODO the same typeargumentvalues as for compile_function!
+        let compiled_target_function = self
+            .context
+            .global_scope
+            .get_module(module_path)
+            .unwrap()
+            .get_or_create_function(&function, &TypeArgumentValues::new_empty(), &self.context);
+
+        self.context
+            .builder
+            .position_at_end(compiled_function.entry);
+
         let mut compiled_arguments_iter = arguments
             .iter()
             .map(|a| {
-                self.compile_expression(a, self_value.clone(), compiled_function, module)
+                self.compile_expression(a, self_value.clone(), compiled_function, module_path)
                     .map(|x| x.1)
             })
             .collect::<Result<Vec<_>, _>>()?;
+
         let call_arguments = compiled_arguments_iter
             .iter_mut()
             .map(|a| match a {
@@ -666,17 +664,12 @@ impl<'ctx> Compiler<'ctx> {
                 Value::Empty => todo!(),
             })
             .collect::<Vec<BasicMetadataValueEnum>>();
+
         let call_result = self
             .context
             .builder
             .build_call(
-                // TODO the type argument values should come from the call expression and be set
-                // here!
-                module.get_or_create_function(
-                    &function,
-                    &TypeArgumentValues::new_empty(),
-                    &self.context,
-                ),
+                compiled_target_function,
                 &call_arguments,
                 &unique_name(&["call_result"]),
             )
@@ -696,7 +689,7 @@ impl<'ctx> Compiler<'ctx> {
                     .as_struct()
                     .unwrap();
 
-                let value_type = InstantiatedStructHandle::new(value_type, object_tav);
+                let value_type = Self::instantiate_struct(value_type, object_tav);
 
                 Value::Reference(RcValue::from_pointer(
                     call_result.into_pointer_value(),
@@ -712,5 +705,12 @@ impl<'ctx> Compiler<'ctx> {
             types::Type::Generic(_) => todo!(),
         };
         Ok(value)
+    }
+
+    fn instantiate_struct(
+        struct_: types::Struct,
+        tav: TypeArgumentValues,
+    ) -> InstantiatedStructHandle<'ctx> {
+        InstantiatedStructHandle::new(struct_, tav)
     }
 }

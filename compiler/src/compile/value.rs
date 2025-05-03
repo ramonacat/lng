@@ -9,7 +9,7 @@ use itertools::Itertools;
 use crate::{
     ast::SourceRange,
     name_mangler::MangledIdentifier,
-    types::{self, FQName, Identifier, TypeArgumentValues},
+    types::{self, FQName, Identifier, TypeArgumentValues, TypeArguments},
 };
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
@@ -18,10 +18,13 @@ use super::{builtins::rc::RcValue, context::CompilerContext};
 pub struct FunctionHandle {
     pub name: MangledIdentifier,
     pub fqname: FQName,
+    pub module_name: FQName,
     pub position: SourceRange,
+    pub type_arguments: types::TypeArguments,
     pub arguments: Vec<types::Argument>,
     pub return_type: types::Type,
     pub linkage: Linkage,
+    pub definition: types::FunctionDefinition,
 }
 
 impl Debug for FunctionHandle {
@@ -180,6 +183,7 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
             .iter()
             .map(|(name, impl_)| {
                 let handle = FunctionHandle {
+                    definition: impl_.definition.clone(),
                     fqname: description.name.with_part(*name),
                     linkage: if impl_.visibility == types::Visibility::Export {
                         Linkage::External
@@ -190,6 +194,10 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
                     return_type: impl_.definition.return_type.clone(),
                     arguments: impl_.definition.arguments.clone(),
                     position: impl_.definition.position,
+                    // TODO get them from the definition, also ensure the ones from the struct are
+                    // implicitly declared here
+                    type_arguments: TypeArguments::new_empty(),
+                    module_name: description.name.without_last(),
                 };
                 (*name, Value::Function(handle))
             })

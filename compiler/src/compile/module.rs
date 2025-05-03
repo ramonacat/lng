@@ -92,7 +92,6 @@ impl<'ctx> CompiledModule<'ctx> {
     pub(crate) fn begin_compile_function(
         &self,
         handle: FunctionHandle,
-        function: &types::FunctionDefinition,
         type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
@@ -107,7 +106,11 @@ impl<'ctx> CompiledModule<'ctx> {
 
         context.builder.position_at_end(entry_block);
 
-        for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
+        for (argument, argument_value) in handle
+            .definition
+            .arguments
+            .iter()
+            .zip(llvm_function.get_params())
         {
             let value = match &argument.type_ {
                 types::Type::Unit => todo!(),
@@ -172,6 +175,10 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) const fn path(&self) -> types::FQName {
         self.path
+    }
+
+    pub(crate) fn has_function(&self, name: &MangledIdentifier) -> bool {
+        self.llvm_module.get_function(name.as_str()).is_some()
     }
 
     pub(crate) fn get_or_create_function(
