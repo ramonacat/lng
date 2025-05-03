@@ -115,6 +115,8 @@ pub struct Function {
     pub arguments: Vec<Argument>,
     pub return_type: TypeDescription,
     pub body: FunctionBody,
+    pub visibility: Visibility,
+    pub position: SourceRange,
 }
 
 #[derive(Debug, Clone)]
@@ -128,12 +130,13 @@ pub struct StructField {
 pub struct Struct {
     pub name: String,
     pub fields: Vec<StructField>,
+    pub visibility: Visibility,
 }
 
 #[derive(Debug, Clone)]
 pub struct Impl {
     pub struct_name: String,
-    pub functions: Vec<(Visibility, Function)>,
+    pub functions: Vec<Function>,
 }
 
 #[derive(Debug, Clone)]
@@ -152,7 +155,6 @@ pub enum Visibility {
 #[derive(Debug, Clone)]
 pub struct Declaration {
     pub kind: DeclarationKind,
-    pub visibility: Visibility,
     pub position: SourceRange,
 }
 

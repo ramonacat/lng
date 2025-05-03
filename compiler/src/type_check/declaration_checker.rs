@@ -91,8 +91,7 @@ impl DeclarationChecker {
                             .iter()
                             .map(|f| {
                                 self.type_check_associated_function_declaration(
-                                    f.0,
-                                    &f.1,
+                                    f,
                                     struct_path,
                                     position,
                                 )
@@ -181,15 +180,15 @@ impl DeclarationChecker {
 
                         self.detect_potential_entrypoint(
                             module_path,
-                            declaration.visibility,
+                            function.visibility,
                             &function_declaration,
                         );
 
                         self.root_module_declaration.declare(
                             module_path.with_part(types::Identifier::parse(&function.name)),
                             DeclaredItem {
+                                visibility: Self::convert_visibility(function.visibility),
                                 kind: DeclaredItemKind::Function(function_declaration),
-                                visibility: Self::convert_visibility(declaration.visibility),
                             },
                         );
                     }
@@ -214,7 +213,7 @@ impl DeclarationChecker {
                             name,
                             DeclaredItem {
                                 kind: DeclaredItemKind::Struct(DeclaredStruct { name, fields }),
-                                visibility: Self::convert_visibility(declaration.visibility),
+                                visibility: Self::convert_visibility(struct_.visibility),
                             },
                         );
                     }
@@ -299,7 +298,6 @@ impl DeclarationChecker {
 
     fn type_check_associated_function_declaration(
         &self,
-        visibility: ast::Visibility,
         function: &ast::Function,
         self_type: types::FQName,
         position: ast::SourceRange,
@@ -338,7 +336,7 @@ impl DeclarationChecker {
                 ast: function.clone(),
                 position,
             },
-            visibility: Self::convert_visibility(visibility),
+            visibility: Self::convert_visibility(function.visibility),
         })
     }
 

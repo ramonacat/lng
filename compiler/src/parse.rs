@@ -113,8 +113,8 @@ fn parse_impl(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
         match item.as_rule() {
             Rule::identifier => struct_name = item.as_str().to_string(),
             Rule::function_declaration => {
-                let (_, visibility, function) = parse_function_inner(item)?;
-                functions.push((visibility, function));
+                let function = parse_function_inner(item)?;
+                functions.push(function);
             }
             _ => {
                 return Err(ParseError::InternalError(InternalError::UnexpectedRule(
@@ -131,8 +131,6 @@ fn parse_impl(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
 
     Ok(Declaration {
         kind: crate::ast::DeclarationKind::Impl(impl_),
-        // TODO visiblity here is meaningless, should we move it into function/struct?
-        visibility: Visibility::Export,
         position,
     })
 }
@@ -179,15 +177,18 @@ fn parse_struct(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
         }
     }
 
-    let struct_ = Struct { name, fields };
-
-    Ok(Declaration {
-        kind: crate::ast::DeclarationKind::Struct(struct_),
+    let struct_ = Struct {
+        name,
+        fields,
         visibility: if export {
             Visibility::Export
         } else {
             Visibility::Internal
         },
+    };
+
+    Ok(Declaration {
+        kind: crate::ast::DeclarationKind::Struct(struct_),
         position,
     })
 }
@@ -236,12 +237,11 @@ fn parse_import(item: Pair<Rule>) -> Result<Import, ParseError<'_>> {
 }
 
 fn parse_function(function: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
-    let (position, visibility, function) = parse_function_inner(function)?;
+    let function = parse_function_inner(function)?;
 
     Ok(Declaration {
+        position: function.position,
         kind: crate::ast::DeclarationKind::Function(function),
-        visibility,
-        position,
     })
 }
 
@@ -307,9 +307,7 @@ fn parse_function_body(element: Pair<Rule>) -> Result<FunctionBody, ParseError<'
     }
 }
 
-fn parse_function_inner(
-    function: Pair<Rule>,
-) -> Result<(SourceRange, Visibility, Function), ParseError<'_>> {
+fn parse_function_inner(function: Pair<Rule>) -> Result<Function, ParseError<'_>> {
     let mut name = String::new();
     let mut type_ = String::new();
     let mut arguments = vec![];
@@ -365,16 +363,14 @@ fn parse_function_inner(
         Visibility::Internal
     };
 
-    Ok((
-        position,
+    Ok(Function {
+        name,
+        arguments,
+        return_type: parse_type(type_.as_str()),
+        body: body.unwrap(),
         visibility,
-        Function {
-            name,
-            arguments,
-            return_type: parse_type(type_.as_str()),
-            body: body.unwrap(),
-        },
-    ))
+        position,
+    })
 }
 
 fn parse_expression(expression: Pair<Rule>) -> Result<Expression, ParseError<'_>> {
