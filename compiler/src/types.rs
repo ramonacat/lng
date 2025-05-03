@@ -147,16 +147,25 @@ impl StructDescriptorType {
             return Type::Unit;
         }
 
-        Type::Object(self.name)
+        Type::Object {
+            type_name: self.name,
+        }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TypeArgument(Identifier);
 
 // TODO support generics
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Unit,
-    Object(FQName),
-    Array(Box<Type>),
+    Object {
+        type_name: FQName,
+    },
+    Array {
+        element_type: Box<Type>,
+    },
     // TODO this should probably be simply an object, just of StructDescriptor<TargetStruct> type
     StructDescriptor(StructDescriptorType),
     // TODO this should be an object with special properties
@@ -169,19 +178,23 @@ pub enum Type {
     // TODO add float
     U64,
     U8,
-    // TODO do we want this exposed to userland in an unsafe mode?
+
     Pointer(Box<Type>),
 }
 impl Type {
     pub(crate) fn debug_name(&self) -> String {
         match &self {
             Self::Unit => "void".to_string(),
-            Self::Object(item_path) => format!("{item_path}"),
+            Self::Object {
+                type_name: item_path,
+            } => format!("{item_path}"),
             Self::StructDescriptor(StructDescriptorType {
                 name: item_path,
                 fields: _,
             }) => format!("Struct<{item_path}>"),
-            Self::Array(inner) => format!("{}[]", inner.debug_name()),
+            Self::Array {
+                element_type: inner,
+            } => format!("{}[]", inner.debug_name()),
             Self::Callable {
                 arguments,
                 return_type,
@@ -203,8 +216,10 @@ impl Type {
     pub(crate) fn name(&self) -> FQName {
         match &self {
             Self::Unit => todo!(),
-            Self::Object(item_path) => *item_path,
-            Self::Array(_) => todo!(),
+            Self::Object {
+                type_name: item_path,
+            } => *item_path,
+            Self::Array { .. } => todo!(),
             Self::StructDescriptor(_) => todo!(),
             Self::Callable { .. } => todo!(),
             Self::U64 => *TYPE_NAME_U64,
@@ -216,8 +231,13 @@ impl Type {
     pub(crate) fn instance_type(&self) -> Self {
         match &self {
             Self::Unit => todo!(),
-            Self::Object(_) => todo!(),
-            Self::Array(inner) => Self::Array(Box::new(inner.instance_type())),
+            Self::Object { .. } => todo!(),
+            // TODO arrays cannot be instantiated, this case is wrong!
+            Self::Array {
+                element_type: inner,
+            } => Self::Array {
+                element_type: Box::new(inner.instance_type()),
+            },
             Self::StructDescriptor(struct_descriptor_type) => {
                 struct_descriptor_type.instance_type()
             }
@@ -233,8 +253,12 @@ impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unit => write!(f, "void"),
-            Self::Object(identifier) => write!(f, "{identifier}"),
-            Self::Array(inner) => write!(f, "{inner}[]"),
+            Self::Object {
+                type_name: identifier,
+            } => write!(f, "{identifier}"),
+            Self::Array {
+                element_type: inner,
+            } => write!(f, "{inner}[]"),
             Self::StructDescriptor(StructDescriptorType { name, fields: _ }) => {
                 write!(f, "StructDescriptor<{name}>")
             }

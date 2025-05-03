@@ -262,14 +262,14 @@ pub(super) fn resolve_type(
     error_location: ErrorLocation,
 ) -> Result<types::Type, TypeCheckError> {
     match r#type {
-        ast::TypeDescription::Array(type_description) => {
-            Ok(types::Type::Array(Box::new(resolve_type(
+        ast::TypeDescription::Array(type_description) => Ok(types::Type::Array {
+            element_type: Box::new(resolve_type(
                 root_module,
                 current_module,
                 type_description,
                 error_location,
-            )?)))
-        }
+            )?),
+        }),
         ast::TypeDescription::Named(name) if name == "()" => root_module
             .get_item(*TYPE_NAME_UNIT)
             .unwrap()

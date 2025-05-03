@@ -50,8 +50,8 @@ impl<'ctx> CompilerContext<'ctx> {
             types::Type::U64 => Box::new(self.llvm_context.i64_type()),
             types::Type::Callable { .. }
             | types::Type::Pointer(_)
-            | types::Type::Array(_)
-            | types::Type::Object(_) => {
+            | types::Type::Array { .. }
+            | types::Type::Object { .. } => {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
         }

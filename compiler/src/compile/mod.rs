@@ -698,7 +698,9 @@ impl<'ctx> Compiler<'ctx> {
         let call_result = call_result.as_any_value_enum();
         let value = match function.return_type {
             types::Type::Unit => Value::Empty,
-            types::Type::Object(item_path) => Value::Reference(RcValue::from_pointer(
+            types::Type::Object {
+                type_name: item_path,
+            } => Value::Reference(RcValue::from_pointer(
                 call_result.into_pointer_value(),
                 self.context
                     .global_scope
@@ -707,7 +709,7 @@ impl<'ctx> Compiler<'ctx> {
                     .as_struct()
                     .unwrap(),
             )),
-            types::Type::Array(_) => todo!(),
+            types::Type::Array { .. } => todo!(),
             types::Type::StructDescriptor(_) => todo!(),
             types::Type::Callable { .. } => todo!(),
             types::Type::U64 => todo!(),

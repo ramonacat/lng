@@ -290,7 +290,9 @@ impl<'pre> DeclarationChecker<'pre> {
         {
             if function_declaration.definition.arguments.len() == 1 {
                 if let Some(argument) = function_declaration.definition.arguments.first() {
-                    if let types::Type::Array(ref array_item_type) = resolve_type(
+                    if let types::Type::Array {
+                        element_type: ref array_item_type,
+                    } = resolve_type(
                         &self.root_module_declaration,
                         module_path,
                         &argument.type_,

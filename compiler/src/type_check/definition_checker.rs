@@ -49,9 +49,9 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
         error_location: ErrorLocation,
     ) -> Result<types::Type, TypeCheckError> {
         match type_ {
-            ast::TypeDescription::Array(type_description) => Ok(types::Type::Array(Box::new(
-                self.resolve_type(type_description, error_location)?,
-            ))),
+            ast::TypeDescription::Array(type_description) => Ok(types::Type::Array {
+                element_type: Box::new(self.resolve_type(type_description, error_location)?),
+            }),
             ast::TypeDescription::Named(name) => {
                 let id = Identifier::parse(name);
 
@@ -488,7 +488,9 @@ impl<'pre> DefinitionChecker<'pre> {
             ast::ExpressionKind::Literal(literal) => match literal {
                 ast::Literal::String(value, _) => Ok(types::Expression {
                     position,
-                    type_: types::Type::Object(*TYPE_NAME_STRING),
+                    type_: types::Type::Object {
+                        type_name: *TYPE_NAME_STRING,
+                    },
                     kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
                 }),
                 ast::Literal::UnsignedInteger(value) => Ok(types::Expression {
@@ -523,7 +525,7 @@ impl<'pre> DefinitionChecker<'pre> {
 
                 Ok(types::Expression {
                     position,
-                    type_: types::Type::Object(name),
+                    type_: types::Type::Object { type_name: name },
                     kind: types::ExpressionKind::StructConstructor(id),
                 })
             }

@@ -111,7 +111,9 @@ impl<'ctx> CompiledModule<'ctx> {
         {
             let value = match &argument.type_ {
                 types::Type::Unit => todo!(),
-                types::Type::Object(identifier) => {
+                types::Type::Object {
+                    type_name: identifier,
+                } => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
                         context
@@ -125,7 +127,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
                     Value::Reference(rc)
                 }
-                types::Type::Array(a) => Value::Reference(
+                types::Type::Array { element_type: a } => Value::Reference(
                     builtins::array::ArrayValue::build_instance(a.as_ref(), context),
                 ),
                 types::Type::StructDescriptor(_) => todo!(),
