@@ -475,14 +475,15 @@ impl Module {
         self.items.iter().map(|(k, v)| (*k, v))
     }
 
-    pub(crate) fn get_item(&self, imported_item: FQName) -> Option<&Item> {
-        if imported_item.len() == 1 {
-            return self.items.get(&imported_item.last());
+    pub(crate) fn get_item(&self, item_name: FQName) -> Option<&Item> {
+        if item_name.len() == 1 {
+            return self.items.get(&item_name.last());
         }
 
-        let (first, rest) = imported_item.split_first();
+        let (first, rest) = item_name.split_first();
 
-        // TODO check visibility
+        // TODO check visibility (but for that we need an argument to tell us whether we should,
+        // and what the accessing module is)
         let Item {
             kind: ItemKind::Module(module),
             visibility: _,

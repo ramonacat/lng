@@ -59,17 +59,15 @@ impl<'globals> Locals<'globals> {
                     .get(&id)
                     .cloned()
                     .map(Ok)
-                    // TODO should this type_ method be integrated into this?
                     .or_else(|| {
                         self.globals
                             .get_item(self.scope_module_name.with_part(id))
                             .map(|x| Ok(x.type_(self.globals, error_location)?.instance_type()))
                     })
-                    // TODO pass the real ErrorLocation here
                     .unwrap_or_else(|| {
                         Err(
                             TypeCheckErrorDescription::ItemDoesNotExist(FQName::parse(name))
-                                .at(ErrorLocation::Indeterminate),
+                                .at(error_location),
                         )
                     })
             }
@@ -80,14 +78,23 @@ impl<'globals> Locals<'globals> {
         self.values.insert(name, r#type);
     }
 
-    fn get(&self, id: Identifier, error_location: ErrorLocation) -> Option<types::Type> {
-        self.values.get(&id).cloned().or_else(|| {
-            self.globals
-                .get_item(self.scope_module_name.with_part(id))
-                // TODO should we actually return an error here? Should this be
-                // Result<Option<types::Type>, TypeCheckError>?
-                .and_then(|x| x.type_(self.globals, error_location).ok())
-        })
+    fn get(
+        &self,
+        id: Identifier,
+        error_location: ErrorLocation,
+    ) -> Result<Option<types::Type>, TypeCheckError> {
+        self.values
+            .get(&id)
+            .cloned()
+            .map(Ok)
+            .or_else(|| {
+                self.globals
+                    .get_item(self.scope_module_name.with_part(id))
+                    // TODO should we actually return an error here? Should this be
+                    // Result<Option<types::Type>, TypeCheckError>?
+                    .map(|x| x.type_(self.globals, error_location))
+            })
+            .transpose()
     }
 }
 
@@ -500,7 +507,7 @@ impl DefinitionChecker {
             ast::ExpressionKind::VariableReference(name) => {
                 let id = types::Identifier::parse(name);
 
-                let value_type = locals.get(id, error_location).ok_or_else(|| {
+                let value_type = locals.get(id, error_location)?.ok_or_else(|| {
                     TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
                 })?;
 
@@ -514,12 +521,9 @@ impl DefinitionChecker {
                 let id = types::Identifier::parse(struct_name);
 
                 let types::Type::StructDescriptor(types::StructDescriptorType { name, fields: _ }) =
-                    locals
-                        .get(id, error_location)
-                        .ok_or_else(|| {
-                            TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
-                        })
-                        .unwrap()
+                    locals.get(id, error_location)?.ok_or_else(|| {
+                        TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
+                    })?
                 else {
                     todo!();
                 };

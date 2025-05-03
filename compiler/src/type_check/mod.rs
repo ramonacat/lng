@@ -29,7 +29,6 @@ impl types::Item {
             }
             types::ItemKind::Import(import) => root_module
                 .get_item(import.imported_item)
-                // TODO pass the error location as an argument here
                 .ok_or_else(|| {
                     TypeCheckErrorDescription::ItemDoesNotExist(import.imported_item)
                         .at(error_location)
