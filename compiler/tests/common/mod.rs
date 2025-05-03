@@ -3,8 +3,10 @@ use std::{cell::RefCell, collections::HashMap, ffi::CStr};
 use compiler::{
     compile::compile,
     parse::parse_file,
-    runtime::{LngRc, LngString},
-    std::type_check_std,
+    std::{
+        runtime::{LngRc, LngString},
+        type_check_std,
+    },
     type_check::type_check,
 };
 use inkwell::{execution_engine::ExecutionEngine, module::Module};
@@ -26,7 +28,7 @@ extern "C" fn test_println(arg: *const LngRc<LngString>) {
 }
 
 fn register_test_mappings(engine: &ExecutionEngine, module: &Module) {
-    compiler::runtime::register_mappings(engine, module);
+    compiler::std::runtime::register_mappings(engine, module);
 
     if let Some(println_handle) = module.get_function("println_impl") {
         engine.add_global_mapping(

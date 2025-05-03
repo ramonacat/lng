@@ -1,3 +1,5 @@
+pub mod runtime;
+
 use std::sync::LazyLock;
 
 use inkwell::context::Context;

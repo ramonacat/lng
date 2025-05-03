@@ -27,8 +27,7 @@ use value::{FunctionHandle, StructHandle, Value};
 use crate::{
     ast::SourceRange,
     errors::ErrorLocation,
-    runtime::register_mappings,
-    std::compile_std,
+    std::{compile_std, runtime::register_mappings},
     types::{self, FQName, Identifier},
 };
 
