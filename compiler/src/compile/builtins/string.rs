@@ -34,6 +34,12 @@ impl StringValue {
             types::Identifier::parse("characters"),
             characters_value.as_basic_value_enum(),
         );
+        field_values.insert(
+            types::Identifier::parse("length"),
+            context
+                .const_u64(self.value.len() as u64)
+                .as_basic_value_enum(),
+        );
 
         let literal_value = context.builtins.string_handle.build_heap_instance(
             context,
@@ -53,13 +59,20 @@ impl StringValue {
 pub fn describe_structure<'ctx>() -> StructHandle<'ctx> {
     StructHandle::new(types::Struct {
         name: *TYPE_NAME_STRING,
-        // TODO also store the length, in order to avoid using 0-termination
-        fields: vec![types::StructField {
-            struct_name: *TYPE_NAME_STRING,
-            name: Identifier::parse("characters"),
-            type_: types::Type::Pointer(Box::new(types::Type::U8)),
-            static_: false,
-        }],
+        fields: vec![
+            types::StructField {
+                struct_name: *TYPE_NAME_STRING,
+                name: Identifier::parse("characters"),
+                type_: types::Type::Pointer(Box::new(types::Type::U8)),
+                static_: false,
+            },
+            types::StructField {
+                struct_name: *TYPE_NAME_STRING,
+                name: Identifier::parse("length"),
+                type_: types::Type::U64,
+                static_: false,
+            },
+        ],
         impls: HashMap::new(),
     })
 }

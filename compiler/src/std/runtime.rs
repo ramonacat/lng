@@ -1,7 +1,4 @@
-use std::{
-    ffi::{CStr, c_char},
-    fmt::Debug,
-};
+use std::{ffi::c_char, fmt::Debug};
 
 use inkwell::{execution_engine::ExecutionEngine, module::Module};
 
@@ -10,6 +7,18 @@ use inkwell::{execution_engine::ExecutionEngine, module::Module};
 #[derive(Debug)]
 pub struct LngString {
     pub contents: *const c_char,
+    pub length: u64,
+}
+
+impl std::fmt::Display for LngString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let slice = unsafe {
+            std::slice::from_raw_parts(self.contents.cast(), usize::try_from(self.length).unwrap())
+        };
+
+        let string = String::from_utf8(slice.to_vec()).unwrap();
+        write!(f, "{string}")
+    }
 }
 
 // keep in sync with the definiton in compiler
@@ -22,22 +31,23 @@ pub struct LngRc<T: Debug> {
 
 #[unsafe(no_mangle)]
 extern "C" fn println(arg: *const LngRc<LngString>) {
-    let arg = unsafe { CStr::from_ptr((*(*arg).pointee).contents) }
-        .to_str()
-        .unwrap();
+    // TODO the pointer dance should be hidden inside LngString
+    let pointee = unsafe { &*(*arg).pointee };
 
-    println!("{arg}");
+    println!("{pointee}");
 }
 
 // TODO this is a bit cursed, as the allocator here might be different from the one that's used by
 // the jitted code, so when it's freed in the jitted code, it is UB. We should find a way to move
 // the allocations to the other side! Maybe just implement the function natively? :)
 extern "C" fn u64_to_string(arg: u64) -> *const LngRc<LngString> {
-    let mut bytes = arg.to_string().into_bytes();
-    bytes.push(0);
+    let bytes = arg.to_string().into_bytes();
+    let length = bytes.len();
+
     let characters = Box::leak(Box::new(bytes)).as_ptr();
     let lng_string = LngString {
         contents: characters.cast(),
+        length: length as u64,
     };
     let lng_rc = LngRc {
         refcount: 1,

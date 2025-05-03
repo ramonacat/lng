@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, ffi::CStr};
+use std::{cell::RefCell, collections::HashMap};
 
 use compiler::{
     compile::compile,
@@ -17,12 +17,10 @@ thread_local! {
 
 #[unsafe(no_mangle)]
 extern "C" fn test_println(arg: *const LngRc<LngString>) {
-    let arg = unsafe { CStr::from_ptr((*(*arg).pointee).contents) }
-        .to_str()
-        .unwrap();
+    let arg = unsafe { &*(*arg).pointee }.to_string();
 
     TEST_RESUTLS.with_borrow_mut(|results| {
-        results.push_str(arg);
+        results.push_str(&arg);
         results.push('\n');
     })
 }
