@@ -6,6 +6,8 @@ use crate::{
     types,
 };
 
+use super::errors::TypeCheckError;
+
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredArgument {
     pub(super) name: types::Identifier,
@@ -195,32 +197,37 @@ impl std::fmt::Debug for DeclaredItem {
 }
 
 impl DeclaredItem {
-    pub(super) fn type_(&self, root_module: &DeclaredModule) -> types::Type {
+    pub(super) fn type_(
+        &self,
+        root_module: &DeclaredModule,
+    ) -> Result<types::Type, TypeCheckError> {
         match &self.kind {
-            DeclaredItemKind::Function(declared_function) => types::Type::Callable {
+            DeclaredItemKind::Function(declared_function) => Ok(types::Type::Callable {
                 arguments: declared_function
                     .definition
                     .arguments
                     .iter()
-                    .map(|declaration| types::Argument {
-                        name: declaration.name,
-                        type_: resolve_type(
-                            root_module,
-                            declared_function.name.without_last(),
-                            &declaration.type_,
-                        )
-                        .instance_type(),
-                        position: declaration.position,
+                    .map(|declaration| {
+                        Ok(types::Argument {
+                            name: declaration.name,
+                            type_: resolve_type(
+                                root_module,
+                                declared_function.name.without_last(),
+                                &declaration.type_,
+                            )?
+                            .instance_type(),
+                            position: declaration.position,
+                        })
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>, _>>()?,
                 return_type: Box::new(resolve_type(
                     root_module,
                     declared_function.name.without_last(),
                     &declared_function.definition.return_type,
-                )),
-            },
+                )?),
+            }),
             DeclaredItemKind::Struct(declared_struct) => {
-                types::Type::StructDescriptor(types::StructDescriptorType {
+                Ok(types::Type::StructDescriptor(types::StructDescriptorType {
                     name: declared_struct.name,
                     fields: declared_struct
                         .fields
@@ -232,7 +239,7 @@ impl DeclaredItem {
                             static_: declaration.static_,
                         })
                         .collect(),
-                })
+                }))
             }
             DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => root_module
                 .get_item(*imported_item)
@@ -248,11 +255,11 @@ pub(super) fn resolve_type(
     root_module: &DeclaredModule,
     current_module: types::FQName,
     r#type: &ast::TypeDescription,
-) -> types::Type {
+) -> Result<types::Type, TypeCheckError> {
     match r#type {
-        ast::TypeDescription::Array(type_description) => types::Type::Array(Box::new(
-            resolve_type(root_module, current_module, type_description),
-        )),
+        ast::TypeDescription::Array(type_description) => Ok(types::Type::Array(Box::new(
+            resolve_type(root_module, current_module, type_description)?,
+        ))),
         ast::TypeDescription::Named(name) if name == "()" => root_module
             .get_item(*TYPE_NAME_UNIT)
             .unwrap()
@@ -272,31 +279,33 @@ pub(super) fn resolve_type(
                 .unwrap();
 
             match item.kind {
-                DeclaredItemKind::Function(declared_function) => types::Type::Callable {
+                DeclaredItemKind::Function(declared_function) => Ok(types::Type::Callable {
                     arguments: declared_function
                         .definition
                         .arguments
                         .iter()
-                        .map(|a| types::Argument {
-                            name: a.name,
-                            type_: resolve_type(
-                                root_module,
-                                declared_function.name.without_last(),
-                                &a.type_,
-                            )
-                            .instance_type(),
-                            position: a.position,
+                        .map(|a| {
+                            Ok(types::Argument {
+                                name: a.name,
+                                type_: resolve_type(
+                                    root_module,
+                                    declared_function.name.without_last(),
+                                    &a.type_,
+                                )?
+                                .instance_type(),
+                                position: a.position,
+                            })
                         })
-                        .collect(),
+                        .collect::<Result<Vec<_>, _>>()?,
                     // TODO the type should probably also be resolve_type'd
                     return_type: Box::new(resolve_type(
                         root_module,
                         declared_function.name.without_last(),
                         &declared_function.definition.return_type,
-                    )),
-                },
+                    )?),
+                }),
                 DeclaredItemKind::Struct(declared_struct) => {
-                    types::Type::StructDescriptor(types::StructDescriptorType {
+                    Ok(types::Type::StructDescriptor(types::StructDescriptorType {
                         name: declared_struct.name,
                         fields: declared_struct
                             .fields
@@ -309,7 +318,7 @@ pub(super) fn resolve_type(
                                 static_: field.static_,
                             })
                             .collect(),
-                    })
+                    }))
                 }
                 DeclaredItemKind::Predeclared(item) => item.type_(root_module),
                 DeclaredItemKind::Import(declared_import) => {

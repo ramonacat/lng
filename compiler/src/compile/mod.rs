@@ -31,7 +31,6 @@ use crate::{
     types::{self, FQName, Identifier},
 };
 
-// TODO use this for all LLVM IR variable names instead of location
 fn unique_name(parts: &[&str]) -> String {
     format!(
         "{}_{}",

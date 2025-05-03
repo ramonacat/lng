@@ -9,23 +9,27 @@ use declarations::{
     DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStruct,
     DeclaredStructField,
 };
-use errors::TypeCheckError;
+use errors::{TypeCheckError, TypeCheckErrorDescription};
 
 use crate::{ast, types};
 
 impl types::Item {
-    fn type_(&self, root_module: &DeclaredModule) -> types::Type {
+    fn type_(&self, root_module: &DeclaredModule) -> Result<types::Type, TypeCheckError> {
         match &self.kind {
-            types::ItemKind::Function(function) => function.type_(),
+            types::ItemKind::Function(function) => Ok(function.type_()),
             types::ItemKind::Struct(struct_) => {
-                types::Type::StructDescriptor(types::StructDescriptorType {
+                Ok(types::Type::StructDescriptor(types::StructDescriptorType {
                     name: struct_.name,
                     fields: struct_.fields.clone(),
-                })
+                }))
             }
             types::ItemKind::Import(import) => root_module
                 .get_item(import.imported_item)
-                .unwrap()
+                // TODO pass the error location as an argument here
+                .ok_or_else(|| {
+                    TypeCheckErrorDescription::ItemDoesNotExist(import.imported_item)
+                        .at(crate::errors::ErrorLocation::Indeterminate)
+                })?
                 .type_(root_module),
             types::ItemKind::Module(_) => todo!(),
         }

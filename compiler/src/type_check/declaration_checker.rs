@@ -108,23 +108,25 @@ impl DeclarationChecker {
                                             .definition
                                             .arguments
                                             .iter()
-                                            .map(|x| types::Argument {
-                                                name: x.name,
-                                                type_: resolve_type(
-                                                    &self.root_module_declaration,
-                                                    module_path,
-                                                    &x.type_,
-                                                )
-                                                .instance_type(),
-                                                position,
+                                            .map(|x| {
+                                                Ok(types::Argument {
+                                                    name: x.name,
+                                                    type_: resolve_type(
+                                                        &self.root_module_declaration,
+                                                        module_path,
+                                                        &x.type_,
+                                                    )?
+                                                    .instance_type(),
+                                                    position,
+                                                })
                                             })
-                                            .collect(),
+                                            .collect::<Result<Vec<_>, _>>()?,
                                         return_type: Box::new(
                                             resolve_type(
                                                 &self.root_module_declaration,
                                                 module_path,
                                                 &function.definition.return_type,
-                                            )
+                                            )?
                                             .instance_type(),
                                         ),
                                     },
@@ -182,7 +184,7 @@ impl DeclarationChecker {
                             module_path,
                             function.visibility,
                             &function_declaration,
-                        );
+                        )?;
 
                         self.root_module_declaration.declare(
                             module_path.with_part(types::Identifier::parse(&function.name)),
@@ -202,7 +204,7 @@ impl DeclarationChecker {
                                         &self.root_module_declaration,
                                         module_path,
                                         &field.type_,
-                                    ),
+                                    )?,
 
                                     static_: false,
                                 },
@@ -233,7 +235,7 @@ impl DeclarationChecker {
                                 &self.root_module_declaration,
                                 module_path,
                                 &field.type_,
-                            )
+                            )?
                             .name();
                             if self.root_module_declaration.get_item(type_name).is_none() {
                                 // TODO there should be a function that can canonicalize this name!
@@ -259,14 +261,14 @@ impl DeclarationChecker {
         module_path: types::FQName,
         visibility: ast::Visibility,
         function_declaration: &DeclaredFunction,
-    ) {
+    ) -> Result<(), TypeCheckError> {
         if function_declaration.name.last() == types::Identifier::parse("main")
             && visibility == ast::Visibility::Export
         {
             if function_declaration.definition.arguments.len() == 1 {
                 if let Some(argument) = function_declaration.definition.arguments.first() {
                     if let types::Type::Array(ref array_item_type) =
-                        resolve_type(&self.root_module_declaration, module_path, &argument.type_)
+                        resolve_type(&self.root_module_declaration, module_path, &argument.type_)?
                     {
                         if let types::Type::StructDescriptor(types::StructDescriptorType {
                             name: obj_type,
@@ -287,6 +289,8 @@ impl DeclarationChecker {
                 self.main = Some(function_declaration.name);
             }
         }
+
+        Ok(())
     }
 
     const fn convert_visibility(visibility: ast::Visibility) -> types::Visibility {
@@ -311,7 +315,7 @@ impl DeclarationChecker {
                 &self.root_module_declaration,
                 self_type.without_last(),
                 &arg.type_,
-            );
+            )?;
 
             if type_ == types::Type::Unit {
                 return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {

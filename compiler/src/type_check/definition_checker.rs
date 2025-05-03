@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ast,
     errors::ErrorLocation,
-    std::{TYPE_NAME_STRING, TYPE_NAME_U64},
+    std::TYPE_NAME_STRING,
     types::{self, AssociatedFunction, FQName, Identifier, RootModule},
 };
 
@@ -37,23 +37,30 @@ impl<'globals> Locals<'globals> {
         }
     }
 
-    fn resolve_type(&self, type_: &ast::TypeDescription) -> Option<types::Type> {
+    fn resolve_type(&self, type_: &ast::TypeDescription) -> Result<types::Type, TypeCheckError> {
         match type_ {
-            ast::TypeDescription::Array(type_description) => Some(types::Type::Array(Box::new(
+            ast::TypeDescription::Array(type_description) => Ok(types::Type::Array(Box::new(
                 self.resolve_type(type_description)?,
             ))),
             ast::TypeDescription::Named(name) => {
                 let id = Identifier::parse(name);
 
-                dbg!(&id, self.scope_module_name);
                 self.values
                     .get(&id)
                     .cloned()
+                    .map(Ok)
                     // TODO should this type_ method be integrated into this?
                     .or_else(|| {
-                        dbg!(self.globals)
+                        self.globals
                             .get_item(self.scope_module_name.with_part(id))
-                            .map(|x| x.type_(self.globals).instance_type())
+                            .map(|x| Ok(x.type_(self.globals)?.instance_type()))
+                    })
+                    // TODO pass the real ErrorLocation here
+                    .unwrap_or_else(|| {
+                        Err(
+                            TypeCheckErrorDescription::ItemDoesNotExist(FQName::parse(name))
+                                .at(ErrorLocation::Indeterminate),
+                        )
                     })
             }
         }
@@ -67,7 +74,7 @@ impl<'globals> Locals<'globals> {
         self.values.get(&id).cloned().or_else(|| {
             self.globals
                 .get_item(self.scope_module_name.with_part(id))
-                .map(|x| x.type_(self.globals))
+                .and_then(|x| x.type_(self.globals).ok())
         })
     }
 }
@@ -373,7 +380,7 @@ impl DefinitionChecker {
                                 &self.root_module_declaration,
                                 module,
                                 &declared_function.return_type,
-                            );
+                            )?;
                             if checked_expression.type_ != resolved_return_type {
                                 return Err(TypeCheckErrorDescription::MismatchedReturnType {
                                     actual: checked_expression.type_,
@@ -389,8 +396,6 @@ impl DefinitionChecker {
                     checked_statements.push(checked_statement);
                 }
 
-                // TODO validate that the return type actually exists!
-
                 types::FunctionBody::Statements(checked_statements)
             }
             ast::FunctionBody::Extern(foreign_name, _) => {
@@ -402,18 +407,24 @@ impl DefinitionChecker {
             arguments: declared_function
                 .arguments
                 .iter()
-                .map(|argument| types::Argument {
-                    name: argument.name,
-                    type_: resolve_type(&self.root_module_declaration, module, &argument.type_)
+                .map(|argument| {
+                    Ok(types::Argument {
+                        name: argument.name,
+                        type_: resolve_type(
+                            &self.root_module_declaration,
+                            module,
+                            &argument.type_,
+                        )?
                         .instance_type(),
-                    position: argument.position,
+                        position: argument.position,
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, _>>()?,
             return_type: resolve_type(
                 &self.root_module_declaration,
                 module,
                 &declared_function.return_type,
-            )
+            )?
             .instance_type(),
             body,
             position: declared_function.position,
@@ -495,22 +506,14 @@ impl DefinitionChecker {
                 let target =
                     self.type_check_expression(target, locals, module_path, error_location)?;
 
-                let type_name = match &target.type_ {
-                    types::Type::Unit => todo!(),
-                    types::Type::Object(identifier) => *identifier,
-                    types::Type::Array(_) => todo!(),
-                    types::Type::StructDescriptor(_) => todo!(),
-                    types::Type::Callable { .. } => todo!(),
-                    types::Type::U64 => *TYPE_NAME_U64,
-                    types::Type::Pointer(_) => todo!(),
-                    types::Type::U8 => todo!(),
-                };
-
                 let target_type = self
                     .root_module_declaration
-                    .get_item(type_name)
-                    .unwrap()
-                    .type_(&self.root_module_declaration);
+                    .get_item(target.type_.name())
+                    .ok_or_else(|| {
+                        TypeCheckErrorDescription::ItemDoesNotExist(target.type_.name())
+                            .at(ErrorLocation::Position(module_path, position))
+                    })?
+                    .type_(&self.root_module_declaration)?;
                 let types::Type::StructDescriptor(types::StructDescriptorType { name: _, fields }) =
                     target_type
                 else {
