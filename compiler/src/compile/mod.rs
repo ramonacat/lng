@@ -136,6 +136,7 @@ pub enum CompileErrorDescription {
         struct_name: types::Identifier,
     },
     FieldNotFound(FQName, Identifier),
+    MissingGenericArguments(FQName, TypeArguments),
 }
 
 impl CompileErrorDescription {
@@ -184,6 +185,10 @@ impl Display for CompileErrorDescription {
             Self::FieldNotFound(struct_name, field_name) => {
                 write!(f, "Field {field_name} not found on struct {struct_name}")
             }
+            Self::MissingGenericArguments(fqname, type_arguments) => write!(
+                f,
+                "missing generic arguments {type_arguments} in a call to {fqname}"
+            ),
         }
     }
 }
@@ -620,8 +625,14 @@ impl<'ctx> Compiler<'ctx> {
             (self_value, Value::Callable(function_handle, type_argument_values)) => {
                 (self_value, function_handle, type_argument_values)
             }
-            // TODO we should check here, and throw if the function takes generic arguments
             (self_value, Value::Function(function_handle)) => {
+                if function_handle.type_arguments.any() {
+                    return Err(CompileErrorDescription::MissingGenericArguments(
+                        function_handle.fqname,
+                        function_handle.type_arguments,
+                    )
+                    .at(compiled_function.handle.fqname, target.position));
+                }
                 (self_value, function_handle, TypeArgumentValues::new_empty())
             }
             (_, Value::Struct(_)) => todo!(),

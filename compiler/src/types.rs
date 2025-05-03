@@ -138,6 +138,10 @@ impl TypeArguments {
     pub(crate) const fn new(arguments: Vec<TypeArgument>) -> Self {
         Self(arguments)
     }
+
+    pub(crate) fn any(&self) -> bool {
+        !self.0.is_empty()
+    }
 }
 
 impl std::fmt::Display for TypeArguments {
