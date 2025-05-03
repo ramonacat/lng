@@ -7,6 +7,7 @@ export fn println(value: string): () {
 
 export struct string {}
 export struct u64 {}
+export struct unit {}
 
 impl u64 {
     export fn to_string(self:u64):string {

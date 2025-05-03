@@ -7,7 +7,7 @@ use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
 use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
     DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStruct,
-    DeclaredStructField, convert_type,
+    DeclaredStructField,
     declarations::resolve_type,
     definition_checker::DefinitionChecker,
     errors::{TypeCheckError, TypeCheckErrorDescription},
@@ -90,7 +90,7 @@ impl DeclarationChecker {
                             .functions
                             .iter()
                             .map(|f| {
-                                Self::type_check_associated_function_declaration(
+                                self.type_check_associated_function_declaration(
                                     f.0,
                                     &f.1,
                                     struct_path,
@@ -121,7 +121,12 @@ impl DeclarationChecker {
                                             })
                                             .collect(),
                                         return_type: Box::new(
-                                            function.definition.return_type.clone(),
+                                            resolve_type(
+                                                &self.root_module_declaration,
+                                                module_path,
+                                                &function.definition.return_type,
+                                            )
+                                            .instance_type(),
                                         ),
                                     },
                                     static_: true,
@@ -174,38 +179,11 @@ impl DeclarationChecker {
                             declaration.position,
                         );
 
-                        if function_declaration.name.last() == types::Identifier::parse("main")
-                            && declaration.visibility == ast::Visibility::Export
-                        {
-                            if function_declaration.definition.arguments.len() == 1 {
-                                if let Some(argument) =
-                                    function_declaration.definition.arguments.first()
-                                {
-                                    if let types::Type::Array(ref array_item_type) = resolve_type(
-                                        &self.root_module_declaration,
-                                        module_path,
-                                        &argument.type_,
-                                    ) {
-                                        if let types::Type::StructDescriptor(
-                                            types::StructDescriptorType { name: obj_type, .. },
-                                        ) = **array_item_type
-                                        {
-                                            if obj_type == *TYPE_NAME_STRING {
-                                                if self.main.is_some() {
-                                                    todo!(
-                                                        "show a nice error here, main is already defined"
-                                                    );
-                                                }
-
-                                                self.main = Some(function_declaration.name);
-                                            }
-                                        }
-                                    }
-                                }
-                            } else if function_declaration.definition.arguments.is_empty() {
-                                self.main = Some(function_declaration.name);
-                            }
-                        }
+                        self.detect_potential_entrypoint(
+                            module_path,
+                            declaration.visibility,
+                            &function_declaration,
+                        );
 
                         self.root_module_declaration.declare(
                             module_path.with_part(types::Identifier::parse(&function.name)),
@@ -221,7 +199,11 @@ impl DeclarationChecker {
                             fields.insert(
                                 types::Identifier::parse(&field.name),
                                 DeclaredStructField {
-                                    type_: convert_type(module_path, &field.type_),
+                                    type_: resolve_type(
+                                        &self.root_module_declaration,
+                                        module_path,
+                                        &field.type_,
+                                    ),
 
                                     static_: false,
                                 },
@@ -248,7 +230,12 @@ impl DeclarationChecker {
                 match &declaration.kind {
                     ast::DeclarationKind::Struct(struct_) => {
                         for field in &struct_.fields {
-                            let type_name = convert_type(module_path, &field.type_).name();
+                            let type_name = resolve_type(
+                                &self.root_module_declaration,
+                                module_path,
+                                &field.type_,
+                            )
+                            .name();
                             if self.root_module_declaration.get_item(type_name).is_none() {
                                 // TODO there should be a function that can canonicalize this name!
                                 return Err(TypeCheckErrorDescription::ItemDoesNotExist(type_name)
@@ -268,6 +255,41 @@ impl DeclarationChecker {
         Ok(())
     }
 
+    fn detect_potential_entrypoint(
+        &mut self,
+        module_path: types::FQName,
+        visibility: ast::Visibility,
+        function_declaration: &DeclaredFunction,
+    ) {
+        if function_declaration.name.last() == types::Identifier::parse("main")
+            && visibility == ast::Visibility::Export
+        {
+            if function_declaration.definition.arguments.len() == 1 {
+                if let Some(argument) = function_declaration.definition.arguments.first() {
+                    if let types::Type::Array(ref array_item_type) =
+                        resolve_type(&self.root_module_declaration, module_path, &argument.type_)
+                    {
+                        if let types::Type::StructDescriptor(types::StructDescriptorType {
+                            name: obj_type,
+                            ..
+                        }) = **array_item_type
+                        {
+                            if obj_type == *TYPE_NAME_STRING {
+                                if self.main.is_some() {
+                                    todo!("show a nice error here, main is already defined");
+                                }
+
+                                self.main = Some(function_declaration.name);
+                            }
+                        }
+                    }
+                }
+            } else if function_declaration.definition.arguments.is_empty() {
+                self.main = Some(function_declaration.name);
+            }
+        }
+    }
+
     const fn convert_visibility(visibility: ast::Visibility) -> types::Visibility {
         match visibility {
             ast::Visibility::Export => types::Visibility::Export,
@@ -276,6 +298,7 @@ impl DeclarationChecker {
     }
 
     fn type_check_associated_function_declaration(
+        &self,
         visibility: ast::Visibility,
         function: &ast::Function,
         self_type: types::FQName,
@@ -286,7 +309,11 @@ impl DeclarationChecker {
         let mut arguments = vec![];
 
         for arg in &function.arguments {
-            let type_ = convert_type(self_type.without_last(), &arg.type_);
+            let type_ = resolve_type(
+                &self.root_module_declaration,
+                self_type.without_last(),
+                &arg.type_,
+            );
 
             if type_ == types::Type::Unit {
                 return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
@@ -307,7 +334,7 @@ impl DeclarationChecker {
             name: function_name,
             definition: DeclaredFunctionDefinition {
                 arguments,
-                return_type: convert_type(self_type.without_last(), &function.return_type),
+                return_type: function.return_type.clone(),
                 ast: function.clone(),
                 position,
             },
@@ -337,7 +364,7 @@ impl DeclarationChecker {
             name: function_path,
             definition: DeclaredFunctionDefinition {
                 arguments,
-                return_type: convert_type(module_path, &function.return_type),
+                return_type: function.return_type.clone(),
                 ast: function.clone(),
                 position,
             },

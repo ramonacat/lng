@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::{ast, std::TYPE_NAME_U64, types};
+use crate::{
+    ast,
+    std::{TYPE_NAME_U64, TYPE_NAME_UNIT},
+    types,
+};
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredArgument {
@@ -12,7 +16,7 @@ pub(super) struct DeclaredArgument {
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredFunctionDefinition {
     pub(super) arguments: Vec<DeclaredArgument>,
-    pub(super) return_type: types::Type,
+    pub(super) return_type: ast::TypeDescription,
     pub(super) ast: ast::Function,
     pub(super) position: ast::SourceRange,
 }
@@ -209,7 +213,11 @@ impl DeclaredItem {
                         position: declaration.position,
                     })
                     .collect(),
-                return_type: Box::new(declared_function.definition.return_type.clone()),
+                return_type: Box::new(resolve_type(
+                    root_module,
+                    declared_function.name.without_last(),
+                    &declared_function.definition.return_type,
+                )),
             },
             DeclaredItemKind::Struct(declared_struct) => {
                 types::Type::StructDescriptor(types::StructDescriptorType {
@@ -245,7 +253,10 @@ pub(super) fn resolve_type(
         ast::TypeDescription::Array(type_description) => types::Type::Array(Box::new(
             resolve_type(root_module, current_module, type_description),
         )),
-        ast::TypeDescription::Named(name) if name == "()" => todo!(),
+        ast::TypeDescription::Named(name) if name == "()" => root_module
+            .get_item(*TYPE_NAME_UNIT)
+            .unwrap()
+            .type_(root_module),
         ast::TypeDescription::Named(name) if name == "u64" => root_module
             .get_item(*TYPE_NAME_U64)
             .unwrap()
@@ -278,7 +289,11 @@ pub(super) fn resolve_type(
                         })
                         .collect(),
                     // TODO the type should probably also be resolve_type'd
-                    return_type: Box::new(declared_function.definition.return_type),
+                    return_type: Box::new(resolve_type(
+                        root_module,
+                        declared_function.name.without_last(),
+                        &declared_function.definition.return_type,
+                    )),
                 },
                 DeclaredItemKind::Struct(declared_struct) => {
                     types::Type::StructDescriptor(types::StructDescriptorType {

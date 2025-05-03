@@ -32,20 +32,6 @@ impl types::Item {
     }
 }
 
-fn convert_type(module: types::FQName, type_: &ast::TypeDescription) -> types::Type {
-    match type_ {
-        ast::TypeDescription::Array(type_description) => {
-            types::Type::Array(Box::new(convert_type(module, type_description)))
-        }
-        ast::TypeDescription::Named(name) if name == "()" => types::Type::Unit,
-        ast::TypeDescription::Named(name) if name == "u64" => types::Type::U64,
-        ast::TypeDescription::Named(name) => {
-            // TODO we should also check the local scope, as values can be struct descriptor
-            types::Type::Object(module.with_part(types::Identifier::parse(name)))
-        }
-    }
-}
-
 pub fn type_check(
     program: &[ast::SourceFile],
     std: Option<&types::RootModule>,

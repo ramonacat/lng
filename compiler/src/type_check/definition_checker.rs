@@ -369,10 +369,15 @@ impl DefinitionChecker {
                                 error_location.clone(),
                             )?;
 
-                            if checked_expression.type_ != declared_function.return_type {
+                            let resolved_return_type = resolve_type(
+                                &self.root_module_declaration,
+                                module,
+                                &declared_function.return_type,
+                            );
+                            if checked_expression.type_ != resolved_return_type {
                                 return Err(TypeCheckErrorDescription::MismatchedReturnType {
                                     actual: checked_expression.type_,
-                                    expected: declared_function.return_type.clone(),
+                                    expected: resolved_return_type,
                                 }
                                 .at(error_location));
                             }
@@ -404,7 +409,12 @@ impl DefinitionChecker {
                     position: argument.position,
                 })
                 .collect(),
-            return_type: declared_function.return_type.clone(),
+            return_type: resolve_type(
+                &self.root_module_declaration,
+                module,
+                &declared_function.return_type,
+            )
+            .instance_type(),
             body,
             position: declared_function.position,
         })

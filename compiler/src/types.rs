@@ -10,7 +10,7 @@ use string_interner::{StringInterner, backend::StringBackend, symbol::SymbolU32}
 use crate::{
     ast::{self, SourceRange},
     name_mangler::{MangledIdentifier, mangle_fq_name, nomangle_identifier},
-    std::TYPE_NAME_U64,
+    std::{TYPE_NAME_U64, TYPE_NAME_UNIT},
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -216,8 +216,13 @@ impl Type {
             Self::Object(_) => todo!(),
             Self::Array(inner) => Self::Array(Box::new(inner.instance_type())),
             Self::StructDescriptor(struct_descriptor_type) => {
+                // TODO can we get rid of this if and somehow make this automagical? perhaps by
+                // having an attribute in the declaration of structs that tells the compiler which
+                // builtin type they're standing for?
                 if struct_descriptor_type.name == *TYPE_NAME_U64 {
                     Self::U64
+                } else if struct_descriptor_type.name == *TYPE_NAME_UNIT {
+                    Self::Unit
                 } else {
                     Self::Object(struct_descriptor_type.name)
                 }
