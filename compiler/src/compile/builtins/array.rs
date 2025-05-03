@@ -62,7 +62,7 @@ impl ArrayValue {
             .build_array_malloc(
                 items_type,
                 context.const_u64(1),
-                &unique_name("string_items"),
+                &unique_name(&["string_items"]),
             )
             .unwrap();
         let mut field_values = HashMap::new();
@@ -73,10 +73,10 @@ impl ArrayValue {
 
         let array_struct = describe_structure();
         let array_value =
-            array_struct.build_heap_instance(context, &unique_name("string"), field_values);
+            array_struct.build_heap_instance(context, &unique_name(&["string"]), field_values);
 
         RcValue::build_init(
-            &unique_name("rc_array"),
+            &unique_name(&["rc_array"]),
             array_value,
             array_struct.clone(),
             context,

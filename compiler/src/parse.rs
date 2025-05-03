@@ -131,8 +131,7 @@ fn parse_impl(item: Pair<Rule>) -> Result<Declaration, ParseError<'_>> {
 
     Ok(Declaration {
         kind: crate::ast::DeclarationKind::Impl(impl_),
-        // TODO do impls have visibility at all? this probably should be handled per function
-        // instead
+        // TODO visiblity here is meaningless, should we move it into function/struct?
         visibility: Visibility::Export,
         position,
     })

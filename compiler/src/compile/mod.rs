@@ -33,9 +33,10 @@ use crate::{
 };
 
 // TODO use this for all LLVM IR variable names instead of location
-fn unique_name(prefix: &str) -> String {
+fn unique_name(parts: &[&str]) -> String {
     format!(
-        "{prefix}_{}",
+        "{}_{}",
+        parts.join("_"),
         rand::rng()
             .sample_iter(rand::distr::Alphanumeric)
             .take(16)
@@ -46,6 +47,7 @@ fn unique_name(prefix: &str) -> String {
 
 // TODO instead of executing the code, this should return some object that exposes the
 // executable code with a safe interface
+// TODO support also generating binaries instead of only JITting
 pub fn compile(
     program: &types::RootModule,
     std_program: &types::RootModule,
@@ -596,8 +598,8 @@ impl<'ctx> Compiler<'ctx> {
             types::ExpressionKind::Literal(literal) => match literal {
                 types::Literal::String(s) => {
                     let value = StringValue::new_literal(s.clone());
-                    let name = format!("literal_{}", position.as_id());
-                    let rc = value.build_instance(&name, &self.context);
+                    let name = &unique_name(&["literal", "string"]);
+                    let rc = value.build_instance(name, &self.context);
                     compiled_function.rcs.push(rc.clone());
 
                     Ok((None, Value::Reference(rc)))
@@ -626,12 +628,12 @@ impl<'ctx> Compiler<'ctx> {
 
                 let value = s.build_heap_instance(
                     &self.context,
-                    &format!("{}_{}", name, position.as_id()),
+                    &unique_name(&[&name.raw()]),
                     field_values,
                 );
 
                 let rc = RcValue::build_init(
-                    &format!("{}_rc_{}", name, position.as_id()),
+                    &unique_name(&[&name.raw(), "rc"]),
                     value,
                     s.clone(),
                     &self.context,
@@ -694,7 +696,7 @@ impl<'ctx> Compiler<'ctx> {
             .build_call(
                 module.get_or_create_function(&function, &self.context),
                 &call_arguments,
-                &format!("call_result_{}", position.as_id()),
+                &unique_name(&["call_result"]),
             )
             .map_err(|e| e.into_compile_error_at(compiled_function.handle.fqname, position))?;
         let call_result = call_result.as_any_value_enum();

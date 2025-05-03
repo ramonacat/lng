@@ -122,7 +122,7 @@ impl<'ctx> CompiledStruct<'ctx> {
                 self.llvm_type,
                 instance,
                 &[context.const_u32(0), context.const_u32(*index)],
-                &unique_name(field.raw().as_str()),
+                &unique_name(&[&field.raw()]),
             )
         }
         .unwrap();

@@ -6,7 +6,7 @@ use inkwell::{
 };
 
 use crate::{
-    compile::{context::CompilerContext, value::StructHandle},
+    compile::{context::CompilerContext, unique_name, value::StructHandle},
     types::{self, FQName, Identifier},
 };
 
@@ -107,7 +107,7 @@ pub fn build_cleanup<'ctx>(
             .build_field_load(
                 *REFCOUNT_FIELD,
                 rc.pointer,
-                &(name.to_string() + "refcount_old"),
+                &unique_name(&["refcount_old"]),
                 context,
             )
             .into_int_value();
@@ -116,7 +116,7 @@ pub fn build_cleanup<'ctx>(
             .build_int_sub(
                 old_refcount,
                 context.const_u64(1),
-                &(name.to_string() + "refcount_decremented"),
+                &unique_name(&["refcount_decremented"]),
             )
             .unwrap();
 
@@ -126,19 +126,19 @@ pub fn build_cleanup<'ctx>(
                 inkwell::IntPredicate::EQ,
                 new_refcount,
                 context.const_u64(0),
-                &(name.to_string() + "refcount_iszero"),
+                &unique_name(&["refcount_iszero"]),
             )
             .unwrap();
 
         let free_rc_block = context
             .llvm_context
-            .prepend_basic_block(before, &(name.to_string() + "free_rc"));
+            .prepend_basic_block(before, &unique_name(&["free_rc"]));
         let do_not_free_rc_block = context
             .llvm_context
-            .prepend_basic_block(before, &(name.to_string() + "do_not_free_rc"));
+            .prepend_basic_block(before, &unique_name(&["do_not_free_rc"]));
         let continuation_block = context
             .llvm_context
-            .prepend_basic_block(before, &(name.to_string() + "continuation"));
+            .prepend_basic_block(before, &unique_name(&["continuation"]));
 
         context
             .builder
@@ -153,7 +153,7 @@ pub fn build_cleanup<'ctx>(
             .build_field_load(
                 *POINTEE_FIELD,
                 rc.pointer,
-                &(name.to_string() + "free_rc_pointee_value"),
+                &unique_name(&["free_rc_pointee_value"]),
                 context,
             )
             .into_pointer_value();
@@ -194,10 +194,11 @@ pub fn build_cleanup<'ctx>(
 pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
+
         let init_refcount = context.builtins.rc_handle.build_field_load(
             *REFCOUNT_FIELD,
             rc.pointer,
-            &format!("{name}_init_refcount"),
+            &unique_name(&[&name, "init_refcount"]),
             context,
         );
 
@@ -206,7 +207,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             .build_int_add(
                 init_refcount.into_int_value(),
                 context.const_u64(1),
-                &format!("{name}_init_refcount_incremented"),
+                &unique_name(&[&name, "init_refcount_incremented"]),
             )
             .unwrap();
 

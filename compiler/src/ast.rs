@@ -10,15 +10,6 @@ impl SourceRange {
     pub const fn new(start: (usize, usize), end: (usize, usize)) -> Self {
         Self::Visible(start, end)
     }
-
-    pub fn as_id(&self) -> String {
-        match self {
-            Self::Visible(start, end) => {
-                format!("{}_{}__{}_{}", start.0, start.1, end.0, end.1)
-            }
-            Self::Internal => "__internal__".to_string(),
-        }
-    }
 }
 
 impl Display for SourceRange {
