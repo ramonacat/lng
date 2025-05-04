@@ -9,23 +9,25 @@ use crate::{
     compile::{
         context::CompilerContext,
         unique_name,
-        value::{InstantiatedStructId, InstantiatedStructType, StructInstance},
+        value::{InstantiatedStructType, StructInstance},
     },
-    types::{self, FQName, Identifier},
+    types,
 };
 
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
-    value_type: InstantiatedStructId,
+    value_type: types::InstantiatedStructId,
 }
 
-static REFCOUNT_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("refcount"));
-static POINTEE_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("pointee"));
+static REFCOUNT_FIELD: LazyLock<types::Identifier> =
+    LazyLock::new(|| types::Identifier::parse("refcount"));
+static POINTEE_FIELD: LazyLock<types::Identifier> =
+    LazyLock::new(|| types::Identifier::parse("pointee"));
 
 pub fn describe_structure() -> types::Struct {
-    let struct_name = FQName::parse("std.rc");
-    let type_argument = types::TypeArgument::new(Identifier::parse("TPointee"));
+    let struct_name = types::FQName::parse("std.rc");
+    let type_argument = types::TypeArgument::new(types::Identifier::parse("TPointee"));
     let generic_argument_type =
         types::Type::new_generic(types::TypeKind::Generic(type_argument), vec![type_argument]);
 
@@ -84,7 +86,7 @@ impl<'ctx> RcValue<'ctx> {
 
     pub const fn from_pointer(
         pointer: PointerValue<'ctx>,
-        value_type: InstantiatedStructId,
+        value_type: types::InstantiatedStructId,
     ) -> Self {
         RcValue {
             pointer,
@@ -92,7 +94,7 @@ impl<'ctx> RcValue<'ctx> {
         }
     }
 
-    pub(crate) fn type_(&self) -> InstantiatedStructId {
+    pub(crate) fn type_(&self) -> types::InstantiatedStructId {
         self.value_type.clone()
     }
 }

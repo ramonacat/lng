@@ -6,24 +6,55 @@ use inkwell::{
 };
 use itertools::Itertools;
 
-use crate::{
-    ast::SourceRange,
-    name_mangler::MangledIdentifier,
-    types::{self, FQName, Identifier, TypeArgumentValues},
-};
+use crate::{ast::SourceRange, name_mangler::MangledIdentifier, types};
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
 
 #[derive(Clone)]
 pub struct FunctionHandle {
     pub name: MangledIdentifier,
-    pub fqname: FQName,
-    pub module_name: FQName,
+    pub fqname: types::FQName,
+    pub module_name: types::FQName,
     pub position: SourceRange,
+    // TODO do we need arguments, if they're defined in the definition already???
     pub arguments: Vec<types::Argument>,
     pub return_type: types::Type,
     pub linkage: Linkage,
     pub definition: types::FunctionDefinition,
+}
+
+impl FunctionHandle {
+    // TODO this method should not be exist, FunctionHandle should be a lightweight pointer to some
+    // table with all the declared functions, and this struct should only be created for
+    // already instantiated functions
+    pub(crate) fn instantiate(
+        &self,
+        type_argument_values: &types::TypeArgumentValues,
+        object_lookup: &impl Fn(types::FQName) -> types::Type,
+    ) -> Self {
+        let arguments = self
+            .arguments
+            .iter()
+            .map(|x| x.instantiate(type_argument_values, object_lookup))
+            .collect();
+
+        let return_type = self
+            .return_type
+            .instantiate(type_argument_values, object_lookup);
+
+        Self {
+            name: self.name.clone(),
+            fqname: self.fqname,
+            module_name: self.module_name,
+            position: self.position,
+            arguments,
+            return_type,
+            linkage: self.linkage,
+            definition: self
+                .definition
+                .instantiate(type_argument_values, object_lookup),
+        }
+    }
 }
 
 impl Debug for FunctionHandle {
@@ -43,18 +74,21 @@ pub struct InstantiatedStructType<'ctx> {
     static_field_values: HashMap<types::Identifier, Value<'ctx>>,
 }
 
-pub struct StructInstance<'ctx>(PointerValue<'ctx>, InstantiatedStructId);
+pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::InstantiatedStructId);
 
 impl<'ctx> StructInstance<'ctx> {
     pub(crate) const fn value(&self) -> PointerValue<'ctx> {
         self.0
     }
 
-    pub(crate) fn id(&self) -> InstantiatedStructId {
+    pub(crate) fn id(&self) -> types::InstantiatedStructId {
         self.1.clone()
     }
 
-    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: InstantiatedStructId) -> Self {
+    pub(crate) const fn new(
+        pointer: PointerValue<'ctx>,
+        type_: types::InstantiatedStructId,
+    ) -> Self {
         Self(pointer, type_)
     }
 }
@@ -77,7 +111,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         &self,
         context: &CompilerContext<'ctx>,
         binding_name: &str,
-        mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
+        mut field_values: HashMap<types::Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
         // TODO ensure the type has all the type arguments filled in here
         let llvm_type = context.make_struct_type(self.definition.name, &self.definition.fields);
@@ -109,7 +143,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     // values?
     pub fn build_field_load(
         &self,
-        field: Identifier,
+        field: types::Identifier,
         instance: PointerValue<'ctx>,
         binding_name: &str,
         context: &CompilerContext<'ctx>,
@@ -127,7 +161,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 
     pub fn build_field_store(
         &self,
-        field_name: Identifier,
+        field_name: types::Identifier,
         instance: PointerValue<'ctx>,
         value: BasicValueEnum<'ctx>,
         context: &CompilerContext<'ctx>,
@@ -144,7 +178,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     pub(crate) fn read_field_value(
         &self,
         _instance: Value<'ctx>,
-        name: Identifier,
+        name: types::Identifier,
     ) -> Option<Value<'ctx>> {
         let field = self.definition.fields.iter().find(|f| f.name == name)?;
 
@@ -166,7 +200,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 
     pub(crate) fn new_with_statics(
         description: types::Struct,
-        mut static_fields: HashMap<Identifier, Value<'ctx>>,
+        mut static_fields: HashMap<types::Identifier, Value<'ctx>>,
     ) -> Self {
         let default_static_fields: Vec<_> = description
             .impls
@@ -201,19 +235,17 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InstantiatedStructId(pub types::Struct, pub TypeArgumentValues);
-
 // TODO The *Handle structs should be lightweight handles, and not copied with the vecs and all
 // that
 #[derive(Clone)]
 pub enum Value<'ctx> {
     Empty,
-    Primitive(InstantiatedStructId, BasicValueEnum<'ctx>),
+    Primitive(types::InstantiatedStructId, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     // TODO remove callable, this is supposed to be a function instad
     #[allow(unused)]
-    Callable(FunctionHandle, TypeArgumentValues),
+    Callable(FunctionHandle, types::TypeArgumentValues),
+    // TODO functions should be refered to by id
     Function(FunctionHandle),
     Struct(types::Struct),
 }
@@ -251,7 +283,7 @@ impl<'ctx> Value<'ctx> {
 
     pub fn read_field_value(
         &self,
-        field_path: Identifier,
+        field_path: types::Identifier,
         context: &CompilerContext<'ctx>,
     ) -> Option<Self> {
         match self {

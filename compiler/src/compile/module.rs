@@ -102,13 +102,8 @@ impl<'ctx> CompiledModule<'ctx> {
         {
             let value = match &argument.type_.kind() {
                 types::TypeKind::Unit => todo!(),
-                types::TypeKind::Object {
-                    type_name: identifier,
-                } => {
-                    // TODO we need to have an ID of the actual type instance here
-                    let id = context
-                        .instantiate_struct(*identifier, &types::TypeArgumentValues::new_empty());
-                    let rc = RcValue::from_pointer(argument_value.into_pointer_value(), id);
+                types::TypeKind::Object { type_name: id } => {
+                    let rc = RcValue::from_pointer(argument_value.into_pointer_value(), id.clone());
                     rcs.push(rc.clone());
 
                     Value::Reference(rc)
@@ -124,6 +119,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::TypeKind::Pointer(_) => todo!(),
                 types::TypeKind::U8 => todo!(),
                 types::TypeKind::Generic(_) => todo!(),
+                types::TypeKind::UninstantiatedObject { .. } => todo!(),
             };
 
             scope.set_value(argument.name, value);

@@ -235,6 +235,7 @@ impl DeclaredItem<'_> {
             DeclaredItemKind::Struct(declared_struct) => Ok(types::Type::new_not_generic(
                 types::TypeKind::StructDescriptor(types::StructDescriptorType {
                     name: declared_struct.name,
+                    instance_id: None,
                     fields: declared_struct
                         .fields
                         .iter()
@@ -326,6 +327,7 @@ pub(super) fn resolve_type(
                     Ok(types::Type::new_not_generic(
                         types::TypeKind::StructDescriptor(types::StructDescriptorType {
                             name: declared_struct.name,
+                            instance_id: None,
                             fields: declared_struct
                                 .fields
                                 .iter()

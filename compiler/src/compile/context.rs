@@ -8,13 +8,11 @@ use inkwell::{
     values::{IntValue, PointerValue},
 };
 
-use crate::types::{self, FQName};
+use crate::types;
 
 use super::{
-    CompileError, CompileErrorDescription,
-    scope::GlobalScope,
-    unique_name,
-    value::{InstantiatedStructId, InstantiatedStructType},
+    CompileError, CompileErrorDescription, scope::GlobalScope, unique_name,
+    value::InstantiatedStructType,
 };
 
 pub struct Builtins {
@@ -22,7 +20,8 @@ pub struct Builtins {
 }
 
 pub struct InstantiatedStructs<'ctx> {
-    instantiated_structs: RwLock<HashMap<InstantiatedStructId, InstantiatedStructType<'ctx>>>,
+    instantiated_structs:
+        RwLock<HashMap<types::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
 }
 
 // TODO rename the methdos to something less verbose
@@ -35,7 +34,7 @@ impl<'ctx> InstantiatedStructs<'ctx> {
 
     pub(crate) fn inspect_instantiated_struct<T>(
         &self,
-        handle: &InstantiatedStructId,
+        handle: &types::InstantiatedStructId,
         inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
     ) -> T {
         inspect(self.instantiated_structs.read().unwrap().get(handle))
@@ -46,16 +45,19 @@ impl<'ctx> InstantiatedStructs<'ctx> {
         &self,
         struct_: &types::Struct,
         type_argument_values: &types::TypeArgumentValues,
-    ) -> InstantiatedStructId {
-        let id = InstantiatedStructId(struct_.clone(), type_argument_values.clone());
+        object_lookup: &impl Fn(types::FQName) -> types::Type,
+    ) -> types::InstantiatedStructId {
+        let id = types::InstantiatedStructId(struct_.clone(), type_argument_values.clone());
 
+        // TODO we should not instantiate on every lookup, but calling objetct_lookup instantiates,
+        // so we run into a conflict otherwise. this will not matter in the future, once we get rid
+        // of types::TypeKind::UninstantiatedObject
+        let instantiated = struct_.instantiate(type_argument_values, object_lookup);
         self.instantiated_structs
             .write()
             .unwrap()
             .entry(id.clone())
-            .or_insert_with(|| {
-                InstantiatedStructType::new(struct_.instantiate(type_argument_values))
-            });
+            .or_insert_with(|| InstantiatedStructType::new(instantiated));
 
         id
     }
@@ -72,9 +74,9 @@ pub struct CompilerContext<'ctx> {
 impl<'ctx> CompilerContext<'ctx> {
     pub fn instantiate_struct(
         &self,
-        name: FQName,
+        name: types::FQName,
         type_argument_values: &types::TypeArgumentValues,
-    ) -> InstantiatedStructId {
+    ) -> types::InstantiatedStructId {
         let struct_ = self
             .global_scope
             .get_value(name)
@@ -83,7 +85,13 @@ impl<'ctx> CompilerContext<'ctx> {
             .unwrap();
 
         self.instantiated_structs
-            .instantiate_struct(&struct_, type_argument_values)
+            // TODO we should get the type arguments from somewhere somehow, figure it out
+            .instantiate_struct(&struct_, type_argument_values, &|name| {
+                types::Type::new_not_generic(types::TypeKind::Object {
+                    type_name: self
+                        .instantiate_struct(name, &types::TypeArgumentValues::new_empty()),
+                })
+            })
     }
 
     pub fn const_u64(&self, value: u64) -> IntValue<'ctx> {
@@ -96,11 +104,11 @@ impl<'ctx> CompilerContext<'ctx> {
             .const_int(u64::from(value), false)
     }
 
-    pub fn get_std_type(&self, name: &str) -> InstantiatedStructId {
+    pub fn get_std_type(&self, name: &str) -> types::InstantiatedStructId {
         // TODO verify the type exists and return an error if not
         // TODO what about std types that have type arguments?
         self.instantiate_struct(
-            FQName::parse("std").with_part(types::Identifier::parse(name)),
+            types::FQName::parse("std").with_part(types::Identifier::parse(name)),
             &types::TypeArgumentValues::new_empty(),
         )
     }
@@ -117,6 +125,7 @@ impl<'ctx> CompilerContext<'ctx> {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
             types::TypeKind::Generic(_) => todo!(),
+            types::TypeKind::UninstantiatedObject { .. } => todo!(),
         }
     }
 

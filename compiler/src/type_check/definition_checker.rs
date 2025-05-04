@@ -487,7 +487,7 @@ impl<'pre> DefinitionChecker<'pre> {
             ast::ExpressionKind::Literal(literal) => match literal {
                 ast::Literal::String(value, _) => Ok(types::Expression {
                     position,
-                    type_: types::Type::new_not_generic(types::TypeKind::Object {
+                    type_: types::Type::new_not_generic(types::TypeKind::UninstantiatedObject {
                         type_name: *TYPE_NAME_STRING,
                     }),
                     kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
@@ -520,6 +520,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 let types::TypeKind::StructDescriptor(types::StructDescriptorType {
                     name,
                     fields: _,
+                    instance_id: _,
                 }) = struct_type.kind()
                 else {
                     todo!();
@@ -527,7 +528,7 @@ impl<'pre> DefinitionChecker<'pre> {
 
                 Ok(types::Expression {
                     position,
-                    type_: types::Type::new_not_generic(types::TypeKind::Object {
+                    type_: types::Type::new_not_generic(types::TypeKind::UninstantiatedObject {
                         type_name: *name,
                     }),
                     kind: types::ExpressionKind::StructConstructor(id),
@@ -548,6 +549,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 let types::TypeKind::StructDescriptor(types::StructDescriptorType {
                     name: _,
                     fields,
+                    instance_id: _,
                 }) = target_type.kind()
                 else {
                     todo!("{target_type}");
