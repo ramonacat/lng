@@ -2,12 +2,16 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
+use crate::{
+    ast,
+    errors::ErrorLocation,
+    std::TYPE_NAME_STRING,
+    types::{self, Identifier},
+};
 
 use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
-    DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStruct,
-    DeclaredStructField,
+    DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStructField,
     declarations::resolve_type,
     definition_checker::DefinitionChecker,
     errors::{TypeCheckError, TypeCheckErrorDescription},
@@ -15,8 +19,9 @@ use super::{
 
 pub(super) struct DeclarationChecker<'pre> {
     root_module_declaration: DeclaredModule<'pre>,
-    declared_impls: HashMap<types::FQName, DeclaredAssociatedFunction>,
+    declared_impls: HashMap<(types::StructId, types::Identifier), DeclaredAssociatedFunction>,
     main: Option<types::FQName>,
+    structs: HashMap<types::StructId, types::Struct>,
 }
 
 impl<'pre> DeclarationChecker<'pre> {
@@ -148,27 +153,26 @@ impl<'pre> DeclarationChecker<'pre> {
                                 },
                             );
 
-                            self.declared_impls
-                                .insert(struct_path.with_part(function.name), function.clone());
+                            self.declared_impls.insert(
+                                (types::StructId::FQName(struct_path), function.name),
+                                function.clone(),
+                            );
                         }
 
-                        let Some(struct_) = self.root_module_declaration.get_item_mut(struct_path)
+                        let Some(struct_) =
+                            self.structs.get_mut(&types::StructId::FQName(struct_path))
                         else {
                             return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
                                 .at(error_location));
                         };
 
-                        let DeclaredItem {
-                            kind: DeclaredItemKind::Struct(DeclaredStruct { fields, .. }),
-                            ..
-                        } = struct_
-                        else {
-                            return Err(TypeCheckErrorDescription::ImplNotOnStruct(struct_path)
-                                .at(error_location));
-                        };
-
                         for (field_name, field) in fields_to_add {
-                            fields.insert(field_name, field);
+                            struct_.fields.push(types::StructField {
+                                struct_id: types::StructId::FQName(struct_path),
+                                name: field_name,
+                                type_: field.type_,
+                                static_: field.static_,
+                            });
                         }
                     }
                 }
@@ -209,31 +213,45 @@ impl<'pre> DeclarationChecker<'pre> {
                         );
                     }
                     ast::DeclarationKind::Struct(struct_) => {
-                        let mut fields = HashMap::new();
+                        let mut fields = vec![];
                         for field in &struct_.fields {
-                            fields.insert(
-                                types::Identifier::parse(&field.name),
-                                DeclaredStructField {
-                                    type_: resolve_type(
-                                        &self.root_module_declaration,
-                                        module_path,
-                                        &field.type_,
-                                        ErrorLocation::Position(
-                                            module_path
-                                                .with_part(types::Identifier::parse(&struct_.name)),
-                                            field.position,
-                                        ),
-                                    )?,
+                            fields.push(types::StructField {
+                                type_: resolve_type(
+                                    &self.root_module_declaration,
+                                    module_path,
+                                    &field.type_,
+                                    ErrorLocation::Position(
+                                        module_path
+                                            .with_part(types::Identifier::parse(&struct_.name)),
+                                        field.position,
+                                    ),
+                                )?,
 
-                                    static_: false,
-                                },
-                            );
+                                static_: false,
+                                struct_id: types::StructId::FQName(
+                                    module_path.with_part(Identifier::parse(&struct_.name)),
+                                ),
+                                name: Identifier::parse(&field.name),
+                            });
                         }
                         let name = module_path.with_part(types::Identifier::parse(&struct_.name));
+                        let id = types::StructId::FQName(name);
+
+                        // TODO get the actual type arguments from the declaration
+                        self.structs.insert(
+                            id,
+                            types::Struct {
+                                name,
+                                fields,
+                                impls: HashMap::new(),
+                                type_arguments: types::TypeArguments::new_empty(),
+                            },
+                        );
+
                         self.root_module_declaration.declare(
                             name,
                             DeclaredItem {
-                                kind: DeclaredItemKind::Struct(DeclaredStruct { name, fields }),
+                                kind: DeclaredItemKind::Struct(id),
                                 visibility: Self::convert_visibility(struct_.visibility),
                             },
                         );
@@ -250,7 +268,9 @@ impl<'pre> DeclarationChecker<'pre> {
                 match &declaration.kind {
                     ast::DeclarationKind::Struct(struct_) => {
                         for field in &struct_.fields {
-                            let type_name = resolve_type(
+                            // this is so that resolve_type returns an error in case the type is
+                            // invalid
+                            let _ = resolve_type(
                                 &self.root_module_declaration,
                                 module_path,
                                 &field.type_,
@@ -258,17 +278,7 @@ impl<'pre> DeclarationChecker<'pre> {
                                     module_path.with_part(types::Identifier::parse(&struct_.name)),
                                     field.position,
                                 ),
-                            )?
-                            .name();
-                            if self.root_module_declaration.get_item(type_name).is_none() {
-                                // TODO there should be a function that can canonicalize this name!
-                                return Err(TypeCheckErrorDescription::ItemDoesNotExist(type_name)
-                                    .at(ErrorLocation::Position(
-                                        module_path
-                                            .with_part(types::Identifier::parse(&struct_.name)),
-                                        declaration.position,
-                                    )));
-                            }
+                            )?;
                         }
                     }
                     ast::DeclarationKind::Function(_) | ast::DeclarationKind::Impl(_) => {}
@@ -300,12 +310,8 @@ impl<'pre> DeclarationChecker<'pre> {
                     )?
                     .kind()
                     {
-                        if let types::TypeKind::StructDescriptor(types::StructDescriptorType {
-                            name: obj_type,
-                            ..
-                        }) = array_item_type.kind()
-                        {
-                            if *obj_type == *TYPE_NAME_STRING {
+                        if let types::TypeKind::StructDescriptor(id) = array_item_type.kind() {
+                            if self.structs.get(id).unwrap().name == *TYPE_NAME_STRING {
                                 if self.main.is_some() {
                                     todo!("show a nice error here, main is already defined");
                                 }
@@ -406,11 +412,15 @@ impl<'pre> DeclarationChecker<'pre> {
         }
     }
 
-    pub(crate) fn new(root_module_declaration: DeclaredModule<'pre>) -> Self {
+    pub(crate) fn new(
+        root_module_declaration: DeclaredModule<'pre>,
+        structs: HashMap<types::StructId, types::Struct>,
+    ) -> Self {
         Self {
             root_module_declaration,
             declared_impls: HashMap::new(),
             main: None,
+            structs,
         }
     }
 
@@ -427,6 +437,7 @@ impl<'pre> DeclarationChecker<'pre> {
             self.root_module_declaration,
             self.declared_impls,
             self.main,
+            self.structs,
         ))
     }
 }

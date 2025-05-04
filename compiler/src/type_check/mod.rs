@@ -6,8 +6,7 @@ pub mod errors;
 use declaration_checker::DeclarationChecker;
 use declarations::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
-    DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStruct,
-    DeclaredStructField,
+    DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStructField,
 };
 use errors::{TypeCheckError, TypeCheckErrorDescription};
 
@@ -23,12 +22,9 @@ impl types::Item {
         match &self.kind {
             types::ItemKind::Function(function) => Ok(function.type_()),
             types::ItemKind::Struct(struct_) => Ok(types::Type::new_not_generic(
-                types::TypeKind::StructDescriptor(types::StructDescriptorType {
-                    name: struct_.name,
-                    fields: struct_.fields.clone(),
-                    instance_id: None,
-                }),
+                types::TypeKind::StructDescriptor(*struct_),
             )),
+            types::ItemKind::StructImport(_) => todo!(),
             types::ItemKind::Import(import) => root_module
                 .get_item(import.imported_item)
                 .ok_or_else(|| {
@@ -46,12 +42,15 @@ pub fn type_check(
     std: Option<&types::RootModule>,
 ) -> Result<types::RootModule, TypeCheckError> {
     let mut root_module_declaration = DeclaredModule::new();
+    let mut structs = None;
 
-    if let Some(std) = std.map(types::RootModule::root_module) {
-        root_module_declaration.import_predeclared(std);
+    if let Some(std) = std {
+        root_module_declaration.import_predeclared(std.root_module());
+        structs = Some(std.structs().clone());
     }
 
-    let type_checker = DeclarationChecker::new(root_module_declaration);
+    let type_checker =
+        DeclarationChecker::new(root_module_declaration, structs.unwrap_or_default());
 
     let definition_checker = type_checker.check(program)?;
     definition_checker.check()

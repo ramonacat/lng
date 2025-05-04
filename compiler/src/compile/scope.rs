@@ -4,7 +4,7 @@ use inkwell::module::Module;
 
 use crate::types;
 
-use super::{Value, module::CompiledModule};
+use super::{Value, context::AllStructs, module::CompiledModule};
 
 pub struct Scope<'ctx> {
     locals: RwLock<HashMap<types::Identifier, Value<'ctx>>>,
@@ -79,6 +79,8 @@ impl<'ctx> Scope<'ctx> {
 pub struct GlobalScope<'ctx> {
     modules: HashMap<types::FQName, CompiledModule<'ctx>>,
     scope: Rc<Scope<'ctx>>,
+    // TODO should it be made private?
+    pub structs: AllStructs<'ctx>,
 }
 
 impl Debug for GlobalScope<'_> {
@@ -100,11 +102,12 @@ impl Debug for GlobalScope<'_> {
     }
 }
 
-impl Default for GlobalScope<'_> {
-    fn default() -> Self {
+impl GlobalScope<'_> {
+    pub(crate) fn new(structs: HashMap<types::StructId, types::Struct>) -> Self {
         Self {
             modules: HashMap::new(),
             scope: Scope::root(),
+            structs: AllStructs::new(structs),
         }
     }
 }

@@ -119,7 +119,6 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::TypeKind::Pointer(_) => todo!(),
                 types::TypeKind::U8 => todo!(),
                 types::TypeKind::Generic(_) => todo!(),
-                types::TypeKind::UninstantiatedObject { .. } => todo!(),
             };
 
             scope.set_value(argument.name, value);

@@ -8,7 +8,7 @@ use inkwell::{
     values::{IntValue, PointerValue},
 };
 
-use crate::types;
+use crate::types::{self, StructId};
 
 use super::{
     CompileError, CompileErrorDescription, scope::GlobalScope, unique_name,
@@ -19,15 +19,17 @@ pub struct Builtins {
     pub rc_handle: types::Struct,
 }
 
-pub struct InstantiatedStructs<'ctx> {
+pub struct AllStructs<'ctx> {
+    structs: HashMap<types::StructId, types::Struct>,
     instantiated_structs:
         RwLock<HashMap<types::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
 }
 
 // TODO rename the methdos to something less verbose
-impl<'ctx> InstantiatedStructs<'ctx> {
-    pub(crate) fn new() -> Self {
+impl<'ctx> AllStructs<'ctx> {
+    pub(crate) fn new(structs: HashMap<StructId, types::Struct>) -> Self {
         Self {
+            structs,
             instantiated_structs: RwLock::new(HashMap::new()),
         }
     }
@@ -37,27 +39,34 @@ impl<'ctx> InstantiatedStructs<'ctx> {
         handle: &types::InstantiatedStructId,
         inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
     ) -> T {
+        self.instantiate_struct(handle.0, &handle.1);
+
         inspect(self.instantiated_structs.read().unwrap().get(handle))
     }
 
     // TODO deal with setting the static fields here
+    // TODO this method should probably be private?
     pub fn instantiate_struct(
         &self,
-        struct_: &types::Struct,
+        struct_: types::StructId,
         type_argument_values: &types::TypeArgumentValues,
-        object_lookup: &impl Fn(types::FQName) -> types::Type,
     ) -> types::InstantiatedStructId {
-        let id = types::InstantiatedStructId(struct_.clone(), type_argument_values.clone());
+        let id = types::InstantiatedStructId(struct_, type_argument_values.clone());
 
-        // TODO we should not instantiate on every lookup, but calling objetct_lookup instantiates,
-        // so we run into a conflict otherwise. this will not matter in the future, once we get rid
-        // of types::TypeKind::UninstantiatedObject
-        let instantiated = struct_.instantiate(type_argument_values, object_lookup);
         self.instantiated_structs
             .write()
             .unwrap()
             .entry(id.clone())
-            .or_insert_with(|| InstantiatedStructType::new(instantiated));
+            .or_insert_with(|| {
+                dbg!(&self.structs, struct_);
+                let instantiated = self
+                    .structs
+                    .get(&struct_)
+                    .unwrap()
+                    .instantiate(type_argument_values);
+
+                InstantiatedStructType::new(instantiated)
+            });
 
         id
     }
@@ -68,30 +77,17 @@ pub struct CompilerContext<'ctx> {
     pub builder: Builder<'ctx>,
     pub builtins: Builtins,
     pub global_scope: GlobalScope<'ctx>,
-    pub instantiated_structs: InstantiatedStructs<'ctx>,
 }
 
 impl<'ctx> CompilerContext<'ctx> {
     pub fn instantiate_struct(
         &self,
-        name: types::FQName,
+        id: StructId,
         type_argument_values: &types::TypeArgumentValues,
     ) -> types::InstantiatedStructId {
-        let struct_ = self
-            .global_scope
-            .get_value(name)
-            .unwrap()
-            .as_struct()
-            .unwrap();
-
-        self.instantiated_structs
-            // TODO we should get the type arguments from somewhere somehow, figure it out
-            .instantiate_struct(&struct_, type_argument_values, &|name| {
-                types::Type::new_not_generic(types::TypeKind::Object {
-                    type_name: self
-                        .instantiate_struct(name, &types::TypeArgumentValues::new_empty()),
-                })
-            })
+        self.global_scope
+            .structs
+            .instantiate_struct(id, type_argument_values)
     }
 
     pub fn const_u64(&self, value: u64) -> IntValue<'ctx> {
@@ -108,7 +104,9 @@ impl<'ctx> CompilerContext<'ctx> {
         // TODO verify the type exists and return an error if not
         // TODO what about std types that have type arguments?
         self.instantiate_struct(
-            types::FQName::parse("std").with_part(types::Identifier::parse(name)),
+            types::StructId::FQName(
+                types::FQName::parse("std").with_part(types::Identifier::parse(name)),
+            ),
             &types::TypeArgumentValues::new_empty(),
         )
     }
@@ -125,7 +123,6 @@ impl<'ctx> CompilerContext<'ctx> {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
             types::TypeKind::Generic(_) => todo!(),
-            types::TypeKind::UninstantiatedObject { .. } => todo!(),
         }
     }
 

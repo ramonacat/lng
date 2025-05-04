@@ -50,12 +50,6 @@ pub(super) struct DeclaredImport {
     pub(super) imported_item: types::FQName,
 }
 
-#[derive(Debug, Clone)]
-pub(super) struct DeclaredStruct {
-    pub(super) name: types::FQName,
-    pub(super) fields: HashMap<types::Identifier, DeclaredStructField>,
-}
-
 #[derive(Clone)]
 pub(super) struct DeclaredModule<'pre> {
     pub(super) items: HashMap<types::Identifier, DeclaredItem<'pre>>,
@@ -119,24 +113,6 @@ impl<'pre> DeclaredModule<'pre> {
         }
     }
 
-    pub(super) fn get_item_mut(&mut self, name: types::FQName) -> Option<&mut DeclaredItem<'pre>> {
-        if name.len() == 1 {
-            return self.items.get_mut(&name.last());
-        }
-
-        let (first, rest) = name.split_first();
-
-        let DeclaredItem {
-            kind: DeclaredItemKind::Module(m),
-            visibility: _,
-        } = self.items.get_mut(&first).unwrap()
-        else {
-            todo!();
-        };
-
-        m.get_item_mut(rest)
-    }
-
     // TODO can we get rid of the clones here?
     pub(super) fn get_item(&self, name: types::FQName) -> Option<DeclaredItem> {
         if name.len() == 1 {
@@ -166,7 +142,7 @@ impl<'pre> DeclaredModule<'pre> {
 #[derive(Debug, Clone)]
 pub(super) enum DeclaredItemKind<'pre> {
     Function(DeclaredFunction),
-    Struct(DeclaredStruct),
+    Struct(types::StructId),
     Import(DeclaredImport),
     Predeclared(&'pre types::Item),
     Module(DeclaredModule<'pre>),
@@ -184,8 +160,8 @@ impl std::fmt::Debug for DeclaredItem<'_> {
             DeclaredItemKind::Function(declared_function) => {
                 write!(f, "Function({})", declared_function.name)
             }
-            DeclaredItemKind::Struct(declared_struct) => {
-                write!(f, "Struct({})", declared_struct.name)
+            DeclaredItemKind::Struct(struct_id) => {
+                write!(f, "Struct({struct_id})")
             }
             DeclaredItemKind::Import(declared_import) => {
                 write!(f, "Import({})", declared_import.imported_item)
@@ -232,21 +208,8 @@ impl DeclaredItem<'_> {
                     )?),
                 }))
             }
-            DeclaredItemKind::Struct(declared_struct) => Ok(types::Type::new_not_generic(
-                types::TypeKind::StructDescriptor(types::StructDescriptorType {
-                    name: declared_struct.name,
-                    instance_id: None,
-                    fields: declared_struct
-                        .fields
-                        .iter()
-                        .map(|(field_name, declaration)| types::StructField {
-                            struct_name: declared_struct.name,
-                            name: *field_name,
-                            type_: declaration.type_.clone(),
-                            static_: declaration.static_,
-                        })
-                        .collect(),
-                }),
+            DeclaredItemKind::Struct(struct_id) => Ok(types::Type::new_not_generic(
+                types::TypeKind::StructDescriptor(*struct_id),
             )),
             DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => root_module
                 .get_item(*imported_item)
@@ -323,25 +286,9 @@ pub(super) fn resolve_type(
                         )?),
                     }))
                 }
-                DeclaredItemKind::Struct(declared_struct) => {
-                    Ok(types::Type::new_not_generic(
-                        types::TypeKind::StructDescriptor(types::StructDescriptorType {
-                            name: declared_struct.name,
-                            instance_id: None,
-                            fields: declared_struct
-                                .fields
-                                .iter()
-                                .map(|(name, field)| types::StructField {
-                                    struct_name: declared_struct.name,
-                                    name: *name,
-                                    // TODO field.type_ should also probably be resolve_type'd
-                                    type_: field.type_.clone(),
-                                    static_: field.static_,
-                                })
-                                .collect(),
-                        }),
-                    ))
-                }
+                DeclaredItemKind::Struct(declared_struct) => Ok(types::Type::new_not_generic(
+                    types::TypeKind::StructDescriptor(declared_struct),
+                )),
                 DeclaredItemKind::Predeclared(item) => item.type_(root_module, error_location),
                 DeclaredItemKind::Import(declared_import) => {
                     let imported_item = root_module.get_item(declared_import.imported_item);

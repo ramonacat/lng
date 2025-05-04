@@ -30,19 +30,20 @@ pub fn describe_structure() -> types::Struct {
     let type_argument = types::TypeArgument::new(types::Identifier::parse("TPointee"));
     let generic_argument_type =
         types::Type::new_generic(types::TypeKind::Generic(type_argument), vec![type_argument]);
+    let struct_id = types::StructId::FQName(struct_name);
 
     types::Struct {
         name: struct_name,
         type_arguments: types::TypeArguments::new(vec![type_argument]),
         fields: vec![
             types::StructField {
-                struct_name,
+                struct_id,
                 name: *REFCOUNT_FIELD,
                 type_: types::Type::new_not_generic(types::TypeKind::U64),
                 static_: false,
             },
             types::StructField {
-                struct_name,
+                struct_id,
                 name: *POINTEE_FIELD,
                 type_: types::Type::new_generic(
                     types::TypeKind::Pointer(Box::new(generic_argument_type)),

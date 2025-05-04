@@ -27,20 +27,14 @@ impl FunctionHandle {
     // TODO this method should not be exist, FunctionHandle should be a lightweight pointer to some
     // table with all the declared functions, and this struct should only be created for
     // already instantiated functions
-    pub(crate) fn instantiate(
-        &self,
-        type_argument_values: &types::TypeArgumentValues,
-        object_lookup: &impl Fn(types::FQName) -> types::Type,
-    ) -> Self {
+    pub(crate) fn instantiate(&self, type_argument_values: &types::TypeArgumentValues) -> Self {
         let arguments = self
             .arguments
             .iter()
-            .map(|x| x.instantiate(type_argument_values, object_lookup))
+            .map(|x| x.instantiate(type_argument_values))
             .collect();
 
-        let return_type = self
-            .return_type
-            .instantiate(type_argument_values, object_lookup);
+        let return_type = self.return_type.instantiate(type_argument_values);
 
         Self {
             name: self.name.clone(),
@@ -50,9 +44,7 @@ impl FunctionHandle {
             arguments,
             return_type,
             linkage: self.linkage,
-            definition: self
-                .definition
-                .instantiate(type_argument_values, object_lookup),
+            definition: self.definition.instantiate(type_argument_values),
         }
     }
 }
@@ -288,12 +280,14 @@ impl<'ctx> Value<'ctx> {
     ) -> Option<Self> {
         match self {
             Value::Primitive(handle, _) => context
-                .instantiated_structs
+                .global_scope
+                .structs
                 .inspect_instantiated_struct(handle, |struct_| {
                     struct_.unwrap().read_field_value(self.clone(), field_path)
                 }),
             Value::Reference(ref_) => context
-                .instantiated_structs
+                .global_scope
+                .structs
                 .inspect_instantiated_struct(&ref_.type_(), |struct_| {
                     struct_.unwrap().read_field_value(self.clone(), field_path)
                 }),
@@ -301,14 +295,6 @@ impl<'ctx> Value<'ctx> {
             Value::Struct(_) => todo!(),
             Value::Empty => todo!(),
             Value::Callable(_, _) => todo!(),
-        }
-    }
-
-    pub fn as_struct(&self) -> Option<types::Struct> {
-        if let Value::Struct(handle) = self {
-            Some(handle.clone())
-        } else {
-            None
         }
     }
 

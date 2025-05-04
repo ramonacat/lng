@@ -41,12 +41,15 @@ impl StringValue {
                 .as_basic_value_enum(),
         );
 
-        let id =
-            context.instantiate_struct(*TYPE_NAME_STRING, &types::TypeArgumentValues::new_empty());
+        let id = context.instantiate_struct(
+            types::StructId::FQName(*TYPE_NAME_STRING),
+            &types::TypeArgumentValues::new_empty(),
+        );
 
         let literal_value =
             context
-                .instantiated_structs
+                .global_scope
+                .structs
                 .inspect_instantiated_struct(&id, |string_handle| {
                     string_handle.unwrap().build_heap_instance(
                         context,
@@ -60,18 +63,20 @@ impl StringValue {
 }
 
 pub fn describe_structure() -> types::Struct {
+    let struct_id = types::StructId::FQName(*TYPE_NAME_STRING);
+
     types::Struct {
         name: *TYPE_NAME_STRING,
         type_arguments: types::TypeArguments::new_empty(),
         fields: vec![
             types::StructField {
-                struct_name: *TYPE_NAME_STRING,
+                struct_id,
                 name: types::Identifier::parse("characters"),
                 type_: types::Type::u8(),
                 static_: false,
             },
             types::StructField {
-                struct_name: *TYPE_NAME_STRING,
+                struct_id,
                 name: types::Identifier::parse("length"),
                 type_: types::Type::u64(),
                 static_: false,

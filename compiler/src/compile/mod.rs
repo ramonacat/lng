@@ -11,7 +11,7 @@ use builtins::{
     rc::{self, RcValue},
     string::{self, StringValue},
 };
-use context::{Builtins, CompilerContext, InstantiatedStructs};
+use context::{AllStructs, Builtins, CompilerContext};
 use inkwell::{
     basic_block::BasicBlock,
     builder::BuilderError,
@@ -28,9 +28,11 @@ use value::{FunctionHandle, StructInstance, Value};
 use crate::{
     ast::SourceRange,
     errors::ErrorLocation,
-    std::{compile_std, runtime::register_mappings},
+    std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
     types,
 };
+
+use self::array::TYPE_NAME_ARRAY;
 
 fn unique_name(parts: &[&str]) -> String {
     format!(
@@ -281,9 +283,11 @@ impl<'ctx> Compiler<'ctx> {
         let global_scope = std.unwrap_or_else(|| {
             // If there is no std, then we want to get in early and create the builtins, so that
             // the rest of the compilation can just add methods, etc. to them
-            let mut scope = GlobalScope::default();
+            let mut scope = GlobalScope::new(HashMap::new());
+
             let std = scope
                 .get_or_create_module(types::FQName::parse("std"), || context.create_module("std"));
+
             std.set_variable(
                 types::Identifier::parse("string"),
                 Value::Struct(string::describe_structure()),
@@ -305,7 +309,6 @@ impl<'ctx> Compiler<'ctx> {
                 builder: context.create_builder(),
                 global_scope,
                 builtins,
-                instantiated_structs: InstantiatedStructs::new(),
             },
         }
     }
@@ -316,6 +319,23 @@ impl<'ctx> Compiler<'ctx> {
     ) -> Result<CompiledRootModule<'ctx>, CompileError> {
         let main = program.main();
         let root_module = program.root_module();
+        let mut structs = program.structs().clone();
+
+        // TODO this is a bit hacky, we should have an attribute on the structs marking them as
+        // predefined, so that the definitions are ignored, but the impls are not
+        structs
+            .get_mut(&types::StructId::FQName(*TYPE_NAME_STRING))
+            .unwrap()
+            .fields
+            .append(&mut string::describe_structure().fields);
+
+        // TODO should the array struct be declared in stdlib, like string?
+        structs.insert(
+            types::StructId::FQName(*TYPE_NAME_ARRAY),
+            array::describe_structure(),
+        );
+
+        self.context.global_scope.structs = AllStructs::new(structs);
 
         self.declare_items(root_module, types::FQName::parse(""));
         self.resolve_imports(root_module, types::FQName::parse(""))?;
@@ -350,7 +370,6 @@ impl<'ctx> Compiler<'ctx> {
     ) -> Result<(), CompileError> {
         for (name, item) in program.items() {
             match &item.kind {
-                types::ItemKind::Function(_) | types::ItemKind::Struct(_) => {}
                 types::ItemKind::Import(import) => {
                     let value = self
                         .context
@@ -384,6 +403,9 @@ impl<'ctx> Compiler<'ctx> {
                 types::ItemKind::Module(module) => {
                     self.resolve_imports(module, root_path.with_part(name))?;
                 }
+                types::ItemKind::Function(_)
+                | types::ItemKind::Struct(_)
+                | types::ItemKind::StructImport(_) => {}
             }
         }
 
@@ -415,23 +437,12 @@ impl<'ctx> Compiler<'ctx> {
 
                     module.set_variable(function.name.last(), Value::Function(function_handle));
                 }
-                types::ItemKind::Struct(struct_) => {
-                    // If this is a magical std item, we want to keep the builtin declaration (but
-                    // later we will declare impls as if it was just any other type)
-                    // TODO give those structs some sort of an argument that tells the compiler
-                    // that they're builtin
-                    if module.path() == types::FQName::parse("std")
-                        && module.get_variable(struct_.name.last()).is_some()
-                    {
-                        continue;
-                    }
-
-                    module.set_variable(struct_.name.last(), Value::Struct(struct_.clone()));
-                }
-                types::ItemKind::Import(_) => {}
                 types::ItemKind::Module(module_declaration) => {
                     self.declare_items(module_declaration, root_path.with_part(path));
                 }
+                types::ItemKind::Import(_)
+                | types::ItemKind::StructImport(_)
+                | types::ItemKind::Struct(_) => {}
             }
         }
     }
@@ -458,13 +469,7 @@ impl<'ctx> Compiler<'ctx> {
         // TODO in reality, at this point we should already have the handle instantiated, do this
         // earlier!
         let mut compiled_function = module.begin_compile_function(
-            handle.instantiate(&types::TypeArgumentValues::new_empty(), &|name| {
-                types::Type::new_not_generic(types::TypeKind::Object {
-                    type_name: self
-                        .context
-                        .instantiate_struct(name, &types::TypeArgumentValues::new_empty()),
-                })
-            }),
+            handle.instantiate(&types::TypeArgumentValues::new_empty()),
             &self.context,
         );
 
@@ -618,37 +623,26 @@ impl<'ctx> Compiler<'ctx> {
                 Ok((None, compiled_function.scope.get_value(*name).unwrap()))
             }
             types::ExpressionKind::StructConstructor(name) => {
-                // TODO instad of this, there should be some global store for structs, and this
-                // should just return id in that store. This code will break once we allow to
-                // dynamically create structs
-                let struct_ = compiled_function
-                    .scope
-                    .get_value(*name)
-                    .unwrap()
-                    .as_struct()
-                    .unwrap();
+                // TODO ensure the struct is instantiated in the context
                 // TODO get the type argument values from the expression!
-                let id = self
-                    .context
-                    .instantiate_struct(struct_.name, &types::TypeArgumentValues::new_empty());
-
                 let field_values = HashMap::new();
                 // TODO actually set the field values!
 
                 let value = self
                     .context
-                    .instantiated_structs
-                    .inspect_instantiated_struct(&id, |s| {
+                    .global_scope
+                    .structs
+                    .inspect_instantiated_struct(name, |s| {
                         s.unwrap().build_heap_instance(
                             &self.context,
-                            &unique_name(&[&name.raw()]),
+                            &unique_name(&[&name.to_string()]),
                             field_values,
                         )
                     });
 
                 let rc = RcValue::build_init(
-                    &unique_name(&[&name.raw(), "rc"]),
-                    &StructInstance::new(value, id),
+                    &unique_name(&[&name.to_string(), "rc"]),
+                    &StructInstance::new(value, name.clone()),
                     &self.context,
                 );
                 compiled_function.rcs.push(rc.clone());
@@ -696,13 +690,7 @@ impl<'ctx> Compiler<'ctx> {
         };
 
         // TODO the instantiation should be done earlier
-        let function = function.instantiate(&types::TypeArgumentValues::new_empty(), &|name| {
-            types::Type::new_not_generic(types::TypeKind::Object {
-                type_name: self
-                    .context
-                    .instantiate_struct(name, &types::TypeArgumentValues::new_empty()),
-            })
-        });
+        let function = function.instantiate(&types::TypeArgumentValues::new_empty());
 
         if !self
             .context
@@ -770,7 +758,6 @@ impl<'ctx> Compiler<'ctx> {
             types::TypeKind::U8 => todo!(),
             types::TypeKind::Pointer(_) => todo!(),
             types::TypeKind::Generic(_) => todo!(),
-            types::TypeKind::UninstantiatedObject { .. } => todo!(),
         };
         Ok(value)
     }

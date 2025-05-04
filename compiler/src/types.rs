@@ -152,47 +152,9 @@ impl std::fmt::Display for TypeArguments {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructDescriptorType {
-    pub instance_id: Option<InstantiatedStructId>,
-    pub name: FQName,
+    pub id: StructId,
     // the fields are a Vec<_>, so that the order is well defined
     pub fields: Vec<StructField>,
-}
-
-impl StructDescriptorType {
-    fn instance_type(&self) -> Type {
-        // TODO can we avoid special-casing the types here? perhaps take the object type as an
-        // argument?
-        if self.name == *TYPE_NAME_U64 {
-            return Type::new_not_generic(TypeKind::U64);
-        }
-
-        if self.name == *TYPE_NAME_UNIT {
-            return Type::new_not_generic(TypeKind::Unit);
-        }
-
-        for field in &self.fields {
-            // TODO instead of assert! return an error here if there are still type arguments that
-            // need values
-            assert!(field.type_.arguments.0.is_empty());
-        }
-
-        // TODO we should ensure that the object type has the correct type_arguments, it does not
-        // have to be not generic
-        //
-        self.instance_id.as_ref().map_or_else(
-            || {
-                Type::new_not_generic(TypeKind::UninstantiatedObject {
-                    type_name: self.name,
-                })
-            },
-            |instance_id| {
-                Type::new_not_generic(TypeKind::Object {
-                    // TODO return Err() in case there's no instance_id
-                    type_name: instance_id.clone(),
-                })
-            },
-        )
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -251,11 +213,11 @@ impl std::fmt::Display for TypeArgumentValues {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InstantiatedStructId(pub Struct, pub TypeArgumentValues);
+pub struct InstantiatedStructId(pub StructId, pub TypeArgumentValues);
 
 impl Display for InstantiatedStructId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.name)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -270,7 +232,7 @@ pub enum TypeKind {
         element_type: Box<Type>,
     },
     // TODO this should probably be simply an object, just of StructDescriptor<TargetStruct> type
-    StructDescriptor(StructDescriptorType),
+    StructDescriptor(StructId),
     // TODO this should be an object with special properties
     Callable {
         arguments: Vec<Argument>,
@@ -282,11 +244,6 @@ pub enum TypeKind {
     U64,
     U8,
     Pointer(Box<Type>),
-    // TODO we should stop refering to structs by FQName, as dynamically created ones won't have
-    // it, they should instead have an ID created for them at declaration time
-    UninstantiatedObject {
-        type_name: FQName,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -308,11 +265,7 @@ impl Type {
             TypeKind::Object {
                 type_name: item_path,
             } => format!("{item_path}{type_argument_values}"),
-            TypeKind::StructDescriptor(StructDescriptorType {
-                name: item_path,
-                fields: _,
-                instance_id: _,
-            }) => format!("Struct{type_argument_values}({item_path})"),
+            TypeKind::StructDescriptor(struct_id) => format!("Struct({struct_id})"),
             TypeKind::Array {
                 element_type: inner,
             } => format!("{}[]", inner.debug_name()),
@@ -331,35 +284,10 @@ impl Type {
             TypeKind::U8 => "u8".to_string(),
             TypeKind::Pointer(inner) => format!("*{}", inner.debug_name()),
             TypeKind::Generic(type_argument) => format!("Generic({type_argument})"),
-            TypeKind::UninstantiatedObject { type_name } => {
-                format!("UninstantiatedObject({type_name})")
-            }
-        }
-    }
-
-    // TODO we should really not use FQName to refer to structs, as those could be created
-    // dynamically, we should only allow getting an instance id
-    pub(crate) fn name(&self) -> FQName {
-        match &self.kind {
-            TypeKind::Unit => todo!(),
-            TypeKind::Object {
-                type_name: item_path,
-            } => item_path.0.name,
-            TypeKind::Array { .. } => todo!(),
-            TypeKind::StructDescriptor(_) => todo!(),
-            TypeKind::Callable { .. } => todo!(),
-            TypeKind::U64 => *TYPE_NAME_U64,
-            TypeKind::U8 => todo!(),
-            TypeKind::Pointer(_) => todo!(),
-            TypeKind::Generic(_) => todo!(),
-            TypeKind::UninstantiatedObject { type_name } => *type_name,
         }
     }
 
     pub(crate) fn instance_type(&self) -> Self {
-        // TODO return a Result<> here, error if there are still unresolved type arguments
-        assert!(self.arguments.0.is_empty());
-
         // TODO check for type arguments values here and pass them to the instance as needed
         match &self.kind {
             TypeKind::Unit => todo!(),
@@ -374,15 +302,25 @@ impl Type {
                 arguments: TypeArguments::new_empty(),
                 argument_values: TypeArgumentValues::new_empty(),
             },
-            TypeKind::StructDescriptor(struct_descriptor_type) => {
-                struct_descriptor_type.instance_type()
+            TypeKind::StructDescriptor(struct_id) => {
+                let kind = match struct_id {
+                    StructId::FQName(fqname) if *fqname == *TYPE_NAME_UNIT => TypeKind::Unit,
+                    StructId::FQName(fqname) if *fqname == *TYPE_NAME_U64 => TypeKind::U64,
+                    StructId::FQName(_) => TypeKind::Object {
+                        type_name: InstantiatedStructId(*struct_id, self.argument_values.clone()),
+                    },
+                };
+                Self {
+                    kind,
+                    arguments: TypeArguments::new_empty(),
+                    argument_values: TypeArgumentValues::new_empty(),
+                }
             }
             TypeKind::Callable { .. } => todo!(),
             TypeKind::U64 => todo!(),
             TypeKind::U8 => todo!(),
             TypeKind::Pointer(_) => todo!(),
             TypeKind::Generic(_) => todo!(),
-            TypeKind::UninstantiatedObject { .. } => todo!(),
         }
     }
 
@@ -414,11 +352,7 @@ impl Type {
         &self.kind
     }
 
-    pub(crate) fn instantiate(
-        &self,
-        type_argument_values: &TypeArgumentValues,
-        object_lookup: &impl Fn(FQName) -> Self,
-    ) -> Self {
+    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
         let kind = match &self.kind {
             // TODO assert that the type_argument is fully instantiated
             TypeKind::Generic(type_argument) => type_argument_values
@@ -431,9 +365,7 @@ impl Type {
                 type_name: type_name.clone(),
             },
             TypeKind::Array { element_type } => TypeKind::Array {
-                element_type: Box::new(
-                    element_type.instantiate(type_argument_values, object_lookup),
-                ),
+                element_type: Box::new(element_type.instantiate(type_argument_values)),
             },
             TypeKind::StructDescriptor(_) => todo!(),
             TypeKind::Callable {
@@ -442,10 +374,9 @@ impl Type {
             } => {
                 let arguments = arguments
                     .iter()
-                    .map(|x| x.instantiate(type_argument_values, object_lookup))
+                    .map(|x| x.instantiate(type_argument_values))
                     .collect();
-                let return_type =
-                    Box::new(return_type.instantiate(type_argument_values, object_lookup));
+                let return_type = Box::new(return_type.instantiate(type_argument_values));
 
                 TypeKind::Callable {
                     arguments,
@@ -454,13 +385,8 @@ impl Type {
             }
             TypeKind::U64 => TypeKind::U64,
             TypeKind::U8 => TypeKind::U8,
-            TypeKind::Pointer(target) => TypeKind::Pointer(Box::new(
-                target.instantiate(type_argument_values, object_lookup),
-            )),
-            TypeKind::UninstantiatedObject { type_name } => {
-                object_lookup(*type_name)
-                    .instantiate(type_argument_values, object_lookup)
-                    .kind
+            TypeKind::Pointer(target) => {
+                TypeKind::Pointer(Box::new(target.instantiate(type_argument_values)))
             }
         };
 
@@ -468,6 +394,23 @@ impl Type {
             kind,
             arguments: TypeArguments::new_empty(),
             argument_values: TypeArgumentValues::new_empty(),
+        }
+    }
+
+    pub(crate) fn struct_name(&self) -> InstantiatedStructId {
+        match &self.kind {
+            TypeKind::Generic(_) => todo!(),
+            TypeKind::Unit => todo!(),
+            TypeKind::Object { type_name } => type_name.clone(),
+            TypeKind::Array { .. } => todo!(),
+            TypeKind::StructDescriptor(_) => todo!(),
+            TypeKind::Callable { .. } => todo!(),
+            TypeKind::U64 => InstantiatedStructId(
+                StructId::FQName(*TYPE_NAME_U64),
+                TypeArgumentValues::new_empty(),
+            ),
+            TypeKind::U8 => todo!(),
+            TypeKind::Pointer(_) => todo!(),
         }
     }
 }
@@ -482,12 +425,8 @@ impl Display for Type {
             TypeKind::Array {
                 element_type: inner,
             } => write!(f, "{inner}[]"),
-            TypeKind::StructDescriptor(StructDescriptorType {
-                name,
-                fields: _,
-                instance_id: _,
-            }) => {
-                write!(f, "StructDescriptor{}<{name}>", self.argument_values)
+            TypeKind::StructDescriptor(struct_id) => {
+                write!(f, "StructDescriptor<{struct_id}>")
             }
             TypeKind::Callable {
                 arguments,
@@ -505,7 +444,6 @@ impl Display for Type {
             TypeKind::U64 => write!(f, "u64"),
             TypeKind::Pointer(to) => write!(f, "*{to}"),
             TypeKind::Generic(name) => write!(f, "{name}"),
-            TypeKind::UninstantiatedObject { .. } => todo!(),
         }
     }
 }
@@ -517,14 +455,10 @@ pub struct Argument {
     pub position: SourceRange,
 }
 impl Argument {
-    pub(crate) fn instantiate(
-        &self,
-        type_argument_values: &TypeArgumentValues,
-        object_lookup: &impl Fn(FQName) -> Type,
-    ) -> Self {
+    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
         Self {
             name: self.name,
-            type_: self.type_.instantiate(type_argument_values, object_lookup),
+            type_: self.type_.instantiate(type_argument_values),
             position: self.position,
         }
     }
@@ -557,19 +491,13 @@ pub struct FunctionDefinition {
     pub position: ast::SourceRange,
 }
 impl FunctionDefinition {
-    pub(crate) fn instantiate(
-        &self,
-        type_argument_values: &TypeArgumentValues,
-        object_lookup: &impl Fn(FQName) -> Type,
-    ) -> Self {
+    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
         let arguments = self
             .arguments
             .iter()
-            .map(|x| x.instantiate(type_argument_values, object_lookup))
+            .map(|x| x.instantiate(type_argument_values))
             .collect();
-        let return_type = self
-            .return_type
-            .instantiate(type_argument_values, object_lookup);
+        let return_type = self.return_type.instantiate(type_argument_values);
 
         Self {
             arguments,
@@ -663,7 +591,7 @@ pub enum ExpressionKind {
     },
     Literal(Literal),
     VariableAccess(Identifier),
-    StructConstructor(Identifier),
+    StructConstructor(InstantiatedStructId),
     FieldAccess {
         target: Box<Expression>,
         field: Identifier,
@@ -691,10 +619,24 @@ pub struct Import {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructField {
-    pub struct_name: FQName,
+    pub struct_id: StructId,
     pub name: Identifier,
     pub type_: Type,
     pub static_: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StructId {
+    FQName(FQName),
+    // TODO a dynamically generated one can also be used here
+}
+
+impl Display for StructId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FQName(fqname) => write!(f, "struct({fqname})"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -724,11 +666,7 @@ impl PartialEq for Struct {
 }
 
 impl Struct {
-    pub(crate) fn instantiate(
-        &self,
-        _type_argument_values: &TypeArgumentValues,
-        _object_lookup: &impl Fn(FQName) -> Type,
-    ) -> Self {
+    pub(crate) fn instantiate(&self, _type_argument_values: &TypeArgumentValues) -> Self {
         // TODO support actually instantiating the impls and fields, but this can't be done yet, as the
         // self argument will lead to infinite recursion the way things are handled rn
         let fields = self.fields.clone();
@@ -744,14 +682,25 @@ impl Struct {
             impls,
         }
     }
+
+    pub(crate) fn field_type(&self, field_name: Identifier) -> Type {
+        self.fields
+            .iter()
+            .find(|x| x.name == field_name)
+            .unwrap()
+            .type_
+            .clone()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum ItemKind {
     Function(Function),
-    Struct(Struct),
+    Struct(StructId),
     Import(Import),
     Module(Module),
+    // TODO is this needed at all?
+    StructImport(StructId),
 }
 
 #[derive(Clone)]
@@ -764,9 +713,10 @@ impl std::fmt::Debug for Item {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             ItemKind::Function(function) => write!(f, "Function({})", function.name),
-            ItemKind::Struct(struct_) => write!(f, "Struct({})", struct_.name),
+            ItemKind::Struct(struct_) => write!(f, "Struct({struct_})"),
             ItemKind::Import(import) => write!(f, "Import({})", import.imported_item),
             ItemKind::Module(module) => write!(f, "{module:?}"),
+            ItemKind::StructImport(struct_id) => write!(f, "StructImport({struct_id})"),
         }
     }
 }
@@ -780,9 +730,11 @@ pub enum Visibility {
 pub struct AppModule {
     main: FQName,
     module: Module,
+    structs: HashMap<StructId, Struct>,
 }
 pub struct LibraryModule {
     module: Module,
+    structs: HashMap<StructId, Struct>,
 }
 
 pub enum RootModule {
@@ -805,16 +757,32 @@ impl RootModule {
         }
     }
 
-    pub(crate) const fn new_app(main: FQName, root_module: Module) -> Self {
+    pub(crate) const fn structs(&self) -> &HashMap<StructId, Struct> {
+        match self {
+            Self::App(app_module) => &app_module.structs,
+            Self::Library(library_module) => &library_module.structs,
+        }
+    }
+
+    pub(crate) const fn new_app(
+        main: FQName,
+        root_module: Module,
+        structs: HashMap<StructId, Struct>,
+    ) -> Self {
         Self::App(AppModule {
             main,
             module: root_module,
+            structs,
         })
     }
 
-    pub(crate) const fn new_library(root_module: Module) -> Self {
+    pub(crate) const fn new_library(
+        root_module: Module,
+        structs: HashMap<StructId, Struct>,
+    ) -> Self {
         Self::Library(LibraryModule {
             module: root_module,
+            structs,
         })
     }
 }
