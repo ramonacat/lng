@@ -7,10 +7,11 @@ mod value;
 use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
 
 use builtins::{
+    array,
     rc::{self, RcValue},
     string::{self, StringValue},
 };
-use context::{Builtins, CompilerContext};
+use context::{Builtins, CompilerContext, InstantiatedStructs};
 use inkwell::{
     basic_block::BasicBlock,
     builder::BuilderError,
@@ -22,13 +23,13 @@ use inkwell::{
 use module::CompiledModule;
 use rand::Rng;
 use scope::{GlobalScope, Scope};
-use value::{FunctionHandle, StructHandle, StructInstance, Value};
+use value::{FunctionHandle, StructInstance, Value};
 
 use crate::{
     ast::SourceRange,
     errors::ErrorLocation,
     std::{compile_std, runtime::register_mappings},
-    types::{self, FQName, Identifier, TypeArguments},
+    types::{self, FQName, Identifier, TypeArgumentValues, TypeArguments},
 };
 
 fn unique_name(parts: &[&str]) -> String {
@@ -266,16 +267,37 @@ pub enum CompiledRootModule<'ctx> {
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
         let builtins = Builtins {
-            string_handle: string::describe_structure(),
             rc_handle: rc::describe_structure(),
         };
+
+        let global_scope = std.unwrap_or_else(|| {
+            // If there is no std, then we want to get in early and create the builtins, so that
+            // the rest of the compilation can just add methods, etc. to them
+            let mut scope = GlobalScope::default();
+            let std =
+                scope.get_or_create_module(FQName::parse("std"), || context.create_module("std"));
+            std.set_variable(
+                Identifier::parse("string"),
+                Value::Struct(string::describe_structure()),
+            );
+            std.set_variable(
+                Identifier::parse("array"),
+                Value::Struct(array::describe_structure()),
+            );
+            std.set_variable(
+                Identifier::parse("rc"),
+                Value::Struct(rc::describe_structure()),
+            );
+            scope
+        });
 
         Self {
             context: CompilerContext {
                 llvm_context: context,
                 builder: context.create_builder(),
-                global_scope: std.unwrap_or_default(),
+                global_scope,
                 builtins,
+                instantiated_structs: InstantiatedStructs::new(),
             },
         }
     }
@@ -386,6 +408,16 @@ impl<'ctx> Compiler<'ctx> {
                     module.set_variable(function.name.last(), Value::Function(function_handle));
                 }
                 types::ItemKind::Struct(struct_) => {
+                    // If this is a magical std item, we want to keep the builtin declaration (but
+                    // later we will declare impls as if it was just any other type)
+                    // TODO give those structs some sort of an argument that tells the compiler
+                    // that they're builtin
+                    if module.path() == FQName::parse("std")
+                        && module.get_variable(struct_.name.last()).is_some()
+                    {
+                        continue;
+                    }
+
                     module.set_variable(struct_.name.last(), Value::Struct(struct_.clone()));
                 }
                 types::ItemKind::Import(_) => {}
@@ -545,7 +577,7 @@ impl<'ctx> Compiler<'ctx> {
                 types::Literal::UnsignedInteger(value) => Ok((
                     None,
                     Value::Primitive(
-                        self.context.get_std_type("u64").unwrap(),
+                        self.context.get_std_type("u64"),
                         self.context.const_u64(*value).as_basic_value_enum(),
                     ),
                 )),
@@ -554,27 +586,37 @@ impl<'ctx> Compiler<'ctx> {
                 Ok((None, compiled_function.scope.get_value(*name).unwrap()))
             }
             types::ExpressionKind::StructConstructor(name) => {
-                let s = compiled_function
+                // TODO instad of this, there should be some global store for structs, and this
+                // should just return id in that store. This code will break once we allow to
+                // dynamically create structs
+                let struct_ = compiled_function
                     .scope
                     .get_value(*name)
                     .unwrap()
                     .as_struct()
                     .unwrap();
                 // TODO get the type argument values from the expression!
-                let s = StructHandle::new(s);
+                let id = self
+                    .context
+                    .instantiate_struct(struct_.name, &TypeArgumentValues::new_empty());
 
                 let field_values = HashMap::new();
                 // TODO actually set the field values!
 
-                let value = s.build_heap_instance(
-                    &self.context,
-                    &unique_name(&[&name.raw()]),
-                    field_values,
-                );
+                let value = self
+                    .context
+                    .instantiated_structs
+                    .inspect_instantiated_struct(&id, |s| {
+                        s.unwrap().build_heap_instance(
+                            &self.context,
+                            &unique_name(&[&name.raw()]),
+                            field_values,
+                        )
+                    });
 
                 let rc = RcValue::build_init(
                     &unique_name(&[&name.raw(), "rc"]),
-                    &StructInstance::new(value, s.type_()),
+                    &StructInstance::new(value, id),
                     &self.context,
                 );
                 compiled_function.rcs.push(rc.clone());
@@ -679,20 +721,12 @@ impl<'ctx> Compiler<'ctx> {
             types::TypeKind::Object {
                 type_name: item_path,
             } => {
-                let value_type = self
+                // TODO ensure that the type arguments are known here
+                let id = self
                     .context
-                    .global_scope
-                    .get_value(*item_path)
-                    .unwrap()
-                    .as_struct()
-                    .unwrap();
+                    .instantiate_struct(*item_path, &TypeArgumentValues::new_empty());
 
-                let value_type = StructHandle::new(value_type);
-
-                Value::Reference(RcValue::from_pointer(
-                    call_result.into_pointer_value(),
-                    value_type.type_(),
-                ))
+                Value::Reference(RcValue::from_pointer(call_result.into_pointer_value(), id))
             }
             types::TypeKind::Array { .. } => todo!(),
             types::TypeKind::StructDescriptor(_) => todo!(),

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::RwLock};
 
 use inkwell::{
     AddressSpace,
@@ -8,15 +8,57 @@ use inkwell::{
     values::{IntValue, PointerValue},
 };
 
-use crate::types;
+use crate::types::{self, FQName};
 
 use super::{
-    CompileError, CompileErrorDescription, scope::GlobalScope, unique_name, value::StructHandle,
+    CompileError, CompileErrorDescription,
+    scope::GlobalScope,
+    unique_name,
+    value::{InstantiatedStructId, InstantiatedStructType},
 };
 
 pub struct Builtins {
     pub rc_handle: types::Struct,
-    pub string_handle: types::Struct,
+}
+
+pub struct InstantiatedStructs<'ctx> {
+    instantiated_structs: RwLock<HashMap<InstantiatedStructId, InstantiatedStructType<'ctx>>>,
+}
+
+// TODO rename the methdos to something less verbose
+impl<'ctx> InstantiatedStructs<'ctx> {
+    pub(crate) fn new() -> Self {
+        Self {
+            instantiated_structs: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub(crate) fn inspect_instantiated_struct<T>(
+        &self,
+        handle: &InstantiatedStructId,
+        inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
+    ) -> T {
+        inspect(self.instantiated_structs.read().unwrap().get(handle))
+    }
+
+    // TODO deal with setting the static fields here
+    pub fn instantiate_struct(
+        &self,
+        struct_: &types::Struct,
+        type_argument_values: &types::TypeArgumentValues,
+    ) -> InstantiatedStructId {
+        let id = InstantiatedStructId(struct_.clone(), type_argument_values.clone());
+
+        self.instantiated_structs
+            .write()
+            .unwrap()
+            .entry(id.clone())
+            .or_insert_with(|| {
+                InstantiatedStructType::new(struct_.instantiate(type_argument_values))
+            });
+
+        id
+    }
 }
 
 pub struct CompilerContext<'ctx> {
@@ -24,9 +66,26 @@ pub struct CompilerContext<'ctx> {
     pub builder: Builder<'ctx>,
     pub builtins: Builtins,
     pub global_scope: GlobalScope<'ctx>,
+    pub instantiated_structs: InstantiatedStructs<'ctx>,
 }
 
 impl<'ctx> CompilerContext<'ctx> {
+    pub fn instantiate_struct(
+        &self,
+        name: FQName,
+        type_argument_values: &types::TypeArgumentValues,
+    ) -> InstantiatedStructId {
+        let struct_ = self
+            .global_scope
+            .get_value(name)
+            .unwrap()
+            .as_struct()
+            .unwrap();
+
+        self.instantiated_structs
+            .instantiate_struct(&struct_, type_argument_values)
+    }
+
     pub fn const_u64(&self, value: u64) -> IntValue<'ctx> {
         self.llvm_context.i64_type().const_int(value, false)
     }
@@ -37,11 +96,13 @@ impl<'ctx> CompilerContext<'ctx> {
             .const_int(u64::from(value), false)
     }
 
-    pub fn get_std_type(&self, name: &str) -> Option<StructHandle<'ctx>> {
-        self.global_scope
-            .get_value(types::FQName::parse("std").with_part(types::Identifier::parse(name)))
-            .map(|x| x.as_struct().unwrap())
-            .map(StructHandle::new)
+    pub fn get_std_type(&self, name: &str) -> InstantiatedStructId {
+        // TODO verify the type exists and return an error if not
+        // TODO what about std types that have type arguments?
+        self.instantiate_struct(
+            FQName::parse("std").with_part(types::Identifier::parse(name)),
+            &types::TypeArgumentValues::new_empty(),
+        )
     }
 
     fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {

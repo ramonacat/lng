@@ -128,7 +128,7 @@ impl FQName {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeArguments(Vec<TypeArgument>);
 impl TypeArguments {
     pub(crate) const fn new_empty() -> Self {
@@ -150,7 +150,7 @@ impl std::fmt::Display for TypeArguments {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructDescriptorType {
     pub name: FQName,
     // the fields are a Vec<_>, so that the order is well defined
@@ -158,7 +158,7 @@ pub struct StructDescriptorType {
 }
 
 impl StructDescriptorType {
-    pub fn instance_type(&self) -> Type {
+    fn instance_type(&self) -> Type {
         // TODO can we avoid special-casing the types here? perhaps take the object type as an
         // argument?
         if self.name == *TYPE_NAME_U64 {
@@ -169,7 +169,12 @@ impl StructDescriptorType {
             return Type::new_not_generic(TypeKind::Unit);
         }
 
-        // TODO we have to account for the case of it being actually generic
+        for field in &self.fields {
+            // TODO instead of assert! return an error here if there are still type arguments that
+            // need values
+            assert!(field.type_.arguments.0.is_empty());
+        }
+
         Type::new_not_generic(TypeKind::Object {
             type_name: self.name,
         })
@@ -193,9 +198,24 @@ impl std::fmt::Display for TypeArgument {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeArgumentValues(HashMap<TypeArgument, Type>);
+
+impl std::hash::Hash for TypeArgumentValues {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.iter().collect_vec().hash(state);
+    }
+}
+
 impl TypeArgumentValues {
     pub(crate) fn new_empty() -> Self {
         Self(HashMap::new())
+    }
+
+    fn get(&self, type_argument: TypeArgument) -> Option<&Type> {
+        self.0.get(&type_argument)
+    }
+
+    pub(crate) const fn new(tav: HashMap<TypeArgument, Type>) -> Self {
+        Self(tav)
     }
 }
 
@@ -216,12 +236,13 @@ impl std::fmt::Display for TypeArgumentValues {
     }
 }
 
-// TODO support generics
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeKind {
     Generic(TypeArgument),
     Unit,
     Object {
+        // TODO this should be InstantiatedStructId, so that it refers to the actual instance of
+        // type with the type arguments. This requires a global store of declared structures tho
         type_name: FQName,
     },
     Array {
@@ -242,7 +263,7 @@ pub enum TypeKind {
     Pointer(Box<Type>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Type {
     kind: TypeKind,
     arguments: TypeArguments,
@@ -304,6 +325,9 @@ impl Type {
     }
 
     pub(crate) fn instance_type(&self) -> Self {
+        // TODO return a Result<> here, error if there are still unresolved type arguments
+        assert!(self.arguments.0.is_empty());
+
         // TODO check for type arguments values here and pass them to the instance as needed
         match &self.kind {
             TypeKind::Unit => todo!(),
@@ -356,6 +380,49 @@ impl Type {
     pub(crate) const fn kind(&self) -> &TypeKind {
         &self.kind
     }
+
+    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        let kind = match &self.kind {
+            // TODO assert that the type_argument is fully instantiated
+            TypeKind::Generic(type_argument) => type_argument_values
+                .get(*type_argument)
+                .unwrap()
+                .kind()
+                .clone(),
+            TypeKind::Unit => TypeKind::Unit,
+            TypeKind::Object { type_name } => TypeKind::Object {
+                type_name: *type_name,
+            },
+            TypeKind::Array { .. } => todo!(),
+            TypeKind::StructDescriptor(_) => todo!(),
+            TypeKind::Callable {
+                arguments,
+                return_type,
+            } => {
+                let arguments = arguments
+                    .iter()
+                    .map(|x| x.instantiate(type_argument_values))
+                    .collect();
+                let return_type = Box::new(return_type.instantiate(type_argument_values));
+
+                TypeKind::Callable {
+                    arguments,
+                    return_type,
+                }
+            }
+            TypeKind::U64 => TypeKind::U64,
+            TypeKind::U8 => TypeKind::U8,
+            TypeKind::Pointer(target) => {
+                TypeKind::Pointer(Box::new(target.instantiate(type_argument_values)))
+            }
+        };
+
+        Self {
+            kind,
+            arguments: TypeArguments::new_empty(),
+            argument_values: TypeArgumentValues::new_empty(),
+        }
+    }
 }
 
 impl Display for Type {
@@ -397,6 +464,21 @@ pub struct Argument {
     pub type_: Type,
     pub position: SourceRange,
 }
+impl Argument {
+    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        Self {
+            name: self.name,
+            type_: self.type_.instantiate(type_argument_values),
+            position: self.position,
+        }
+    }
+}
+
+impl std::hash::Hash for Argument {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (self.name, &self.type_).hash(state);
+    }
+}
 
 impl Eq for Argument {}
 impl PartialEq for Argument {
@@ -417,6 +499,25 @@ pub struct FunctionDefinition {
     pub return_type: Type,
     pub body: FunctionBody,
     pub position: ast::SourceRange,
+}
+impl FunctionDefinition {
+    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        let arguments = self
+            .arguments
+            .iter()
+            .map(|x| x.instantiate(type_argument_values))
+            .collect();
+        let return_type = self.return_type.instantiate(type_argument_values);
+
+        Self {
+            arguments,
+            return_type,
+            // TODO body probably needs to be instantiated as well, as there could be references to
+            // type arguments eg. in let statements
+            body: self.body.clone(),
+            position: self.position,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -448,6 +549,15 @@ impl AssociatedFunction {
 
     pub(crate) fn mangled_name(&self) -> MangledIdentifier {
         self.struct_.with_part(self.name).into_mangled()
+    }
+
+    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        Self {
+            struct_: self.struct_,
+            name: self.name,
+            definition: self.definition.instantiate(type_argument_values),
+            visibility: self.visibility,
+        }
     }
 }
 
@@ -526,7 +636,7 @@ pub struct Import {
     pub imported_item: FQName,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructField {
     pub struct_name: FQName,
     pub name: Identifier,
@@ -534,12 +644,64 @@ pub struct StructField {
     pub static_: bool,
 }
 
+impl StructField {
+    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        Self {
+            struct_name: self.struct_name,
+            name: self.name,
+            type_: self.type_.instantiate(type_argument_values),
+            static_: self.static_,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: FQName,
+    #[allow(unused)] // TODO this will be needed once we have a syntax for type instantiation
     pub type_arguments: TypeArguments,
     pub fields: Vec<StructField>,
     pub impls: HashMap<Identifier, AssociatedFunction>,
+}
+
+// TODO the Hash, Eq, PartialEq implementations are questionable, get rid of them (but for that we
+// need to have some globally identifiable id for structs (and FQName isn't it, because that won't
+// handle runtime-defined ones))
+impl std::hash::Hash for Struct {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+impl Eq for Struct {}
+
+impl PartialEq for Struct {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Struct {
+    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        let fields = self
+            .fields
+            .iter()
+            .map(|f| f.instantiate(type_argument_values))
+            .collect();
+
+        let impls = self
+            .impls
+            .iter()
+            .map(|(id, impl_)| (*id, impl_.instantiate(type_argument_values)))
+            .collect();
+
+        Self {
+            name: self.name,
+            type_arguments: TypeArguments::new_empty(),
+            fields,
+            impls,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -38,32 +38,28 @@ impl Debug for FunctionHandle {
     }
 }
 
-#[derive(Clone)]
-// TODO this should really not exist, instead we should have Instance, that handles instantiating a
-// types::Type
-pub struct StructHandle<'ctx> {
+pub struct InstantiatedStructType<'ctx> {
     definition: types::Struct,
     static_field_values: HashMap<types::Identifier, Value<'ctx>>,
 }
 
-pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::Type);
+pub struct StructInstance<'ctx>(PointerValue<'ctx>, InstantiatedStructId);
 
 impl<'ctx> StructInstance<'ctx> {
-    pub(crate) const fn type_(&self) -> &types::Type {
-        &self.1
-    }
-
     pub(crate) const fn value(&self) -> PointerValue<'ctx> {
         self.0
     }
 
-    // TODO ensure that all the generic arguments have values here
-    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: types::Type) -> Self {
+    pub(crate) fn id(&self) -> InstantiatedStructId {
+        self.1.clone()
+    }
+
+    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: InstantiatedStructId) -> Self {
         Self(pointer, type_)
     }
 }
 
-impl Debug for StructHandle<'_> {
+impl Debug for InstantiatedStructType<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let fields = self
             .definition
@@ -76,7 +72,7 @@ impl Debug for StructHandle<'_> {
     }
 }
 
-impl<'ctx> StructHandle<'ctx> {
+impl<'ctx> InstantiatedStructType<'ctx> {
     pub fn build_heap_instance(
         &self,
         context: &CompilerContext<'ctx>,
@@ -203,24 +199,17 @@ impl<'ctx> StructHandle<'ctx> {
             static_field_values: static_fields,
         }
     }
-
-    // TODO handle the generic case here as well
-    pub(crate) fn type_(&self) -> types::Type {
-        types::Type::new_not_generic(types::TypeKind::StructDescriptor(
-            types::StructDescriptorType {
-                name: self.definition.name,
-                fields: self.definition.fields.clone(),
-            },
-        ))
-    }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct InstantiatedStructId(pub types::Struct, pub TypeArgumentValues);
 
 // TODO The *Handle structs should be lightweight handles, and not copied with the vecs and all
 // that
 #[derive(Clone)]
 pub enum Value<'ctx> {
     Empty,
-    Primitive(StructHandle<'ctx>, BasicValueEnum<'ctx>),
+    Primitive(InstantiatedStructId, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     // TODO remove callable, this is supposed to be a function instad
     #[allow(unused)]
@@ -266,18 +255,16 @@ impl<'ctx> Value<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> Option<Self> {
         match self {
-            Value::Primitive(handle, _) => handle.read_field_value(self.clone(), field_path),
-            // TODO The struct handle should be retrieved from context here, instead of being
-            // created, as otherwise the static fields will be desynchronized across instances
-            Value::Reference(ref_) => StructHandle::new(
-                context
-                    .global_scope
-                    .get_value(ref_.name())
-                    .unwrap()
-                    .as_struct()
-                    .unwrap(),
-            )
-            .read_field_value(self.clone(), field_path),
+            Value::Primitive(handle, _) => context
+                .instantiated_structs
+                .inspect_instantiated_struct(handle, |struct_| {
+                    struct_.unwrap().read_field_value(self.clone(), field_path)
+                }),
+            Value::Reference(ref_) => context
+                .instantiated_structs
+                .inspect_instantiated_struct(&ref_.type_(), |struct_| {
+                    struct_.unwrap().read_field_value(self.clone(), field_path)
+                }),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::Empty => todo!(),

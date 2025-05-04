@@ -4,7 +4,6 @@ use super::{
     CompiledFunction, FunctionHandle, Scope, Value, builtins,
     context::CompilerContext,
     rc::{self, RcValue},
-    value::StructHandle,
 };
 use crate::{name_mangler::MangledIdentifier, types};
 use inkwell::{
@@ -56,7 +55,7 @@ impl<'ctx> CompiledModule<'ctx> {
             .add_function(name.as_str(), function_type, Some(linkage))
     }
 
-    pub fn declare_function(
+    pub(crate) fn declare_function(
         &self,
         linkage: Linkage,
         name: &MangledIdentifier,
@@ -67,7 +66,7 @@ impl<'ctx> CompiledModule<'ctx> {
         self.declare_function_inner(name, arguments, return_type, linkage, context)
     }
 
-    pub fn import_function(&mut self, function: FunctionHandle) {
+    pub(crate) fn import_function(&mut self, function: FunctionHandle) {
         self.imported_functions.insert(function.fqname, function);
     }
 
@@ -106,19 +105,10 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::TypeKind::Object {
                     type_name: identifier,
                 } => {
-                    let value_type = context
-                        .global_scope
-                        .get_value(*identifier)
-                        .unwrap()
-                        .as_struct()
-                        .unwrap();
-                    // TODO we should not create TypeArgumentValues here, at this point the type
-                    // should be instantiated anyway
-                    let value_type = StructHandle::new(value_type);
-                    let rc = RcValue::from_pointer(
-                        argument_value.into_pointer_value(),
-                        value_type.type_(),
-                    );
+                    // TODO we need to have an ID of the actual type instance here
+                    let id = context
+                        .instantiate_struct(*identifier, &types::TypeArgumentValues::new_empty());
+                    let rc = RcValue::from_pointer(argument_value.into_pointer_value(), id);
                     rcs.push(rc.clone());
 
                     Value::Reference(rc)
@@ -129,7 +119,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::TypeKind::StructDescriptor(_) => todo!(),
                 types::TypeKind::Callable { .. } => todo!(),
                 types::TypeKind::U64 => {
-                    Value::Primitive(context.get_std_type("u64").unwrap(), argument_value)
+                    Value::Primitive(context.get_std_type("u64"), argument_value)
                 }
                 types::TypeKind::Pointer(_) => todo!(),
                 types::TypeKind::U8 => todo!(),

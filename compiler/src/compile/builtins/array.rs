@@ -3,11 +3,7 @@ use std::{collections::HashMap, sync::LazyLock};
 use inkwell::values::BasicValue;
 
 use crate::{
-    compile::{
-        context::CompilerContext,
-        unique_name,
-        value::{StructHandle, StructInstance},
-    },
+    compile::{context::CompilerContext, unique_name, value::StructInstance},
     types,
 };
 
@@ -83,13 +79,23 @@ impl ArrayValue {
         field_values.insert(*LENGTH_FIELD, context.const_u64(0).as_basic_value_enum());
         field_values.insert(*CAPACITY_FIELD, context.const_u64(1).as_basic_value_enum());
 
-        let array_struct = StructHandle::new(describe_structure());
-        let array_value =
-            array_struct.build_heap_instance(context, &unique_name(&["string"]), field_values);
+        let mut tav = HashMap::new();
+        tav.insert(
+            types::TypeArgument::new(types::Identifier::parse("TItem")),
+            item_type.clone(),
+        );
+        let tav = types::TypeArgumentValues::new(tav);
+        let id = context.instantiate_struct(*TYPE_NAME_ARRAY, &tav);
+        let array_value = context
+            .instantiated_structs
+            .inspect_instantiated_struct(&id, |a| {
+                a.unwrap()
+                    .build_heap_instance(context, &unique_name(&["string"]), field_values)
+            });
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),
-            &StructInstance::new(array_value, array_struct.type_()),
+            &StructInstance::new(array_value, id),
             context,
         )
     }

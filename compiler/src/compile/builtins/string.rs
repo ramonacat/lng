@@ -3,12 +3,9 @@ use std::collections::HashMap;
 use inkwell::values::BasicValue as _;
 
 use crate::{
-    compile::{
-        context::CompilerContext,
-        value::{StructHandle, StructInstance},
-    },
+    compile::{context::CompilerContext, value::StructInstance},
     std::TYPE_NAME_STRING,
-    types::{self, Identifier, TypeArguments},
+    types,
 };
 
 use super::rc::RcValue;
@@ -44,35 +41,38 @@ impl StringValue {
                 .as_basic_value_enum(),
         );
 
-        let string_handle = StructHandle::new(context.builtins.string_handle.clone());
-        let literal_value = string_handle.build_heap_instance(
-            context,
-            &(name.to_string() + "_value"),
-            field_values,
-        );
+        let id =
+            context.instantiate_struct(*TYPE_NAME_STRING, &types::TypeArgumentValues::new_empty());
 
-        RcValue::build_init(
-            name,
-            &StructInstance::new(literal_value, string_handle.type_()),
-            context,
-        )
+        let literal_value =
+            context
+                .instantiated_structs
+                .inspect_instantiated_struct(&id, |string_handle| {
+                    string_handle.unwrap().build_heap_instance(
+                        context,
+                        &(name.to_string() + "_value"),
+                        field_values,
+                    )
+                });
+
+        RcValue::build_init(name, &StructInstance::new(literal_value, id), context)
     }
 }
 
 pub fn describe_structure() -> types::Struct {
     types::Struct {
         name: *TYPE_NAME_STRING,
-        type_arguments: TypeArguments::new_empty(),
+        type_arguments: types::TypeArguments::new_empty(),
         fields: vec![
             types::StructField {
                 struct_name: *TYPE_NAME_STRING,
-                name: Identifier::parse("characters"),
+                name: types::Identifier::parse("characters"),
                 type_: types::Type::u8(),
                 static_: false,
             },
             types::StructField {
                 struct_name: *TYPE_NAME_STRING,
-                name: Identifier::parse("length"),
+                name: types::Identifier::parse("length"),
                 type_: types::Type::u64(),
                 static_: false,
             },

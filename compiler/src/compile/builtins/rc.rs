@@ -9,7 +9,7 @@ use crate::{
     compile::{
         context::CompilerContext,
         unique_name,
-        value::{StructHandle, StructInstance},
+        value::{InstantiatedStructId, InstantiatedStructType, StructInstance},
     },
     types::{self, FQName, Identifier},
 };
@@ -17,7 +17,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
-    value_type: types::Type,
+    value_type: InstantiatedStructId,
 }
 
 static REFCOUNT_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("refcount"));
@@ -69,15 +69,12 @@ impl<'ctx> RcValue<'ctx> {
             struct_instance.value().as_basic_value_enum(),
         );
 
-        let rc = StructHandle::new(context.builtins.rc_handle.clone()).build_heap_instance(
-            context,
-            name,
-            field_values,
-        );
+        let rc = InstantiatedStructType::new(context.builtins.rc_handle.clone())
+            .build_heap_instance(context, name, field_values);
 
         Self {
             pointer: rc,
-            value_type: struct_instance.type_().clone(),
+            value_type: struct_instance.id(),
         }
     }
 
@@ -85,33 +82,18 @@ impl<'ctx> RcValue<'ctx> {
         self.pointer
     }
 
-    pub const fn from_pointer(pointer: PointerValue<'ctx>, value_type: types::Type) -> Self {
+    pub const fn from_pointer(
+        pointer: PointerValue<'ctx>,
+        value_type: InstantiatedStructId,
+    ) -> Self {
         RcValue {
             pointer,
             value_type,
         }
     }
 
-    pub(crate) const fn type_(&self) -> &types::Type {
-        &self.value_type
-    }
-
-    // TODO this method should not exist! When handle is needed, it should be received from the
-    // scope by whoever needs it
-    pub(crate) fn name(&self) -> FQName {
-        match &self.value_type.kind() {
-            types::TypeKind::Generic(_) => todo!(),
-            types::TypeKind::Unit => todo!(),
-            types::TypeKind::Object { .. } => todo!(),
-            types::TypeKind::Array { .. } => todo!(),
-            types::TypeKind::StructDescriptor(struct_descriptor_type) => {
-                struct_descriptor_type.name
-            }
-            types::TypeKind::Callable { .. } => todo!(),
-            types::TypeKind::U64 => todo!(),
-            types::TypeKind::U8 => todo!(),
-            types::TypeKind::Pointer(_) => todo!(),
-        }
+    pub(crate) fn type_(&self) -> InstantiatedStructId {
+        self.value_type.clone()
     }
 }
 
@@ -133,7 +115,7 @@ pub fn build_cleanup<'ctx>(
         }
         context.builder.position_at_end(before);
 
-        let rc_handle = StructHandle::new(context.builtins.rc_handle.clone());
+        let rc_handle = InstantiatedStructType::new(context.builtins.rc_handle.clone());
         let old_refcount = rc_handle
             .build_field_load(
                 *REFCOUNT_FIELD,
@@ -224,7 +206,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
 
-        let rc_handle = StructHandle::new(context.builtins.rc_handle.clone());
+        let rc_handle = InstantiatedStructType::new(context.builtins.rc_handle.clone());
 
         let init_refcount = rc_handle.build_field_load(
             *REFCOUNT_FIELD,

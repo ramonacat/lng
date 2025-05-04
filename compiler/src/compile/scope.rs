@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::RwLock};
 
 use inkwell::module::Module;
 
-use crate::types::{self, FQName};
+use crate::types;
 
 use super::{Value, module::CompiledModule};
 
@@ -126,12 +126,12 @@ impl<'ctx> GlobalScope<'ctx> {
 
     pub(crate) fn get_module_mut(
         &mut self,
-        root_path: FQName,
+        root_path: types::FQName,
     ) -> Option<&mut CompiledModule<'ctx>> {
         self.modules.get_mut(&root_path)
     }
 
-    pub(crate) fn get_value(&self, item_path: FQName) -> Option<Value<'ctx>> {
+    pub(crate) fn get_value(&self, item_path: types::FQName) -> Option<Value<'ctx>> {
         self.modules
             .get(&item_path.without_last())
             .and_then(|x| x.get_variable(item_path.last()))
