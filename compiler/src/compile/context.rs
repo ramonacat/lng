@@ -39,36 +39,22 @@ impl<'ctx> AllStructs<'ctx> {
         handle: &types::InstantiatedStructId,
         inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
     ) -> T {
-        self.instantiate_struct(handle.0, &handle.1);
+        self.instantiate_struct(handle);
 
         inspect(self.instantiated_structs.read().unwrap().get(handle))
     }
 
     // TODO deal with setting the static fields here
-    // TODO this method should probably be private?
-    pub fn instantiate_struct(
-        &self,
-        struct_: types::StructId,
-        type_argument_values: &types::TypeArgumentValues,
-    ) -> types::InstantiatedStructId {
-        let id = types::InstantiatedStructId(struct_, type_argument_values.clone());
-
+    fn instantiate_struct(&self, id: &types::InstantiatedStructId) {
         self.instantiated_structs
             .write()
             .unwrap()
             .entry(id.clone())
             .or_insert_with(|| {
-                dbg!(&self.structs, struct_);
-                let instantiated = self
-                    .structs
-                    .get(&struct_)
-                    .unwrap()
-                    .instantiate(type_argument_values);
+                let instantiated = self.structs.get(&id.0).unwrap().instantiate(&id.1);
 
                 InstantiatedStructType::new(instantiated)
             });
-
-        id
     }
 }
 
@@ -80,16 +66,6 @@ pub struct CompilerContext<'ctx> {
 }
 
 impl<'ctx> CompilerContext<'ctx> {
-    pub fn instantiate_struct(
-        &self,
-        id: StructId,
-        type_argument_values: &types::TypeArgumentValues,
-    ) -> types::InstantiatedStructId {
-        self.global_scope
-            .structs
-            .instantiate_struct(id, type_argument_values)
-    }
-
     pub fn const_u64(&self, value: u64) -> IntValue<'ctx> {
         self.llvm_context.i64_type().const_int(value, false)
     }
@@ -100,14 +76,13 @@ impl<'ctx> CompilerContext<'ctx> {
             .const_int(u64::from(value), false)
     }
 
-    pub fn get_std_type(&self, name: &str) -> types::InstantiatedStructId {
-        // TODO verify the type exists and return an error if not
+    pub fn get_std_type(name: &str) -> types::InstantiatedStructId {
         // TODO what about std types that have type arguments?
-        self.instantiate_struct(
+        types::InstantiatedStructId(
             types::StructId::FQName(
                 types::FQName::parse("std").with_part(types::Identifier::parse(name)),
             ),
-            &types::TypeArgumentValues::new_empty(),
+            types::TypeArgumentValues::new_empty(),
         )
     }
 

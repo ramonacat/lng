@@ -114,7 +114,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::TypeKind::StructDescriptor(_) => todo!(),
                 types::TypeKind::Callable { .. } => todo!(),
                 types::TypeKind::U64 => {
-                    Value::Primitive(context.get_std_type("u64"), argument_value)
+                    Value::Primitive(CompilerContext::get_std_type("u64"), argument_value)
                 }
                 types::TypeKind::Pointer(_) => todo!(),
                 types::TypeKind::U8 => todo!(),

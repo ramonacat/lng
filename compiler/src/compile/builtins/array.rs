@@ -87,7 +87,7 @@ impl ArrayValue {
             item_type.clone(),
         );
         let tav = types::TypeArgumentValues::new(tav);
-        let id = context.instantiate_struct(types::StructId::FQName(*TYPE_NAME_ARRAY), &tav);
+        let id = types::InstantiatedStructId(types::StructId::FQName(*TYPE_NAME_ARRAY), tav);
 
         let array_value = context
             .global_scope

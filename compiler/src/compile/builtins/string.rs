@@ -41,9 +41,9 @@ impl StringValue {
                 .as_basic_value_enum(),
         );
 
-        let id = context.instantiate_struct(
+        let id = types::InstantiatedStructId(
             types::StructId::FQName(*TYPE_NAME_STRING),
-            &types::TypeArgumentValues::new_empty(),
+            types::TypeArgumentValues::new_empty(),
         );
 
         let literal_value =
