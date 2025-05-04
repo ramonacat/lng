@@ -50,7 +50,7 @@ impl StringValue {
             context
                 .global_scope
                 .structs
-                .inspect_instantiated_struct(&id, |string_handle| {
+                .inspect_instantiated(&id, |string_handle| {
                     string_handle.unwrap().build_heap_instance(
                         context,
                         &(name.to_string() + "_value"),

@@ -25,7 +25,6 @@ pub struct AllStructs<'ctx> {
         RwLock<HashMap<types::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
 }
 
-// TODO rename the methdos to something less verbose
 impl<'ctx> AllStructs<'ctx> {
     pub(crate) fn new(structs: HashMap<StructId, types::Struct>) -> Self {
         Self {
@@ -34,18 +33,18 @@ impl<'ctx> AllStructs<'ctx> {
         }
     }
 
-    pub(crate) fn inspect_instantiated_struct<T>(
+    pub(crate) fn inspect_instantiated<T>(
         &self,
         handle: &types::InstantiatedStructId,
         inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
     ) -> T {
-        self.instantiate_struct(handle);
+        self.instantiate(handle);
 
         inspect(self.instantiated_structs.read().unwrap().get(handle))
     }
 
     // TODO deal with setting the static fields here
-    fn instantiate_struct(&self, id: &types::InstantiatedStructId) {
+    fn instantiate(&self, id: &types::InstantiatedStructId) {
         self.instantiated_structs
             .write()
             .unwrap()

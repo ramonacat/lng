@@ -630,7 +630,7 @@ impl<'ctx> Compiler<'ctx> {
                     .context
                     .global_scope
                     .structs
-                    .inspect_instantiated_struct(name, |s| {
+                    .inspect_instantiated(name, |s| {
                         s.unwrap().build_heap_instance(
                             &self.context,
                             &unique_name(&[&name.to_string()]),

@@ -89,13 +89,10 @@ impl ArrayValue {
         let tav = types::TypeArgumentValues::new(tav);
         let id = types::InstantiatedStructId(types::StructId::FQName(*TYPE_NAME_ARRAY), tav);
 
-        let array_value = context
-            .global_scope
-            .structs
-            .inspect_instantiated_struct(&id, |a| {
-                a.unwrap()
-                    .build_heap_instance(context, &unique_name(&["string"]), field_values)
-            });
+        let array_value = context.global_scope.structs.inspect_instantiated(&id, |a| {
+            a.unwrap()
+                .build_heap_instance(context, &unique_name(&["string"]), field_values)
+        });
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),

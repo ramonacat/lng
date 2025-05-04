@@ -275,13 +275,13 @@ impl<'ctx> Value<'ctx> {
             Value::Primitive(handle, _) => context
                 .global_scope
                 .structs
-                .inspect_instantiated_struct(handle, |struct_| {
+                .inspect_instantiated(handle, |struct_| {
                     struct_.unwrap().read_field_value(self.clone(), field_path)
                 }),
             Value::Reference(ref_) => context
                 .global_scope
                 .structs
-                .inspect_instantiated_struct(&ref_.type_(), |struct_| {
+                .inspect_instantiated(&ref_.type_(), |struct_| {
                     struct_.unwrap().read_field_value(self.clone(), field_path)
                 }),
             Value::Function(_) => todo!(),
