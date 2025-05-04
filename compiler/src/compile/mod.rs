@@ -397,7 +397,6 @@ impl<'ctx> Compiler<'ctx> {
                             module.set_variable(name, Value::Struct(struct_.clone()));
                         }
                         Value::Empty => todo!(),
-                        Value::Callable(_, _) => todo!(),
                     }
                 }
                 types::ItemKind::Module(module) => {
@@ -490,8 +489,7 @@ impl<'ctx> Compiler<'ctx> {
                         Value::Primitive(_, _)
                         | Value::Function(_)
                         | Value::Struct(_)
-                        | Value::Empty
-                        | Value::Callable(_, _) => true,
+                        | Value::Empty => true,
                     }
                 })
                 .cloned()
@@ -680,9 +678,7 @@ impl<'ctx> Compiler<'ctx> {
         let self_value = compiled_target.0;
 
         let function = match &compiled_target.1 {
-            Value::Callable(function_handle, _) | Value::Function(function_handle) => {
-                function_handle
-            }
+            Value::Function(function_handle) => function_handle,
             Value::Empty => todo!(),
             Value::Primitive(_, _) => todo!(),
             Value::Reference(_) => todo!(),
@@ -731,7 +727,6 @@ impl<'ctx> Compiler<'ctx> {
                     todo!("implement passing struct definitions as arguments")
                 }
                 Value::Empty => todo!(),
-                Value::Callable(_, _) => todo!(),
             })
             .collect::<Vec<BasicMetadataValueEnum>>();
 

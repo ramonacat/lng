@@ -234,9 +234,6 @@ pub enum Value<'ctx> {
     Empty,
     Primitive(types::InstantiatedStructId, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
-    // TODO remove callable, this is supposed to be a function instad
-    #[allow(unused)]
-    Callable(FunctionHandle, types::TypeArgumentValues),
     // TODO functions should be refered to by id
     Function(FunctionHandle),
     Struct(types::Struct),
@@ -254,9 +251,6 @@ impl Debug for Value<'_> {
             Value::Function(function_handle) => write!(f, "{function_handle:?}"),
             Value::Struct(struct_handle) => write!(f, "{struct_handle:?}"),
             Value::Empty => todo!(),
-            Value::Callable(function_handle, type_argument_values) => {
-                write!(f, "{function_handle:?}{type_argument_values:?}")
-            }
         }
     }
 }
@@ -269,7 +263,6 @@ impl<'ctx> Value<'ctx> {
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::Empty => todo!(),
-            Value::Callable(_, _) => todo!(),
         }
     }
 
@@ -294,7 +287,6 @@ impl<'ctx> Value<'ctx> {
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::Empty => todo!(),
-            Value::Callable(_, _) => todo!(),
         }
     }
 
