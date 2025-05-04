@@ -39,9 +39,7 @@ impl Debug for FunctionHandle {
     }
 }
 
-// TODO this should not be Clone, but that requires that we have some sort of global storage for
-// the instantiated handles. This being clone can lead to static_field_values getting
-// desynchronized depending on which clone is used.
+// TODO we should get rid of the type arguments here, this is handled in Type!
 #[derive(Clone)]
 pub struct InstantiatedStructHandle<'ctx> {
     description: types::Struct,
@@ -241,13 +239,11 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
         types::StructDescriptorType {
             name: self.description.name,
             fields: self.description.fields.clone(),
-            type_arguments: self.description.type_arguments.clone(),
         }
     }
 
     pub(crate) fn instance_type(&self) -> types::Type {
-        self.type_descriptor()
-            .instance_type(self.type_argument_values.clone())
+        self.type_descriptor().instance_type()
     }
 }
 

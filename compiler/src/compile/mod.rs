@@ -692,34 +692,36 @@ impl<'ctx> Compiler<'ctx> {
             )
             .map_err(|e| e.into_compile_error_at(compiled_function.handle.fqname, position))?;
         let call_result = call_result.as_any_value_enum();
-        let value = match function.return_type {
-            types::Type::Unit => Value::Empty,
-            types::Type::Object {
-                type_argument_values: object_tav,
+        let value = match function.return_type.kind() {
+            types::TypeKind::Unit => Value::Empty,
+            types::TypeKind::Object {
                 type_name: item_path,
             } => {
                 let value_type = self
                     .context
                     .global_scope
-                    .get_value(item_path)
+                    .get_value(*item_path)
                     .unwrap()
                     .as_struct()
                     .unwrap();
 
-                let value_type = Self::instantiate_struct(value_type, object_tav);
+                // TODO ::instantiate_struct should not exist, at this point we should have a
+                // concrete type here anyway
+                let value_type =
+                    Self::instantiate_struct(value_type, types::TypeArgumentValues::new_empty());
 
                 Value::Reference(RcValue::from_pointer(
                     call_result.into_pointer_value(),
                     value_type,
                 ))
             }
-            types::Type::Array { .. } => todo!(),
-            types::Type::StructDescriptor(_) => todo!(),
-            types::Type::Callable { .. } => todo!(),
-            types::Type::U64 => todo!(),
-            types::Type::U8 => todo!(),
-            types::Type::Pointer(_) => todo!(),
-            types::Type::Generic(_) => todo!(),
+            types::TypeKind::Array { .. } => todo!(),
+            types::TypeKind::StructDescriptor(_) => todo!(),
+            types::TypeKind::Callable { .. } => todo!(),
+            types::TypeKind::U64 => todo!(),
+            types::TypeKind::U8 => todo!(),
+            types::TypeKind::Pointer(_) => todo!(),
+            types::TypeKind::Generic(_) => todo!(),
         };
         Ok(value)
     }

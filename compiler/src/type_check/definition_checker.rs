@@ -4,9 +4,7 @@ use crate::{
     ast,
     errors::ErrorLocation,
     std::TYPE_NAME_STRING,
-    types::{
-        self, AssociatedFunction, FQName, Identifier, RootModule, TypeArgumentValues, TypeArguments,
-    },
+    types::{self, AssociatedFunction, FQName, Identifier, RootModule, TypeArguments},
 };
 
 use super::{
@@ -51,9 +49,11 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
         error_location: ErrorLocation,
     ) -> Result<types::Type, TypeCheckError> {
         match type_ {
-            ast::TypeDescription::Array(type_description) => Ok(types::Type::Array {
-                element_type: Box::new(self.resolve_type(type_description, error_location)?),
-            }),
+            ast::TypeDescription::Array(type_description) => {
+                Ok(types::Type::new_not_generic(types::TypeKind::Array {
+                    element_type: Box::new(self.resolve_type(type_description, error_location)?),
+                }))
+            }
             ast::TypeDescription::Named(name) => {
                 let id = Identifier::parse(name);
 
@@ -64,10 +64,7 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
                     .or_else(|| {
                         self.globals
                             .get_item(self.scope_module_name.with_part(id))
-                            .map(|x| {
-                                Ok(x.type_(self.globals, error_location)?
-                                    .instance_type(TypeArgumentValues::new_empty()))
-                            })
+                            .map(|x| Ok(x.type_(self.globals, error_location)?.instance_type()))
                     })
                     .unwrap_or_else(|| {
                         Err(
@@ -378,7 +375,7 @@ impl<'pre> DefinitionChecker<'pre> {
                             &argument.type_,
                             ErrorLocation::Position(function_name, argument.position),
                         )?
-                        .instance_type(TypeArgumentValues::new_empty()),
+                        .instance_type(),
                         position: argument.position,
                     })
                 })
@@ -391,7 +388,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 // function
                 ErrorLocation::Position(function_name, declared_function.ast.position),
             )?
-            .instance_type(TypeArgumentValues::new_empty()),
+            .instance_type(),
             body,
             position: declared_function.position,
         })
@@ -490,15 +487,14 @@ impl<'pre> DefinitionChecker<'pre> {
             ast::ExpressionKind::Literal(literal) => match literal {
                 ast::Literal::String(value, _) => Ok(types::Expression {
                     position,
-                    type_: types::Type::Object {
+                    type_: types::Type::new_not_generic(types::TypeKind::Object {
                         type_name: *TYPE_NAME_STRING,
-                        type_argument_values: TypeArgumentValues::new_empty(),
-                    },
+                    }),
                     kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
                 }),
                 ast::Literal::UnsignedInteger(value) => Ok(types::Expression {
                     position,
-                    type_: types::Type::U64,
+                    type_: types::Type::u64(),
                     kind: types::ExpressionKind::Literal(types::Literal::UnsignedInteger(*value)),
                 }),
             },
@@ -518,23 +514,22 @@ impl<'pre> DefinitionChecker<'pre> {
             ast::ExpressionKind::StructConstructor(struct_name) => {
                 let id = types::Identifier::parse(struct_name);
 
-                let types::Type::StructDescriptor(types::StructDescriptorType {
+                let struct_type = locals.get(id, error_location)?.ok_or_else(|| {
+                    TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
+                })?;
+                let types::TypeKind::StructDescriptor(types::StructDescriptorType {
                     name,
                     fields: _,
-                    type_arguments: _,
-                }) = locals.get(id, error_location)?.ok_or_else(|| {
-                    TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
-                })?
+                }) = struct_type.kind()
                 else {
                     todo!();
                 };
 
                 Ok(types::Expression {
                     position,
-                    type_: types::Type::Object {
-                        type_name: name,
-                        type_argument_values: TypeArgumentValues::new_empty(),
-                    },
+                    type_: types::Type::new_not_generic(types::TypeKind::Object {
+                        type_name: *name,
+                    }),
                     kind: types::ExpressionKind::StructConstructor(id),
                 })
             }
@@ -550,11 +545,10 @@ impl<'pre> DefinitionChecker<'pre> {
                             .at(ErrorLocation::Position(module_path, position))
                     })?
                     .type_(&self.root_module_declaration, error_location)?;
-                let types::Type::StructDescriptor(types::StructDescriptorType {
+                let types::TypeKind::StructDescriptor(types::StructDescriptorType {
                     name: _,
                     fields,
-                    type_arguments: _,
-                }) = target_type
+                }) = target_type.kind()
                 else {
                     todo!("{target_type}");
                 };
@@ -591,10 +585,10 @@ impl<'pre> DefinitionChecker<'pre> {
     ) -> Result<types::Expression, TypeCheckError> {
         let checked_target =
             self.type_check_expression(target, locals, module_path, error_location)?;
-        let types::Type::Callable {
-            arguments: ref callable_arguments,
-            ref return_type,
-        } = checked_target.type_
+        let types::TypeKind::Callable {
+            arguments: callable_arguments,
+            return_type,
+        } = checked_target.type_.kind()
         else {
             return Err(
                 TypeCheckErrorDescription::CallingNotCallableItem(checked_target.type_)

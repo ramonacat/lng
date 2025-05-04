@@ -70,13 +70,13 @@ pub fn describe_structure() -> types::Struct {
             types::StructField {
                 struct_name: *TYPE_NAME_STRING,
                 name: Identifier::parse("characters"),
-                type_: types::Type::Pointer(Box::new(types::Type::U8)),
+                type_: types::Type::u8(),
                 static_: false,
             },
             types::StructField {
                 struct_name: *TYPE_NAME_STRING,
                 name: Identifier::parse("length"),
-                type_: types::Type::U64,
+                type_: types::Type::u64(),
                 static_: false,
             },
         ],

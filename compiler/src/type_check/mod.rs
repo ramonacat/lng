@@ -19,15 +19,15 @@ impl types::Item {
         root_module: &DeclaredModule,
         error_location: ErrorLocation,
     ) -> Result<types::Type, TypeCheckError> {
+        // TODO handle possible generics here
         match &self.kind {
             types::ItemKind::Function(function) => Ok(function.type_()),
-            types::ItemKind::Struct(struct_) => {
-                Ok(types::Type::StructDescriptor(types::StructDescriptorType {
+            types::ItemKind::Struct(struct_) => Ok(types::Type::new_not_generic(
+                types::TypeKind::StructDescriptor(types::StructDescriptorType {
                     name: struct_.name,
                     fields: struct_.fields.clone(),
-                    type_arguments: types::TypeArguments::new_empty(),
-                }))
-            }
+                }),
+            )),
             types::ItemKind::Import(import) => root_module
                 .get_item(import.imported_item)
                 .ok_or_else(|| {

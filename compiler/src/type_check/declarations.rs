@@ -4,7 +4,7 @@ use crate::{
     ast,
     errors::ErrorLocation,
     std::{TYPE_NAME_U64, TYPE_NAME_UNIT},
-    types::{self, TypeArgumentValues, TypeArguments},
+    types,
 };
 
 use super::errors::TypeCheckError;
@@ -202,37 +202,39 @@ impl DeclaredItem<'_> {
         root_module: &DeclaredModule,
         error_location: ErrorLocation,
     ) -> Result<types::Type, TypeCheckError> {
+        // TODO also handle the case of this item being generic
         match &self.kind {
-            DeclaredItemKind::Function(declared_function) => Ok(types::Type::Callable {
-                arguments: declared_function
-                    .definition
-                    .arguments
-                    .iter()
-                    .map(|declaration| {
-                        Ok(types::Argument {
-                            name: declaration.name,
-                            type_: resolve_type(
-                                root_module,
-                                declared_function.name.without_last(),
-                                &declaration.type_,
-                                error_location,
-                            )?
-                            .instance_type(TypeArgumentValues::new_empty()),
-                            position: declaration.position,
+            DeclaredItemKind::Function(declared_function) => {
+                Ok(types::Type::new_not_generic(types::TypeKind::Callable {
+                    arguments: declared_function
+                        .definition
+                        .arguments
+                        .iter()
+                        .map(|declaration| {
+                            Ok(types::Argument {
+                                name: declaration.name,
+                                type_: resolve_type(
+                                    root_module,
+                                    declared_function.name.without_last(),
+                                    &declaration.type_,
+                                    error_location,
+                                )?
+                                .instance_type(),
+                                position: declaration.position,
+                            })
                         })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-                return_type: Box::new(resolve_type(
-                    root_module,
-                    declared_function.name.without_last(),
-                    &declared_function.definition.return_type,
-                    error_location,
-                )?),
-            }),
-            DeclaredItemKind::Struct(declared_struct) => {
-                Ok(types::Type::StructDescriptor(types::StructDescriptorType {
+                        .collect::<Result<Vec<_>, _>>()?,
+                    return_type: Box::new(resolve_type(
+                        root_module,
+                        declared_function.name.without_last(),
+                        &declared_function.definition.return_type,
+                        error_location,
+                    )?),
+                }))
+            }
+            DeclaredItemKind::Struct(declared_struct) => Ok(types::Type::new_not_generic(
+                types::TypeKind::StructDescriptor(types::StructDescriptorType {
                     name: declared_struct.name,
-                    type_arguments: TypeArguments::new_empty(),
                     fields: declared_struct
                         .fields
                         .iter()
@@ -243,8 +245,8 @@ impl DeclaredItem<'_> {
                             static_: declaration.static_,
                         })
                         .collect(),
-                }))
-            }
+                }),
+            )),
             DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => root_module
                 .get_item(*imported_item)
                 .unwrap()
@@ -261,15 +263,18 @@ pub(super) fn resolve_type(
     r#type: &ast::TypeDescription,
     error_location: ErrorLocation,
 ) -> Result<types::Type, TypeCheckError> {
+    // TODO handle generics here
     match r#type {
-        ast::TypeDescription::Array(type_description) => Ok(types::Type::Array {
-            element_type: Box::new(resolve_type(
-                root_module,
-                current_module,
-                type_description,
-                error_location,
-            )?),
-        }),
+        ast::TypeDescription::Array(type_description) => {
+            Ok(types::Type::new_not_generic(types::TypeKind::Array {
+                element_type: Box::new(resolve_type(
+                    root_module,
+                    current_module,
+                    type_description,
+                    error_location,
+                )?),
+            }))
+        }
         ast::TypeDescription::Named(name) if name == "()" => root_module
             .get_item(*TYPE_NAME_UNIT)
             .unwrap()
@@ -289,48 +294,51 @@ pub(super) fn resolve_type(
                 .unwrap();
 
             match item.kind {
-                DeclaredItemKind::Function(declared_function) => Ok(types::Type::Callable {
-                    arguments: declared_function
-                        .definition
-                        .arguments
-                        .iter()
-                        .map(|a| {
-                            Ok(types::Argument {
-                                name: a.name,
-                                type_: resolve_type(
-                                    root_module,
-                                    declared_function.name.without_last(),
-                                    &a.type_,
-                                    error_location,
-                                )?
-                                .instance_type(TypeArgumentValues::new_empty()),
-                                position: a.position,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                    return_type: Box::new(resolve_type(
-                        root_module,
-                        declared_function.name.without_last(),
-                        &declared_function.definition.return_type,
-                        error_location,
-                    )?),
-                }),
-                DeclaredItemKind::Struct(declared_struct) => {
-                    Ok(types::Type::StructDescriptor(types::StructDescriptorType {
-                        name: declared_struct.name,
-                        type_arguments: TypeArguments::new_empty(),
-                        fields: declared_struct
-                            .fields
+                DeclaredItemKind::Function(declared_function) => {
+                    Ok(types::Type::new_not_generic(types::TypeKind::Callable {
+                        arguments: declared_function
+                            .definition
+                            .arguments
                             .iter()
-                            .map(|(name, field)| types::StructField {
-                                struct_name: declared_struct.name,
-                                name: *name,
-                                // TODO field.type_ should also probably be resolve_type'd
-                                type_: field.type_.clone(),
-                                static_: field.static_,
+                            .map(|a| {
+                                Ok(types::Argument {
+                                    name: a.name,
+                                    type_: resolve_type(
+                                        root_module,
+                                        declared_function.name.without_last(),
+                                        &a.type_,
+                                        error_location,
+                                    )?
+                                    .instance_type(),
+                                    position: a.position,
+                                })
                             })
-                            .collect(),
+                            .collect::<Result<Vec<_>, _>>()?,
+                        return_type: Box::new(resolve_type(
+                            root_module,
+                            declared_function.name.without_last(),
+                            &declared_function.definition.return_type,
+                            error_location,
+                        )?),
                     }))
+                }
+                DeclaredItemKind::Struct(declared_struct) => {
+                    Ok(types::Type::new_not_generic(
+                        types::TypeKind::StructDescriptor(types::StructDescriptorType {
+                            name: declared_struct.name,
+                            fields: declared_struct
+                                .fields
+                                .iter()
+                                .map(|(name, field)| types::StructField {
+                                    struct_name: declared_struct.name,
+                                    name: *name,
+                                    // TODO field.type_ should also probably be resolve_type'd
+                                    type_: field.type_.clone(),
+                                    static_: field.static_,
+                                })
+                                .collect(),
+                        }),
+                    ))
                 }
                 DeclaredItemKind::Predeclared(item) => item.type_(root_module, error_location),
                 DeclaredItemKind::Import(declared_import) => {

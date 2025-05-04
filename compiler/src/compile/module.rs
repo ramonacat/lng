@@ -112,11 +112,10 @@ impl<'ctx> CompiledModule<'ctx> {
             .iter()
             .zip(llvm_function.get_params())
         {
-            let value = match &argument.type_ {
-                types::Type::Unit => todo!(),
-                types::Type::Object {
+            let value = match &argument.type_.kind() {
+                types::TypeKind::Unit => todo!(),
+                types::TypeKind::Object {
                     type_name: identifier,
-                    type_argument_values: object_tav,
                 } => {
                     let value_type = context
                         .global_scope
@@ -124,26 +123,31 @@ impl<'ctx> CompiledModule<'ctx> {
                         .unwrap()
                         .as_struct()
                         .unwrap();
-                    let value_type = InstantiatedStructHandle::new(value_type, object_tav.clone());
+                    // TODO we should not create TypeArgumentValues here, at this point the type
+                    // should be instantiated anyway
+                    let value_type = InstantiatedStructHandle::new(
+                        value_type,
+                        types::TypeArgumentValues::new_empty(),
+                    );
                     let rc = RcValue::from_pointer(argument_value.into_pointer_value(), value_type);
                     rcs.push(rc.clone());
 
                     Value::Reference(rc)
                 }
-                types::Type::Array { element_type: a } => Value::Reference(
+                types::TypeKind::Array { element_type: a } => Value::Reference(
                     builtins::array::ArrayValue::build_instance(a.as_ref(), context),
                 ),
-                types::Type::StructDescriptor(_) => todo!(),
-                types::Type::Callable { .. } => todo!(),
-                types::Type::U64 => Value::Primitive(
+                types::TypeKind::StructDescriptor(_) => todo!(),
+                types::TypeKind::Callable { .. } => todo!(),
+                types::TypeKind::U64 => Value::Primitive(
                     context
                         .get_std_type("u64", types::TypeArgumentValues::new_empty())
                         .unwrap(),
                     argument_value,
                 ),
-                types::Type::Pointer(_) => todo!(),
-                types::Type::U8 => todo!(),
-                types::Type::Generic(_) => todo!(),
+                types::TypeKind::Pointer(_) => todo!(),
+                types::TypeKind::U8 => todo!(),
+                types::TypeKind::Generic(_) => todo!(),
             };
 
             scope.set_value(argument.name, value);

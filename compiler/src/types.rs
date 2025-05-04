@@ -159,26 +159,24 @@ pub struct StructDescriptorType {
     pub name: FQName,
     // the fields are a Vec<_>, so that the order is well defined
     pub fields: Vec<StructField>,
-    pub type_arguments: TypeArguments,
 }
 
 impl StructDescriptorType {
-    pub fn instance_type(&self, type_argument_values: TypeArgumentValues) -> Type {
-        // TODO verify that the type_argument_values actually match the type_arguments declared
+    pub fn instance_type(&self) -> Type {
         // TODO can we avoid special-casing the types here? perhaps take the object type as an
         // argument?
         if self.name == *TYPE_NAME_U64 {
-            return Type::U64;
+            return Type::new_not_generic(TypeKind::U64);
         }
 
         if self.name == *TYPE_NAME_UNIT {
-            return Type::Unit;
+            return Type::new_not_generic(TypeKind::Unit);
         }
 
-        Type::Object {
+        // TODO we have to account for the case of it being actually generic
+        Type::new_not_generic(TypeKind::Object {
             type_name: self.name,
-            type_argument_values,
-        }
+        })
     }
 }
 
@@ -232,12 +230,11 @@ impl std::fmt::Display for TypeArgumentValues {
 
 // TODO support generics
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type {
+pub enum TypeKind {
     Generic(TypeArgument),
     Unit,
     Object {
         type_name: FQName,
-        type_argument_values: TypeArgumentValues,
     },
     Array {
         element_type: Box<Type>,
@@ -256,23 +253,34 @@ pub enum Type {
     U8,
     Pointer(Box<Type>),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Type {
+    kind: TypeKind,
+    arguments: TypeArguments,
+    argument_values: TypeArgumentValues,
+}
+
 impl Type {
     pub(crate) fn debug_name(&self) -> String {
-        match &self {
-            Self::Unit => "void".to_string(),
-            Self::Object {
+        let Self {
+            kind,
+            arguments: _,
+            argument_values: type_argument_values,
+        } = self;
+        match kind {
+            TypeKind::Unit => "void".to_string(),
+            TypeKind::Object {
                 type_name: item_path,
-                type_argument_values,
             } => format!("{item_path}{type_argument_values}"),
-            Self::StructDescriptor(StructDescriptorType {
+            TypeKind::StructDescriptor(StructDescriptorType {
                 name: item_path,
                 fields: _,
-                type_arguments,
-            }) => format!("Struct{type_arguments}({item_path})"),
-            Self::Array {
+            }) => format!("Struct{type_argument_values}({item_path})"),
+            TypeKind::Array {
                 element_type: inner,
             } => format!("{}[]", inner.debug_name()),
-            Self::Callable {
+            TypeKind::Callable {
                 arguments,
                 return_type,
             } => format!(
@@ -283,72 +291,99 @@ impl Type {
                     .join(", "),
                 return_type
             ),
-            Self::U64 => "u64".to_string(),
-            Self::U8 => "u8".to_string(),
-            Self::Pointer(inner) => format!("*{}", inner.debug_name()),
-            Self::Generic(type_argument) => format!("Generic({type_argument})"),
+            TypeKind::U64 => "u64".to_string(),
+            TypeKind::U8 => "u8".to_string(),
+            TypeKind::Pointer(inner) => format!("*{}", inner.debug_name()),
+            TypeKind::Generic(type_argument) => format!("Generic({type_argument})"),
         }
     }
 
     // TODO all types should have a struct descriptor defined for them in std
     pub(crate) fn name(&self) -> FQName {
-        match &self {
-            Self::Unit => todo!(),
-            Self::Object {
+        match &self.kind {
+            TypeKind::Unit => todo!(),
+            TypeKind::Object {
                 type_name: item_path,
-                type_argument_values: _,
             } => *item_path,
-            Self::Array { .. } => todo!(),
-            Self::StructDescriptor(_) => todo!(),
-            Self::Callable { .. } => todo!(),
-            Self::U64 => *TYPE_NAME_U64,
-            Self::U8 => todo!(),
-            Self::Pointer(_) => todo!(),
-            Self::Generic(_) => todo!(),
+            TypeKind::Array { .. } => todo!(),
+            TypeKind::StructDescriptor(_) => todo!(),
+            TypeKind::Callable { .. } => todo!(),
+            TypeKind::U64 => *TYPE_NAME_U64,
+            TypeKind::U8 => todo!(),
+            TypeKind::Pointer(_) => todo!(),
+            TypeKind::Generic(_) => todo!(),
         }
     }
 
-    pub(crate) fn instance_type(&self, type_argument_values: TypeArgumentValues) -> Self {
-        match &self {
-            Self::Unit => todo!(),
-            Self::Object { .. } => todo!(),
+    pub(crate) fn instance_type(&self) -> Self {
+        // TODO check for type arguments values here and pass them to the instance as needed
+        match &self.kind {
+            TypeKind::Unit => todo!(),
+            TypeKind::Object { .. } => todo!(),
             // TODO arrays cannot be instantiated, this case is wrong!
-            Self::Array {
+            TypeKind::Array {
                 element_type: inner,
-            } => Self::Array {
-                element_type: Box::new(inner.instance_type(type_argument_values)),
+            } => Self {
+                kind: TypeKind::Array {
+                    element_type: Box::new(inner.instance_type()),
+                },
+                arguments: TypeArguments::new_empty(),
+                argument_values: TypeArgumentValues::new_empty(),
             },
-            Self::StructDescriptor(struct_descriptor_type) => {
-                struct_descriptor_type.instance_type(type_argument_values)
+            TypeKind::StructDescriptor(struct_descriptor_type) => {
+                struct_descriptor_type.instance_type()
             }
-            Self::Callable { .. } => todo!(),
-            Self::U64 => todo!(),
-            Self::U8 => todo!(),
-            Self::Pointer(_) => todo!(),
-            Self::Generic(_) => todo!(),
+            TypeKind::Callable { .. } => todo!(),
+            TypeKind::U64 => todo!(),
+            TypeKind::U8 => todo!(),
+            TypeKind::Pointer(_) => todo!(),
+            TypeKind::Generic(_) => todo!(),
         }
+    }
+
+    pub(crate) fn new_not_generic(kind: TypeKind) -> Self {
+        Self {
+            kind,
+            argument_values: TypeArgumentValues::new_empty(),
+            arguments: TypeArguments::new_empty(),
+        }
+    }
+
+    pub(crate) fn new_generic(kind: TypeKind, type_arguments: Vec<TypeArgument>) -> Self {
+        Self {
+            kind,
+            arguments: TypeArguments::new(type_arguments),
+            argument_values: TypeArgumentValues::new_empty(),
+        }
+    }
+
+    pub(crate) fn u8() -> Self {
+        Self::new_not_generic(TypeKind::U8)
+    }
+
+    pub(crate) fn u64() -> Self {
+        Self::new_not_generic(TypeKind::U64)
+    }
+
+    pub(crate) const fn kind(&self) -> &TypeKind {
+        &self.kind
     }
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unit => write!(f, "void"),
-            Self::Object {
+        match &self.kind {
+            TypeKind::Unit => write!(f, "void"),
+            TypeKind::Object {
                 type_name: identifier,
-                type_argument_values,
-            } => write!(f, "{identifier}{type_argument_values}"),
-            Self::Array {
+            } => write!(f, "{identifier}{}", self.argument_values),
+            TypeKind::Array {
                 element_type: inner,
             } => write!(f, "{inner}[]"),
-            Self::StructDescriptor(StructDescriptorType {
-                name,
-                fields: _,
-                type_arguments,
-            }) => {
-                write!(f, "StructDescriptor{type_arguments}<{name}>")
+            TypeKind::StructDescriptor(StructDescriptorType { name, fields: _ }) => {
+                write!(f, "StructDescriptor{}<{name}>", self.argument_values)
             }
-            Self::Callable {
+            TypeKind::Callable {
                 arguments,
                 return_type,
             } => write!(
@@ -360,10 +395,10 @@ impl Display for Type {
                     .collect::<Vec<_>>()
                     .join(",")
             ),
-            Self::U8 => write!(f, "u8"),
-            Self::U64 => write!(f, "u64"),
-            Self::Pointer(to) => write!(f, "*{to}"),
-            Self::Generic(name) => write!(f, "{name}"),
+            TypeKind::U8 => write!(f, "u8"),
+            TypeKind::U64 => write!(f, "u64"),
+            TypeKind::Pointer(to) => write!(f, "*{to}"),
+            TypeKind::Generic(name) => write!(f, "{name}"),
         }
     }
 }
@@ -411,9 +446,15 @@ pub struct AssociatedFunction {
 }
 impl AssociatedFunction {
     pub(crate) fn type_(&self) -> Type {
-        Type::Callable {
-            arguments: self.definition.arguments.clone(),
-            return_type: Box::new(self.definition.return_type.clone()),
+        // TODO the function may actually have type arguments, so we need to consider that case
+        // here
+        Type {
+            kind: TypeKind::Callable {
+                arguments: self.definition.arguments.clone(),
+                return_type: Box::new(self.definition.return_type.clone()),
+            },
+            arguments: TypeArguments::new_empty(),
+            argument_values: TypeArgumentValues::new_empty(),
         }
     }
 
@@ -424,9 +465,15 @@ impl AssociatedFunction {
 
 impl Function {
     pub(crate) fn type_(&self) -> Type {
-        Type::Callable {
-            arguments: self.definition.arguments.clone(),
-            return_type: Box::new(self.definition.return_type.clone()),
+        // TODO the function may actually have type arguments, so we need to consider that case
+        // here
+        Type {
+            kind: TypeKind::Callable {
+                arguments: self.definition.arguments.clone(),
+                return_type: Box::new(self.definition.return_type.clone()),
+            },
+            argument_values: TypeArgumentValues::new_empty(),
+            arguments: TypeArguments::new_empty(),
         }
     }
 

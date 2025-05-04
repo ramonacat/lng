@@ -54,17 +54,17 @@ impl<'ctx> CompilerContext<'ctx> {
         type_: &types::Type,
         type_argument_values: &TypeArgumentValues,
     ) -> Box<dyn BasicType<'ctx> + 'ctx> {
-        match type_ {
-            types::Type::Unit | types::Type::U8 => Box::new(self.llvm_context.i8_type()),
-            types::Type::StructDescriptor(_) => todo!(),
-            types::Type::U64 => Box::new(self.llvm_context.i64_type()),
-            types::Type::Callable { .. }
-            | types::Type::Pointer(_)
-            | types::Type::Array { .. }
-            | types::Type::Object { .. } => {
+        match &type_.kind() {
+            types::TypeKind::Unit | types::TypeKind::U8 => Box::new(self.llvm_context.i8_type()),
+            types::TypeKind::StructDescriptor(_) => todo!(),
+            types::TypeKind::U64 => Box::new(self.llvm_context.i64_type()),
+            types::TypeKind::Callable { .. }
+            | types::TypeKind::Pointer(_)
+            | types::TypeKind::Array { .. }
+            | types::TypeKind::Object { .. } => {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
-            types::Type::Generic(type_argument) => self.type_to_llvm(
+            types::TypeKind::Generic(type_argument) => self.type_to_llvm(
                 type_argument_values.get(*type_argument).unwrap(),
                 type_argument_values,
             ),
@@ -86,8 +86,8 @@ impl<'ctx> CompilerContext<'ctx> {
             })
             .collect::<Vec<_>>();
 
-        match return_type {
-            types::Type::Unit => self.llvm_context.void_type().fn_type(&arguments[..], false),
+        match return_type.kind() {
+            types::TypeKind::Unit => self.llvm_context.void_type().fn_type(&arguments[..], false),
             _ => self
                 .type_to_llvm(return_type, type_argument_values)
                 .fn_type(&arguments[..], false),

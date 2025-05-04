@@ -26,6 +26,10 @@ static CAPACITY_FIELD: LazyLock<types::Identifier> =
 // definition
 pub fn describe_structure() -> types::Struct {
     let type_argument_name = types::TypeArgument::new(types::Identifier::parse("TItem"));
+    let generic_argument_type = types::Type::new_generic(
+        types::TypeKind::Generic(type_argument_name),
+        vec![type_argument_name],
+    );
     types::Struct {
         name: *TYPE_NAME_ARRAY,
         type_arguments: types::TypeArguments::new(vec![type_argument_name]),
@@ -33,19 +37,22 @@ pub fn describe_structure() -> types::Struct {
             types::StructField {
                 struct_name: *TYPE_NAME_ARRAY,
                 name: *ITEMS_FIELD,
-                type_: types::Type::Pointer(Box::new(types::Type::Generic(type_argument_name))),
+                type_: types::Type::new_generic(
+                    types::TypeKind::Pointer(Box::new(generic_argument_type)),
+                    vec![type_argument_name],
+                ),
                 static_: false,
             },
             types::StructField {
                 struct_name: *TYPE_NAME_ARRAY,
                 name: *LENGTH_FIELD,
-                type_: types::Type::U64,
+                type_: types::Type::new_not_generic(types::TypeKind::U64),
                 static_: false,
             },
             types::StructField {
                 struct_name: *TYPE_NAME_ARRAY,
                 name: *CAPACITY_FIELD,
-                type_: types::Type::U64,
+                type_: types::Type::new_not_generic(types::TypeKind::U64),
                 static_: false,
             },
         ],

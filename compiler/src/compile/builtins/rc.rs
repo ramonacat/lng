@@ -26,6 +26,8 @@ static POINTEE_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse(
 pub fn describe_structure() -> types::Struct {
     let struct_name = FQName::parse("std.rc");
     let type_argument = types::TypeArgument::new(Identifier::parse("TPointee"));
+    let generic_argument_type =
+        types::Type::new_generic(types::TypeKind::Generic(type_argument), vec![type_argument]);
 
     types::Struct {
         name: struct_name,
@@ -34,13 +36,16 @@ pub fn describe_structure() -> types::Struct {
             types::StructField {
                 struct_name,
                 name: *REFCOUNT_FIELD,
-                type_: types::Type::U64,
+                type_: types::Type::new_not_generic(types::TypeKind::U64),
                 static_: false,
             },
             types::StructField {
                 struct_name,
                 name: *POINTEE_FIELD,
-                type_: types::Type::Pointer(Box::new(types::Type::Generic(type_argument))),
+                type_: types::Type::new_generic(
+                    types::TypeKind::Pointer(Box::new(generic_argument_type)),
+                    vec![type_argument],
+                ),
                 static_: false,
             },
         ],
@@ -60,7 +65,9 @@ impl<'ctx> RcValue<'ctx> {
         let mut tav = HashMap::new();
         tav.insert(
             types::TypeArgument::new(types::Identifier::parse("TPointee")),
-            types::Type::StructDescriptor(struct_instance.type_descriptor()),
+            types::Type::new_not_generic(types::TypeKind::StructDescriptor(
+                struct_instance.type_descriptor(),
+            )),
         );
         let tav = types::TypeArgumentValues::new(tav);
         let mut field_values = HashMap::new();

@@ -2,12 +2,7 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{
-    ast,
-    errors::ErrorLocation,
-    std::TYPE_NAME_STRING,
-    types::{self, Identifier, TypeArgumentValues},
-};
+use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
 
 use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
@@ -107,43 +102,48 @@ impl<'pre> DeclarationChecker<'pre> {
                             fields_to_add.insert(
                                 function.name,
                                 DeclaredStructField {
-                                    type_: types::Type::Callable {
-                                        arguments: function
-                                            .definition
-                                            .arguments
-                                            .iter()
-                                            .map(|x| {
-                                                Ok(types::Argument {
-                                                    name: x.name,
-                                                    type_: resolve_type(
-                                                        &self.root_module_declaration,
-                                                        module_path,
-                                                        &x.type_,
-                                                        ErrorLocation::Position(
-                                                            module_path.with_part(function.name),
-                                                            x.position,
-                                                        ),
-                                                    )?
-                                                    .instance_type(TypeArgumentValues::new_empty()),
-                                                    position,
+                                    // TODO we should here handle the case of the type actually
+                                    // being generic
+                                    type_: types::Type::new_not_generic(
+                                        types::TypeKind::Callable {
+                                            arguments: function
+                                                .definition
+                                                .arguments
+                                                .iter()
+                                                .map(|x| {
+                                                    Ok(types::Argument {
+                                                        name: x.name,
+                                                        type_: resolve_type(
+                                                            &self.root_module_declaration,
+                                                            module_path,
+                                                            &x.type_,
+                                                            ErrorLocation::Position(
+                                                                module_path
+                                                                    .with_part(function.name),
+                                                                x.position,
+                                                            ),
+                                                        )?
+                                                        .instance_type(),
+                                                        position,
+                                                    })
                                                 })
-                                            })
-                                            .collect::<Result<Vec<_>, _>>()?,
-                                        return_type: Box::new(
-                                            resolve_type(
-                                                &self.root_module_declaration,
-                                                module_path,
-                                                &function.definition.return_type,
-                                                // TODO this position should point specifically at
-                                                // the return type, not the whole function
-                                                ErrorLocation::Position(
-                                                    module_path.with_part(function.name),
-                                                    function.definition.position,
-                                                ),
-                                            )?
-                                            .instance_type(TypeArgumentValues::new_empty()),
-                                        ),
-                                    },
+                                                .collect::<Result<Vec<_>, _>>()?,
+                                            return_type: Box::new(
+                                                resolve_type(
+                                                    &self.root_module_declaration,
+                                                    module_path,
+                                                    &function.definition.return_type,
+                                                    // TODO this position should point specifically at
+                                                    // the return type, not the whole function
+                                                    ErrorLocation::Position(
+                                                        module_path.with_part(function.name),
+                                                        function.definition.position,
+                                                    ),
+                                                )?
+                                                .instance_type(),
+                                            ),
+                                        },
+                                    ),
                                     static_: true,
                                 },
                             );
@@ -219,7 +219,8 @@ impl<'pre> DeclarationChecker<'pre> {
                                         module_path,
                                         &field.type_,
                                         ErrorLocation::Position(
-                                            module_path.with_part(Identifier::parse(&struct_.name)),
+                                            module_path
+                                                .with_part(types::Identifier::parse(&struct_.name)),
                                             field.position,
                                         ),
                                     )?,
@@ -254,7 +255,7 @@ impl<'pre> DeclarationChecker<'pre> {
                                 module_path,
                                 &field.type_,
                                 ErrorLocation::Position(
-                                    module_path.with_part(Identifier::parse(&struct_.name)),
+                                    module_path.with_part(types::Identifier::parse(&struct_.name)),
                                     field.position,
                                 ),
                             )?
@@ -289,20 +290,22 @@ impl<'pre> DeclarationChecker<'pre> {
         {
             if function_declaration.definition.arguments.len() == 1 {
                 if let Some(argument) = function_declaration.definition.arguments.first() {
-                    if let types::Type::Array {
-                        element_type: ref array_item_type,
+                    if let types::TypeKind::Array {
+                        element_type: array_item_type,
                     } = resolve_type(
                         &self.root_module_declaration,
                         module_path,
                         &argument.type_,
                         ErrorLocation::Position(function_declaration.name, argument.position),
-                    )? {
-                        if let types::Type::StructDescriptor(types::StructDescriptorType {
+                    )?
+                    .kind()
+                    {
+                        if let types::TypeKind::StructDescriptor(types::StructDescriptorType {
                             name: obj_type,
                             ..
-                        }) = **array_item_type
+                        }) = array_item_type.kind()
                         {
-                            if obj_type == *TYPE_NAME_STRING {
+                            if *obj_type == *TYPE_NAME_STRING {
                                 if self.main.is_some() {
                                     todo!("show a nice error here, main is already defined");
                                 }
@@ -345,7 +348,7 @@ impl<'pre> DeclarationChecker<'pre> {
                 ErrorLocation::Position(function_path, arg.position),
             )?;
 
-            if type_ == types::Type::Unit {
+            if *type_.kind() == types::TypeKind::Unit {
                 return Err(TypeCheckErrorDescription::FunctionArgumentCannotBeVoid {
                     argument_name: types::Identifier::parse(&arg.name),
                 }
