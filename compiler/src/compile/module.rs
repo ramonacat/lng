@@ -4,7 +4,7 @@ use super::{
     CompiledFunction, FunctionHandle, Scope, Value, builtins,
     context::CompilerContext,
     rc::{self, RcValue},
-    value::InstantiatedStructHandle,
+    value::StructHandle,
 };
 use crate::{name_mangler::MangledIdentifier, types};
 use inkwell::{
@@ -48,11 +48,9 @@ impl<'ctx> CompiledModule<'ctx> {
         arguments: &[types::Argument],
         return_type: &types::Type,
         linkage: Linkage,
-        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let function_type =
-            context.make_function_type(arguments, return_type, type_argument_values);
+        let function_type = context.make_function_type(arguments, return_type);
 
         self.llvm_module
             .add_function(name.as_str(), function_type, Some(linkage))
@@ -64,17 +62,9 @@ impl<'ctx> CompiledModule<'ctx> {
         name: &MangledIdentifier,
         arguments: &[types::Argument],
         return_type: &types::Type,
-        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
-        self.declare_function_inner(
-            name,
-            arguments,
-            return_type,
-            linkage,
-            type_argument_values,
-            context,
-        )
+        self.declare_function_inner(name, arguments, return_type, linkage, context)
     }
 
     pub fn import_function(&mut self, function: FunctionHandle) {
@@ -92,13 +82,12 @@ impl<'ctx> CompiledModule<'ctx> {
     pub(crate) fn begin_compile_function(
         &self,
         handle: FunctionHandle,
-        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
         let mut rcs = vec![];
         let scope = self.scope.child();
 
-        let llvm_function = self.get_or_create_function(&handle, type_argument_values, context);
+        let llvm_function = self.get_or_create_function(&handle, context);
 
         let entry_block = context
             .llvm_context
@@ -125,11 +114,11 @@ impl<'ctx> CompiledModule<'ctx> {
                         .unwrap();
                     // TODO we should not create TypeArgumentValues here, at this point the type
                     // should be instantiated anyway
-                    let value_type = InstantiatedStructHandle::new(
-                        value_type,
-                        types::TypeArgumentValues::new_empty(),
+                    let value_type = StructHandle::new(value_type);
+                    let rc = RcValue::from_pointer(
+                        argument_value.into_pointer_value(),
+                        value_type.type_(),
                     );
-                    let rc = RcValue::from_pointer(argument_value.into_pointer_value(), value_type);
                     rcs.push(rc.clone());
 
                     Value::Reference(rc)
@@ -139,12 +128,9 @@ impl<'ctx> CompiledModule<'ctx> {
                 ),
                 types::TypeKind::StructDescriptor(_) => todo!(),
                 types::TypeKind::Callable { .. } => todo!(),
-                types::TypeKind::U64 => Value::Primitive(
-                    context
-                        .get_std_type("u64", types::TypeArgumentValues::new_empty())
-                        .unwrap(),
-                    argument_value,
-                ),
+                types::TypeKind::U64 => {
+                    Value::Primitive(context.get_std_type("u64").unwrap(), argument_value)
+                }
                 types::TypeKind::Pointer(_) => todo!(),
                 types::TypeKind::U8 => todo!(),
                 types::TypeKind::Generic(_) => todo!(),
@@ -188,7 +174,6 @@ impl<'ctx> CompiledModule<'ctx> {
     pub(crate) fn get_or_create_function(
         &self,
         handle: &FunctionHandle,
-        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.llvm_module
@@ -199,7 +184,6 @@ impl<'ctx> CompiledModule<'ctx> {
                     &handle.name,
                     &handle.arguments,
                     &handle.return_type,
-                    type_argument_values,
                     context,
                 )
             })

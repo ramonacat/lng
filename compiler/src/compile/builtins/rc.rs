@@ -9,15 +9,15 @@ use crate::{
     compile::{
         context::CompilerContext,
         unique_name,
-        value::{InstantiatedStructHandle, StructInstance},
+        value::{StructHandle, StructInstance},
     },
-    types::{self, FQName, Identifier, TypeArgumentValues},
+    types::{self, FQName, Identifier},
 };
 
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
-    value_type: InstantiatedStructHandle<'ctx>,
+    value_type: types::Type,
 }
 
 static REFCOUNT_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("refcount"));
@@ -62,14 +62,6 @@ impl<'ctx> RcValue<'ctx> {
     where
         'src: 'ctx,
     {
-        let mut tav = HashMap::new();
-        tav.insert(
-            types::TypeArgument::new(types::Identifier::parse("TPointee")),
-            types::Type::new_not_generic(types::TypeKind::StructDescriptor(
-                struct_instance.type_descriptor(),
-            )),
-        );
-        let tav = types::TypeArgumentValues::new(tav);
         let mut field_values = HashMap::new();
         field_values.insert(*REFCOUNT_FIELD, context.const_u64(1).as_basic_value_enum());
         field_values.insert(
@@ -77,12 +69,15 @@ impl<'ctx> RcValue<'ctx> {
             struct_instance.value().as_basic_value_enum(),
         );
 
-        let rc = InstantiatedStructHandle::new(context.builtins.rc_handle.clone(), tav)
-            .build_heap_instance(context, name, field_values);
+        let rc = StructHandle::new(context.builtins.rc_handle.clone()).build_heap_instance(
+            context,
+            name,
+            field_values,
+        );
 
         Self {
             pointer: rc,
-            value_type: struct_instance.handle(),
+            value_type: struct_instance.type_().clone(),
         }
     }
 
@@ -90,18 +85,33 @@ impl<'ctx> RcValue<'ctx> {
         self.pointer
     }
 
-    pub const fn from_pointer(
-        pointer: PointerValue<'ctx>,
-        value_type: InstantiatedStructHandle<'ctx>,
-    ) -> Self {
+    pub const fn from_pointer(pointer: PointerValue<'ctx>, value_type: types::Type) -> Self {
         RcValue {
             pointer,
             value_type,
         }
     }
 
-    pub(crate) const fn type_(&self) -> &InstantiatedStructHandle<'ctx> {
+    pub(crate) const fn type_(&self) -> &types::Type {
         &self.value_type
+    }
+
+    // TODO this method should not exist! When handle is needed, it should be received from the
+    // scope by whoever needs it
+    pub(crate) fn name(&self) -> FQName {
+        match &self.value_type.kind() {
+            types::TypeKind::Generic(_) => todo!(),
+            types::TypeKind::Unit => todo!(),
+            types::TypeKind::Object { .. } => todo!(),
+            types::TypeKind::Array { .. } => todo!(),
+            types::TypeKind::StructDescriptor(struct_descriptor_type) => {
+                struct_descriptor_type.name
+            }
+            types::TypeKind::Callable { .. } => todo!(),
+            types::TypeKind::U64 => todo!(),
+            types::TypeKind::U8 => todo!(),
+            types::TypeKind::Pointer(_) => todo!(),
+        }
     }
 }
 
@@ -123,13 +133,7 @@ pub fn build_cleanup<'ctx>(
         }
         context.builder.position_at_end(before);
 
-        let mut tav = HashMap::new();
-        tav.insert(
-            types::TypeArgument::new(Identifier::parse("TItem")),
-            rc.value_type.instance_type(),
-        );
-        let tav = types::TypeArgumentValues::new(tav);
-        let rc_handle = InstantiatedStructHandle::new(context.builtins.rc_handle.clone(), tav);
+        let rc_handle = StructHandle::new(context.builtins.rc_handle.clone());
         let old_refcount = rc_handle
             .build_field_load(
                 *REFCOUNT_FIELD,
@@ -195,7 +199,6 @@ pub fn build_cleanup<'ctx>(
             *REFCOUNT_FIELD,
             rc.pointer,
             new_refcount.as_basic_value_enum(),
-            &TypeArgumentValues::new_empty(),
             context,
         );
 
@@ -221,13 +224,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
 
-        let mut tav = HashMap::new();
-        tav.insert(
-            types::TypeArgument::new(Identifier::parse("TItem")),
-            rc.value_type.instance_type(),
-        );
-        let tav = types::TypeArgumentValues::new(tav);
-        let rc_handle = InstantiatedStructHandle::new(context.builtins.rc_handle.clone(), tav);
+        let rc_handle = StructHandle::new(context.builtins.rc_handle.clone());
 
         let init_refcount = rc_handle.build_field_load(
             *REFCOUNT_FIELD,
@@ -249,7 +246,6 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             *REFCOUNT_FIELD,
             rc.pointer,
             incremented_refcount.as_basic_value_enum(),
-            &types::TypeArgumentValues::new_empty(),
             context,
         );
     }

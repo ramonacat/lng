@@ -22,13 +22,13 @@ use inkwell::{
 use module::CompiledModule;
 use rand::Rng;
 use scope::{GlobalScope, Scope};
-use value::{FunctionHandle, InstantiatedStructHandle, StructInstance, Value};
+use value::{FunctionHandle, StructHandle, StructInstance, Value};
 
 use crate::{
     ast::SourceRange,
     errors::ErrorLocation,
     std::{compile_std, runtime::register_mappings},
-    types::{self, FQName, Identifier, TypeArgumentValues, TypeArguments},
+    types::{self, FQName, Identifier, TypeArguments},
 };
 
 fn unique_name(parts: &[&str]) -> String {
@@ -301,8 +301,7 @@ impl<'ctx> Compiler<'ctx> {
                 .as_function()
                 .unwrap();
             // TODO verify in type_check that main has no generic arguments
-            self.compile_function(&handle, &types::TypeArgumentValues::new_empty())
-                .unwrap();
+            self.compile_function(&handle).unwrap();
             Ok(CompiledRootModule::App {
                 scope: self.context.global_scope,
                 main,
@@ -381,8 +380,6 @@ impl<'ctx> Compiler<'ctx> {
                         return_type: function.definition.return_type.clone(),
                         arguments: function.definition.arguments.clone(),
                         position: function.definition.position,
-                        // TODO get the type arguments from the delcaration
-                        type_arguments: TypeArguments::new_empty(),
                         module_name: function.name.without_last(),
                     };
 
@@ -409,11 +406,7 @@ impl<'ctx> Compiler<'ctx> {
             })
     }
 
-    fn compile_function(
-        &mut self,
-        handle: &FunctionHandle,
-        type_argument_values: &types::TypeArgumentValues,
-    ) -> Result<(), CompileError> {
+    fn compile_function(&mut self, handle: &FunctionHandle) -> Result<(), CompileError> {
         let types::FunctionBody::Statements(statements) = &handle.definition.body else {
             return Ok(());
         };
@@ -422,8 +415,7 @@ impl<'ctx> Compiler<'ctx> {
         self.get_or_create_module(module_path);
         let module = self.context.global_scope.get_module(module_path).unwrap();
 
-        let mut compiled_function =
-            module.begin_compile_function(handle.clone(), type_argument_values, &self.context);
+        let mut compiled_function = module.begin_compile_function(handle.clone(), &self.context);
 
         for statement in statements {
             let self_value = compiled_function.scope.get_value(Identifier::parse("self"));
@@ -553,9 +545,7 @@ impl<'ctx> Compiler<'ctx> {
                 types::Literal::UnsignedInteger(value) => Ok((
                     None,
                     Value::Primitive(
-                        self.context
-                            .get_std_type("u64", types::TypeArgumentValues::new_empty())
-                            .unwrap(),
+                        self.context.get_std_type("u64").unwrap(),
                         self.context.const_u64(*value).as_basic_value_enum(),
                     ),
                 )),
@@ -571,7 +561,7 @@ impl<'ctx> Compiler<'ctx> {
                     .as_struct()
                     .unwrap();
                 // TODO get the type argument values from the expression!
-                let s = InstantiatedStructHandle::new(s, types::TypeArgumentValues::new_empty());
+                let s = StructHandle::new(s);
 
                 let field_values = HashMap::new();
                 // TODO actually set the field values!
@@ -584,7 +574,7 @@ impl<'ctx> Compiler<'ctx> {
 
                 let rc = RcValue::build_init(
                     &unique_name(&[&name.raw(), "rc"]),
-                    &StructInstance::new(value, s.clone()),
+                    &StructInstance::new(value, s.type_()),
                     &self.context,
                 );
                 compiled_function.rcs.push(rc.clone());
@@ -598,7 +588,9 @@ impl<'ctx> Compiler<'ctx> {
                 let (_, target_value) =
                     self.compile_expression(target, self_, compiled_function, module_path)?;
 
-                let access_result = target_value.read_field_value(*field_name).unwrap();
+                let access_result = target_value
+                    .read_field_value(*field_name, &self.context)
+                    .unwrap();
 
                 Ok((Some(target_value), access_result))
             }
@@ -617,25 +609,16 @@ impl<'ctx> Compiler<'ctx> {
     ) -> Result<Value<'ctx>, CompileError> {
         let compiled_target =
             self.compile_expression(target, self_.cloned(), compiled_function, module_path)?;
+        let self_value = compiled_target.0;
 
-        let (self_value, function, type_argument_values) = match compiled_target {
-            (_, Value::Empty) => todo!(),
-            (_, Value::Primitive(_, _)) => todo!(),
-            (_, Value::Reference(_)) => todo!(),
-            (self_value, Value::Callable(function_handle, type_argument_values)) => {
-                (self_value, function_handle, type_argument_values)
+        let function = match &compiled_target.1 {
+            Value::Callable(function_handle, _) | Value::Function(function_handle) => {
+                function_handle
             }
-            (self_value, Value::Function(function_handle)) => {
-                if function_handle.type_arguments.any() {
-                    return Err(CompileErrorDescription::MissingGenericArguments(
-                        function_handle.fqname,
-                        function_handle.type_arguments,
-                    )
-                    .at(compiled_function.handle.fqname, target.position));
-                }
-                (self_value, function_handle, TypeArgumentValues::new_empty())
-            }
-            (_, Value::Struct(_)) => todo!(),
+            Value::Empty => todo!(),
+            Value::Primitive(_, _) => todo!(),
+            Value::Reference(_) => todo!(),
+            Value::Struct(_) => todo!(),
         };
 
         if !self
@@ -645,8 +628,7 @@ impl<'ctx> Compiler<'ctx> {
             .unwrap()
             .has_function(&function.name)
         {
-            self.compile_function(&function, &type_argument_values)
-                .unwrap();
+            self.compile_function(function).unwrap();
         }
 
         let compiled_target_function = self
@@ -654,7 +636,7 @@ impl<'ctx> Compiler<'ctx> {
             .global_scope
             .get_module(module_path)
             .unwrap()
-            .get_or_create_function(&function, &type_argument_values, &self.context);
+            .get_or_create_function(function, &self.context);
 
         self.context
             .builder
@@ -705,14 +687,11 @@ impl<'ctx> Compiler<'ctx> {
                     .as_struct()
                     .unwrap();
 
-                // TODO ::instantiate_struct should not exist, at this point we should have a
-                // concrete type here anyway
-                let value_type =
-                    Self::instantiate_struct(value_type, types::TypeArgumentValues::new_empty());
+                let value_type = StructHandle::new(value_type);
 
                 Value::Reference(RcValue::from_pointer(
                     call_result.into_pointer_value(),
-                    value_type,
+                    value_type.type_(),
                 ))
             }
             types::TypeKind::Array { .. } => todo!(),
@@ -724,12 +703,5 @@ impl<'ctx> Compiler<'ctx> {
             types::TypeKind::Generic(_) => todo!(),
         };
         Ok(value)
-    }
-
-    fn instantiate_struct(
-        struct_: types::Struct,
-        tav: TypeArgumentValues,
-    ) -> InstantiatedStructHandle<'ctx> {
-        InstantiatedStructHandle::new(struct_, tav)
     }
 }

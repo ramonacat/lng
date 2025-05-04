@@ -5,7 +5,7 @@ use inkwell::values::BasicValue as _;
 use crate::{
     compile::{
         context::CompilerContext,
-        value::{InstantiatedStructHandle, StructInstance},
+        value::{StructHandle, StructInstance},
     },
     std::TYPE_NAME_STRING,
     types::{self, Identifier, TypeArguments},
@@ -44,10 +44,7 @@ impl StringValue {
                 .as_basic_value_enum(),
         );
 
-        let string_handle = InstantiatedStructHandle::new(
-            context.builtins.string_handle.clone(),
-            types::TypeArgumentValues::new_empty(),
-        );
+        let string_handle = StructHandle::new(context.builtins.string_handle.clone());
         let literal_value = string_handle.build_heap_instance(
             context,
             &(name.to_string() + "_value"),
@@ -56,7 +53,7 @@ impl StringValue {
 
         RcValue::build_init(
             name,
-            &StructInstance::new(literal_value, string_handle),
+            &StructInstance::new(literal_value, string_handle.type_()),
             context,
         )
     }

@@ -6,9 +6,9 @@ use crate::{
     compile::{
         context::CompilerContext,
         unique_name,
-        value::{InstantiatedStructHandle, StructInstance},
+        value::{StructHandle, StructInstance},
     },
-    types::{self, Identifier, TypeArgument, TypeArgumentValues},
+    types,
 };
 
 use super::rc::RcValue;
@@ -67,13 +67,7 @@ impl ArrayValue {
         item_type: &types::Type,
         context: &CompilerContext<'ctx>,
     ) -> RcValue<'ctx> {
-        let mut tav = HashMap::new();
-        tav.insert(
-            TypeArgument::new(Identifier::parse("TItem")),
-            item_type.clone(),
-        );
-        let tav = TypeArgumentValues::new(tav);
-        let items_type = context.make_object_type(item_type, &tav);
+        let items_type = context.make_object_type(item_type);
         // TODO add freeing of this array once destructors are in place
         let items = context
             .builder
@@ -89,13 +83,13 @@ impl ArrayValue {
         field_values.insert(*LENGTH_FIELD, context.const_u64(0).as_basic_value_enum());
         field_values.insert(*CAPACITY_FIELD, context.const_u64(1).as_basic_value_enum());
 
-        let array_struct = InstantiatedStructHandle::new(describe_structure(), tav);
+        let array_struct = StructHandle::new(describe_structure());
         let array_value =
             array_struct.build_heap_instance(context, &unique_name(&["string"]), field_values);
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),
-            &StructInstance::new(array_value, array_struct.clone()),
+            &StructInstance::new(array_value, array_struct.type_()),
             context,
         )
     }

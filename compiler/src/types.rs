@@ -138,10 +138,6 @@ impl TypeArguments {
     pub(crate) const fn new(arguments: Vec<TypeArgument>) -> Self {
         Self(arguments)
     }
-
-    pub(crate) fn any(&self) -> bool {
-        !self.0.is_empty()
-    }
 }
 
 impl std::fmt::Display for TypeArguments {
@@ -200,14 +196,6 @@ pub struct TypeArgumentValues(HashMap<TypeArgument, Type>);
 impl TypeArgumentValues {
     pub(crate) fn new_empty() -> Self {
         Self(HashMap::new())
-    }
-
-    pub(crate) fn get(&self, type_argument: TypeArgument) -> Option<&Type> {
-        self.0.get(&type_argument)
-    }
-
-    pub(crate) const fn new(tav: HashMap<TypeArgument, Type>) -> Self {
-        Self(tav)
     }
 }
 

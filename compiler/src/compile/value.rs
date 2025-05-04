@@ -9,7 +9,7 @@ use itertools::Itertools;
 use crate::{
     ast::SourceRange,
     name_mangler::MangledIdentifier,
-    types::{self, FQName, Identifier, TypeArgumentValues, TypeArguments},
+    types::{self, FQName, Identifier, TypeArgumentValues},
 };
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
@@ -20,7 +20,6 @@ pub struct FunctionHandle {
     pub fqname: FQName,
     pub module_name: FQName,
     pub position: SourceRange,
-    pub type_arguments: types::TypeArguments,
     pub arguments: Vec<types::Argument>,
     pub return_type: types::Type,
     pub linkage: Linkage,
@@ -39,69 +38,53 @@ impl Debug for FunctionHandle {
     }
 }
 
-// TODO we should get rid of the type arguments here, this is handled in Type!
 #[derive(Clone)]
-pub struct InstantiatedStructHandle<'ctx> {
-    description: types::Struct,
+// TODO this should really not exist, instead we should have Instance, that handles instantiating a
+// types::Type
+pub struct StructHandle<'ctx> {
+    definition: types::Struct,
     static_field_values: HashMap<types::Identifier, Value<'ctx>>,
-    type_argument_values: types::TypeArgumentValues,
 }
 
-pub struct StructInstance<'ctx>(PointerValue<'ctx>, InstantiatedStructHandle<'ctx>);
+pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::Type);
 
 impl<'ctx> StructInstance<'ctx> {
-    pub(crate) fn type_descriptor(&self) -> types::StructDescriptorType {
-        self.1.type_descriptor()
+    pub(crate) const fn type_(&self) -> &types::Type {
+        &self.1
     }
 
     pub(crate) const fn value(&self) -> PointerValue<'ctx> {
         self.0
     }
 
-    pub(crate) fn handle(&self) -> InstantiatedStructHandle<'ctx> {
-        self.1.clone()
-    }
-
-    pub(crate) const fn new(
-        pointer: PointerValue<'ctx>,
-        type_: InstantiatedStructHandle<'ctx>,
-    ) -> Self {
+    // TODO ensure that all the generic arguments have values here
+    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: types::Type) -> Self {
         Self(pointer, type_)
     }
 }
 
-impl Debug for InstantiatedStructHandle<'_> {
+impl Debug for StructHandle<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let fields = self
-            .description
+            .definition
             .fields
             .iter()
             .map(|f| format!("{}:{}", f.name, f.type_.debug_name()))
             .join(", ");
 
-        write!(
-            f,
-            "Struct{}({}){{{}}}>",
-            self.type_argument_values, self.description.name, fields
-        )
+        write!(f, "Struct({}){{{}}}>", self.definition.name, fields)
     }
 }
 
-impl<'ctx> InstantiatedStructHandle<'ctx> {
+impl<'ctx> StructHandle<'ctx> {
     pub fn build_heap_instance(
         &self,
         context: &CompilerContext<'ctx>,
         binding_name: &str,
         mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
-        let llvm_type = {
-            let this = &self;
-            context.make_struct_type(
-                this.description.name,
-                &this.description.fields,
-                &self.type_argument_values,
-            )
-        };
+        // TODO ensure the type has all the type arguments filled in here
+        let llvm_type = context.make_struct_type(self.definition.name, &self.definition.fields);
 
         let instance = context
             .builder
@@ -111,7 +94,7 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
             )
             .unwrap();
 
-        for field in self.description.fields.iter().filter(|x| !x.static_) {
+        for field in self.definition.fields.iter().filter(|x| !x.static_) {
             let field_value = field_values.remove(&field.name).unwrap();
             let (_, field_pointer) = llvm_type
                 .field_pointer(field.name, instance, context)
@@ -135,16 +118,10 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
         binding_name: &str,
         context: &CompilerContext<'ctx>,
     ) -> BasicValueEnum<'ctx> {
-        let (field_type, field_pointer) = {
-            let this = &self;
-            context.make_struct_type(
-                this.description.name,
-                &this.description.fields,
-                &self.type_argument_values,
-            )
-        }
-        .field_pointer(field, instance, context)
-        .unwrap();
+        let (field_type, field_pointer) = context
+            .make_struct_type(self.definition.name, &self.definition.fields)
+            .field_pointer(field, instance, context)
+            .unwrap();
 
         context
             .builder
@@ -157,19 +134,12 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
         field_name: Identifier,
         instance: PointerValue<'ctx>,
         value: BasicValueEnum<'ctx>,
-        type_argument_values: &types::TypeArgumentValues,
         context: &CompilerContext<'ctx>,
     ) {
-        let (_, field_pointer) = {
-            let this = &self;
-            context.make_struct_type(
-                this.description.name,
-                &this.description.fields,
-                type_argument_values,
-            )
-        }
-        .field_pointer(field_name, instance, context)
-        .unwrap();
+        let (_, field_pointer) = context
+            .make_struct_type(self.definition.name, &self.definition.fields)
+            .field_pointer(field_name, instance, context)
+            .unwrap();
 
         context.builder.build_store(field_pointer, value).unwrap();
     }
@@ -180,7 +150,7 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
         _instance: Value<'ctx>,
         name: Identifier,
     ) -> Option<Value<'ctx>> {
-        let field = self.description.fields.iter().find(|f| f.name == name)?;
+        let field = self.definition.fields.iter().find(|f| f.name == name)?;
 
         if field.static_ {
             return self.static_field_values.get(&name).cloned();
@@ -189,15 +159,18 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
         todo!("support reading non-static fields!");
     }
 
-    // TODO  remove this, new_with_statics should be the only constructor
-    pub(crate) fn new(description: types::Struct, tav: TypeArgumentValues) -> Self {
-        Self::new_with_statics(description, HashMap::new(), tav)
+    // TODO remove this, new_with_statics should be the only constructor
+    // TODO we should take the generic arguments here, this handle should be one per the set of
+    // types
+    // TODO the constructor should not be called willy nilly, but instead this should be
+    // constructed through CompilerScope, so there's only one instance per set of type arguments
+    pub(crate) fn new(description: types::Struct) -> Self {
+        Self::new_with_statics(description, HashMap::new())
     }
 
     pub(crate) fn new_with_statics(
         description: types::Struct,
         mut static_fields: HashMap<Identifier, Value<'ctx>>,
-        tav: TypeArgumentValues,
     ) -> Self {
         let default_static_fields: Vec<_> = description
             .impls
@@ -215,9 +188,6 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
                     return_type: impl_.definition.return_type.clone(),
                     arguments: impl_.definition.arguments.clone(),
                     position: impl_.definition.position,
-                    // TODO get them from the definition, also ensure the ones from the struct are
-                    // implicitly declared here
-                    type_arguments: TypeArguments::new_empty(),
                     module_name: description.name.without_last(),
                 };
                 (*name, Value::Function(handle))
@@ -229,21 +199,19 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
         }
 
         Self {
-            description,
+            definition: description,
             static_field_values: static_fields,
-            type_argument_values: tav,
         }
     }
 
-    pub(crate) fn type_descriptor(&self) -> types::StructDescriptorType {
-        types::StructDescriptorType {
-            name: self.description.name,
-            fields: self.description.fields.clone(),
-        }
-    }
-
-    pub(crate) fn instance_type(&self) -> types::Type {
-        self.type_descriptor().instance_type()
+    // TODO handle the generic case here as well
+    pub(crate) fn type_(&self) -> types::Type {
+        types::Type::new_not_generic(types::TypeKind::StructDescriptor(
+            types::StructDescriptorType {
+                name: self.definition.name,
+                fields: self.definition.fields.clone(),
+            },
+        ))
     }
 }
 
@@ -252,8 +220,9 @@ impl<'ctx> InstantiatedStructHandle<'ctx> {
 #[derive(Clone)]
 pub enum Value<'ctx> {
     Empty,
-    Primitive(InstantiatedStructHandle<'ctx>, BasicValueEnum<'ctx>),
+    Primitive(StructHandle<'ctx>, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
+    // TODO remove callable, this is supposed to be a function instad
     #[allow(unused)]
     Callable(FunctionHandle, TypeArgumentValues),
     Function(FunctionHandle),
@@ -291,10 +260,24 @@ impl<'ctx> Value<'ctx> {
         }
     }
 
-    pub fn read_field_value(&self, field_path: Identifier) -> Option<Self> {
+    pub fn read_field_value(
+        &self,
+        field_path: Identifier,
+        context: &CompilerContext<'ctx>,
+    ) -> Option<Self> {
         match self {
             Value::Primitive(handle, _) => handle.read_field_value(self.clone(), field_path),
-            Value::Reference(ref_) => ref_.type_().read_field_value(self.clone(), field_path),
+            // TODO The struct handle should be retrieved from context here, instead of being
+            // created, as otherwise the static fields will be desynchronized across instances
+            Value::Reference(ref_) => StructHandle::new(
+                context
+                    .global_scope
+                    .get_value(ref_.name())
+                    .unwrap()
+                    .as_struct()
+                    .unwrap(),
+            )
+            .read_field_value(self.clone(), field_path),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::Empty => todo!(),

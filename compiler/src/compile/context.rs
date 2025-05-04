@@ -8,11 +8,10 @@ use inkwell::{
     values::{IntValue, PointerValue},
 };
 
-use crate::types::{self, FQName, Identifier, TypeArgumentValues};
+use crate::types;
 
 use super::{
-    CompileError, CompileErrorDescription, scope::GlobalScope, unique_name,
-    value::InstantiatedStructHandle,
+    CompileError, CompileErrorDescription, scope::GlobalScope, unique_name, value::StructHandle,
 };
 
 pub struct Builtins {
@@ -38,22 +37,14 @@ impl<'ctx> CompilerContext<'ctx> {
             .const_int(u64::from(value), false)
     }
 
-    pub fn get_std_type(
-        &self,
-        name: &str,
-        type_argument_values: TypeArgumentValues,
-    ) -> Option<InstantiatedStructHandle<'ctx>> {
+    pub fn get_std_type(&self, name: &str) -> Option<StructHandle<'ctx>> {
         self.global_scope
-            .get_value(types::FQName::parse("std").with_part(Identifier::parse(name)))
+            .get_value(types::FQName::parse("std").with_part(types::Identifier::parse(name)))
             .map(|x| x.as_struct().unwrap())
-            .map(|x| InstantiatedStructHandle::new(x, type_argument_values))
+            .map(StructHandle::new)
     }
 
-    fn type_to_llvm(
-        &self,
-        type_: &types::Type,
-        type_argument_values: &TypeArgumentValues,
-    ) -> Box<dyn BasicType<'ctx> + 'ctx> {
+    fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
         match &type_.kind() {
             types::TypeKind::Unit | types::TypeKind::U8 => Box::new(self.llvm_context.i8_type()),
             types::TypeKind::StructDescriptor(_) => todo!(),
@@ -64,10 +55,7 @@ impl<'ctx> CompilerContext<'ctx> {
             | types::TypeKind::Object { .. } => {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
-            types::TypeKind::Generic(type_argument) => self.type_to_llvm(
-                type_argument_values.get(*type_argument).unwrap(),
-                type_argument_values,
-            ),
+            types::TypeKind::Generic(_) => todo!(),
         }
     }
 
@@ -75,39 +63,30 @@ impl<'ctx> CompilerContext<'ctx> {
         &self,
         arguments: &[types::Argument],
         return_type: &types::Type,
-        type_argument_values: &TypeArgumentValues,
     ) -> FunctionType<'ctx> {
         let arguments = arguments
             .iter()
-            .map(|arg| {
-                self.type_to_llvm(&arg.type_, type_argument_values)
-                    .as_basic_type_enum()
-                    .into()
-            })
+            .map(|arg| self.type_to_llvm(&arg.type_).as_basic_type_enum().into())
             .collect::<Vec<_>>();
 
         match return_type.kind() {
             types::TypeKind::Unit => self.llvm_context.void_type().fn_type(&arguments[..], false),
             _ => self
-                .type_to_llvm(return_type, type_argument_values)
+                .type_to_llvm(return_type)
                 .fn_type(&arguments[..], false),
         }
     }
 
     pub fn make_struct_type(
         &self,
-        struct_name: FQName,
+        struct_name: types::FQName,
         fields: &[types::StructField],
-        type_argument_values: &TypeArgumentValues,
     ) -> CompiledStruct<'ctx> {
         let mut field_types = vec![];
         let mut field_indices = HashMap::new();
 
         for (index, field) in fields.iter().enumerate() {
-            field_types.push(
-                self.type_to_llvm(&field.type_, type_argument_values)
-                    .as_basic_type_enum(),
-            );
+            field_types.push(self.type_to_llvm(&field.type_).as_basic_type_enum());
             field_indices.insert(field.name, u32::try_from(index).unwrap());
         }
 
@@ -118,26 +97,21 @@ impl<'ctx> CompilerContext<'ctx> {
         }
     }
 
-    pub(crate) fn make_object_type(
-        &self,
-        item_type: &types::Type,
-        type_argument_values: &TypeArgumentValues,
-    ) -> BasicTypeEnum<'ctx> {
-        self.type_to_llvm(item_type, type_argument_values)
-            .as_basic_type_enum()
+    pub(crate) fn make_object_type(&self, item_type: &types::Type) -> BasicTypeEnum<'ctx> {
+        self.type_to_llvm(item_type).as_basic_type_enum()
     }
 }
 
 pub struct CompiledStruct<'ctx> {
-    struct_name: FQName,
+    struct_name: types::FQName,
     llvm_type: StructType<'ctx>,
-    field_indices: HashMap<Identifier, u32>,
+    field_indices: HashMap<types::Identifier, u32>,
 }
 
 impl<'ctx> CompiledStruct<'ctx> {
     pub fn field_pointer(
         &self,
-        field: Identifier,
+        field: types::Identifier,
         instance: PointerValue<'ctx>,
         context: &CompilerContext<'ctx>,
     ) -> Result<(BasicTypeEnum<'ctx>, PointerValue<'ctx>), CompileError> {
