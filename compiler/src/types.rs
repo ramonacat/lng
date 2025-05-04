@@ -288,7 +288,6 @@ impl Type {
     }
 
     pub(crate) fn instance_type(&self) -> Self {
-        // TODO check for type arguments values here and pass them to the instance as needed
         match &self.kind {
             TypeKind::Unit => todo!(),
             TypeKind::Object { .. } => todo!(),
