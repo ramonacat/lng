@@ -525,6 +525,7 @@ impl<'ctx> Compiler<'ctx> {
                 BasicValueEnum::VectorValue(v) => {
                     compiled_function.build_return(Some(v), &self.context)?;
                 }
+                BasicValueEnum::ScalableVectorValue(_) => todo!(),
             }
         } else {
             compiled_function.build_return(None, &self.context)?;
