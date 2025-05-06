@@ -1,0 +1,156 @@
+use crate::ast;
+grammar;
+
+Identifier: String = {
+    r"\p{ID_Start}\p{ID_Continue}*" => <>.to_string()
+}
+
+ImportPath: Vec<String> = {
+    <mut l:ImportPath> "::" <r:Identifier> => { l.push(r); l },
+    <id:Identifier> => vec![id]
+}
+
+Import: ast::Import = {
+    "import" <path:ImportPath> ";" => ast::Import { 
+        path, 
+        alias: None,
+        position: ast::SourceRange::new((0,0), (0,0))
+    },
+    "import" <path:ImportPath> "as" <alias:Identifier> ";" => ast::Import { 
+        path, 
+        alias: Some(alias),
+        position: ast::SourceRange::new((0,0), (0,0))
+    }
+}
+
+Visibility: ast::Visibility = {
+    <e:(<"export">)?> => if e.is_some() { ast::Visibility::Export } else { ast::Visibility::Internal },
+}
+
+StructDeclaration: ast::Struct = {
+    <visibility:Visibility> "struct" <name:Identifier> "{" "}" => ast::Struct {
+        name,
+        fields: vec![],
+        visibility
+    }
+}
+
+Type: ast::TypeDescription = {
+    "(" ")" => ast::TypeDescription::Named("()".to_string()),
+    <name:Identifier> => ast::TypeDescription::Named(name),
+    <inner:Type> "[]" => ast::TypeDescription::Array(Box::new(inner)),
+}
+
+FunctionArgument: ast::Argument = {
+    <name:Identifier> ":" <type_:Type> => ast::Argument {
+        name,
+        type_,
+        position: ast::SourceRange::new((0,0), (0,0))
+    }
+}
+
+FunctionArguments: Vec<ast::Argument> = {
+    <mut l:FunctionArguments> "," <r:FunctionArgument> => {
+        l.push(r);
+
+        l
+    }, 
+    <l:FunctionArgument> => vec![l]
+}
+
+Expressions: Vec<ast::Expression> = {
+    <mut l:Expressions> "," <r:Expression> => {
+        l.push(r);
+
+        l
+    },
+    <l:Expression> => vec![l]
+}
+
+Literal: ast::Literal = {
+    r#""(?:\\"|.)*""# => ast::Literal::String(<>[1..<>.len()-1].to_string(), ast::SourceRange::new((0,0), (0,0))),
+    r#"[1-9][0-9]*"# => ast::Literal::UnsignedInteger(<>.parse().unwrap()),
+}
+
+Expression: ast::Expression = {
+    <literal:Literal> => ast::Expression {
+        position: ast::SourceRange::new((0,0), (0,0)),
+        kind: ast::ExpressionKind::Literal(literal)
+    },
+    <variable:Identifier> => ast::Expression {
+        position: ast::SourceRange::new((0,0), (0,0)),
+        kind: ast::ExpressionKind::VariableReference(variable)
+    },
+    <target:Expression> "(" <arguments:Expressions?> ")" => ast::Expression {
+        position: ast::SourceRange::new((0,0), (0,0)),
+        kind: ast::ExpressionKind::Call{target: Box::new(target), arguments: arguments.unwrap_or_default() }
+    },
+    <name:Identifier> "{" "}" => ast::Expression {
+        position: ast::SourceRange::new((0,0), (0,0)),
+        kind: ast::ExpressionKind::StructConstructor(name)
+    },
+    <target:Expression> "." <field_name:Identifier> => ast::Expression {
+        position: ast::SourceRange::new((0,0), (0,0)),
+        kind: ast::ExpressionKind::FieldAccess {
+            target: Box::new(target), field_name
+        }
+    }
+}
+
+Statement: ast::Statement = {
+    "let" <name:Identifier> ":" <type_:Type> "=" <expression:Expression> ";" => ast::Statement::Let(name, type_, expression),
+    "return" <expression:Expression> ";" => ast::Statement::Return(expression, ast::SourceRange::new((0,0), (0,0))),
+    <expression:Expression> ";" => ast::Statement::Expression(expression, ast::SourceRange::new((0,0), (0,0)))
+}
+
+FunctionBody: ast::FunctionBody = {
+    "{" <statements:(<Statement>)*> "}" => {
+        ast::FunctionBody::Statements(statements, ast::SourceRange::new((0,0), (0,0)))
+    }, 
+    "extern" "(" <name:Identifier> ")" ";" => {
+        ast::FunctionBody::Extern(name, ast::SourceRange::new((0,0), (0,0)))
+    }
+}
+
+Function: ast::Function = {
+    <visibility:Visibility> "fn" <name:Identifier> "(" <arguments:FunctionArguments?> ")" ":" <return_type:Type>
+        <body:FunctionBody> 
+        => ast::Function {
+            visibility,
+            name,
+            arguments: arguments.unwrap_or_default(),
+            return_type,
+            body,
+            position: ast::SourceRange::new((0,0), (0,0))
+        }
+}
+
+ImplDeclaration: ast::Impl = {
+    "impl" <struct_name:Identifier> "{" <functions:(<Function>)*> "}" => ast::Impl {
+        struct_name,
+        functions
+    }
+}
+
+Declaration: ast::Declaration = {
+    <s:StructDeclaration> => ast::Declaration {
+        kind: ast::DeclarationKind::Struct(s),
+        position: ast::SourceRange::new((0,0), (0,0))
+    },
+    <impl_:ImplDeclaration> => ast::Declaration {
+        kind: ast::DeclarationKind::Impl(impl_),
+        position: ast::SourceRange::new((0,0), (0,0))
+    },
+    <function:Function> => ast::Declaration {
+        kind: ast::DeclarationKind::Function(function),
+        position: ast::SourceRange::new((0,0), (0,0))
+    }
+}
+
+pub SourceFile: ast::SourceFile = {
+    <imports:(<Import>)*> <declarations:(<Declaration>)*> => ast::SourceFile {
+        imports,
+        declarations,
+        name: String::new()
+    }
+}

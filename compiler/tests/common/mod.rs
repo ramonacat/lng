@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use compiler::{
     compile::compile,
-    parse::parse_file,
+    parser::parse_file,
     std::{
         runtime::{LngRc, LngString},
         type_check_std,
@@ -39,7 +39,7 @@ fn register_test_mappings(engine: &ExecutionEngine, module: &Module) {
 pub fn run(program: HashMap<&str, &str>) -> String {
     let asts = program
         .into_iter()
-        .map(|(name, contents)| parse_file(name, contents).unwrap())
+        .map(|(name, contents)| parse_file(name, contents))
         .collect::<Vec<_>>();
 
     let std_program = type_check_std().unwrap();

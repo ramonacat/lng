@@ -6,7 +6,6 @@ use inkwell::context::Context;
 
 use crate::{
     compile::{CompileError, CompiledRootModule, Compiler},
-    parse::parse_file,
     type_check::{errors::TypeCheckError, type_check},
     types,
 };
@@ -19,7 +18,10 @@ pub(crate) static TYPE_NAME_STRING: LazyLock<types::FQName> =
     LazyLock::new(|| types::FQName::parse("std.string"));
 
 pub fn type_check_std() -> Result<types::RootModule, TypeCheckError> {
-    let asts = vec![parse_file("std", include_str!("../../stdlib/std.lng")).unwrap()];
+    let asts = vec![crate::parser::parse_file(
+        "std",
+        include_str!("../../stdlib/std.lng"),
+    )];
 
     type_check(&asts, None)
 }

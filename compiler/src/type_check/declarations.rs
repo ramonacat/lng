@@ -250,7 +250,7 @@ pub(super) fn resolve_type(
         ast::TypeDescription::Named(name) => {
             let name = types::Identifier::parse(name);
             let item = root_module
-                .get_item(current_module.with_part(name))
+                .get_item(dbg!(current_module.with_part(name)))
                 // TODO should there be a keyword for global scope access instead of this or_else?
                 .or_else(|| {
                     root_module.get_item(types::FQName::from_parts(std::iter::once(&name.raw())))

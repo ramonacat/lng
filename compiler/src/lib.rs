@@ -3,10 +3,11 @@
 #![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 mod ast;
-pub mod compile;
 mod errors;
 mod name_mangler;
-pub mod parse;
+mod types;
+
+pub mod compile;
+pub mod parser;
 pub mod std;
 pub mod type_check;
-mod types;
