@@ -20,19 +20,19 @@ static CAPACITY_FIELD: LazyLock<types::Identifier> =
 
 // TODO A macro that generates both the struct on rust side and the StructHandle from a single
 // definition
-pub fn describe_structure() -> types::Struct {
+pub fn describe_structure() -> types::structs::Struct {
     let type_argument_name = types::TypeArgument::new(types::Identifier::parse("TItem"));
     let generic_argument_type = types::Type::new_generic(
         types::TypeKind::Generic(type_argument_name),
         vec![type_argument_name],
     );
-    let struct_id = types::StructId::FQName(*TYPE_NAME_ARRAY);
+    let struct_id = types::structs::StructId::FQName(*TYPE_NAME_ARRAY);
 
-    types::Struct {
+    types::structs::Struct {
         name: *TYPE_NAME_ARRAY,
         type_arguments: types::TypeArguments::new(vec![type_argument_name]),
         fields: vec![
-            types::StructField {
+            types::structs::StructField {
                 struct_id,
                 name: *ITEMS_FIELD,
                 type_: types::Type::new_generic(
@@ -41,13 +41,13 @@ pub fn describe_structure() -> types::Struct {
                 ),
                 static_: false,
             },
-            types::StructField {
+            types::structs::StructField {
                 struct_id,
                 name: *LENGTH_FIELD,
                 type_: types::Type::new_not_generic(types::TypeKind::U64),
                 static_: false,
             },
-            types::StructField {
+            types::structs::StructField {
                 struct_id,
                 name: *CAPACITY_FIELD,
                 type_: types::Type::new_not_generic(types::TypeKind::U64),
@@ -87,7 +87,10 @@ impl ArrayValue {
             item_type.clone(),
         );
         let tav = types::TypeArgumentValues::new(tav);
-        let id = types::InstantiatedStructId(types::StructId::FQName(*TYPE_NAME_ARRAY), tav);
+        let id = types::structs::InstantiatedStructId(
+            types::structs::StructId::FQName(*TYPE_NAME_ARRAY),
+            tav,
+        );
 
         let array_value = context.global_scope.structs.inspect_instantiated(&id, |a| {
             a.unwrap()

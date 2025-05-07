@@ -19,9 +19,10 @@ use super::{
 
 pub(super) struct DeclarationChecker<'pre> {
     root_module_declaration: DeclaredModule<'pre>,
-    declared_impls: HashMap<(types::StructId, types::Identifier), DeclaredAssociatedFunction>,
+    declared_impls:
+        HashMap<(types::structs::StructId, types::Identifier), DeclaredAssociatedFunction>,
     main: Option<types::FQName>,
-    structs: HashMap<types::StructId, types::Struct>,
+    structs: HashMap<types::structs::StructId, types::structs::Struct>,
 }
 
 impl<'pre> DeclarationChecker<'pre> {
@@ -154,21 +155,22 @@ impl<'pre> DeclarationChecker<'pre> {
                             );
 
                             self.declared_impls.insert(
-                                (types::StructId::FQName(struct_path), function.name),
+                                (types::structs::StructId::FQName(struct_path), function.name),
                                 function.clone(),
                             );
                         }
 
-                        let Some(struct_) =
-                            self.structs.get_mut(&types::StructId::FQName(struct_path))
+                        let Some(struct_) = self
+                            .structs
+                            .get_mut(&types::structs::StructId::FQName(struct_path))
                         else {
                             return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
                                 .at(error_location));
                         };
 
                         for (field_name, field) in fields_to_add {
-                            struct_.fields.push(types::StructField {
-                                struct_id: types::StructId::FQName(struct_path),
+                            struct_.fields.push(types::structs::StructField {
+                                struct_id: types::structs::StructId::FQName(struct_path),
                                 name: field_name,
                                 type_: field.type_,
                                 static_: field.static_,
@@ -215,7 +217,7 @@ impl<'pre> DeclarationChecker<'pre> {
                     ast::DeclarationKind::Struct(struct_) => {
                         let mut fields = vec![];
                         for field in &struct_.fields {
-                            fields.push(types::StructField {
+                            fields.push(types::structs::StructField {
                                 type_: resolve_type(
                                     &self.root_module_declaration,
                                     module_path,
@@ -228,19 +230,19 @@ impl<'pre> DeclarationChecker<'pre> {
                                 )?,
 
                                 static_: false,
-                                struct_id: types::StructId::FQName(
+                                struct_id: types::structs::StructId::FQName(
                                     module_path.with_part(Identifier::parse(&struct_.name)),
                                 ),
                                 name: Identifier::parse(&field.name),
                             });
                         }
                         let name = module_path.with_part(types::Identifier::parse(&struct_.name));
-                        let id = types::StructId::FQName(name);
+                        let id = types::structs::StructId::FQName(name);
 
                         // TODO get the actual type arguments from the declaration
                         self.structs.insert(
                             id,
-                            types::Struct {
+                            types::structs::Struct {
                                 name,
                                 fields,
                                 impls: HashMap::new(),
@@ -414,7 +416,7 @@ impl<'pre> DeclarationChecker<'pre> {
 
     pub(crate) fn new(
         root_module_declaration: DeclaredModule<'pre>,
-        structs: HashMap<types::StructId, types::Struct>,
+        structs: HashMap<types::structs::StructId, types::structs::Struct>,
     ) -> Self {
         Self {
             root_module_declaration,

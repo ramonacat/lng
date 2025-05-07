@@ -1,14 +1,6 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use crate::{
-    ast,
-    errors::ErrorLocation,
-    std::TYPE_NAME_STRING,
-    types::{
-        self, AssociatedFunction, FQName, Identifier, InstantiatedStructId, RootModule, StructId,
-        TypeArgumentValues,
-    },
-};
+use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
 
 use super::{
     DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
@@ -20,11 +12,14 @@ use super::{
 struct Locals<'globals, 'pre> {
     values: HashMap<types::Identifier, types::Type>,
     globals: &'globals DeclaredModule<'pre>,
-    scope_module_name: FQName,
+    scope_module_name: types::FQName,
 }
 
 impl<'globals, 'pre> Locals<'globals, 'pre> {
-    fn from_globals(root_module: &'globals DeclaredModule<'pre>, module_name: FQName) -> Self {
+    fn from_globals(
+        root_module: &'globals DeclaredModule<'pre>,
+        module_name: types::FQName,
+    ) -> Self {
         Self {
             values: HashMap::new(),
             globals: root_module,
@@ -57,7 +52,7 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
                 }))
             }
             ast::TypeDescription::Named(name) => {
-                let id = Identifier::parse(name);
+                let id = types::Identifier::parse(name);
 
                 self.values
                     .get(&id)
@@ -70,7 +65,7 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
                     })
                     .unwrap_or_else(|| {
                         Err(
-                            TypeCheckErrorDescription::ItemDoesNotExist(FQName::parse(name))
+                            TypeCheckErrorDescription::ItemDoesNotExist(types::FQName::parse(name))
                                 .at(error_location),
                         )
                     })
@@ -78,13 +73,13 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
         }
     }
 
-    fn push_variable(&mut self, name: Identifier, r#type: types::Type) {
+    fn push_variable(&mut self, name: types::Identifier, r#type: types::Type) {
         self.values.insert(name, r#type);
     }
 
     fn get(
         &self,
-        id: Identifier,
+        id: types::Identifier,
         error_location: ErrorLocation,
     ) -> Result<Option<types::Type>, TypeCheckError> {
         self.values
@@ -102,9 +97,10 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
 
 pub(super) struct DefinitionChecker<'pre> {
     root_module_declaration: DeclaredModule<'pre>,
-    structs: RefCell<HashMap<types::StructId, types::Struct>>,
-    declared_impls: HashMap<(types::StructId, Identifier), DeclaredAssociatedFunction>,
-    main: Option<FQName>,
+    structs: RefCell<HashMap<types::structs::StructId, types::structs::Struct>>,
+    declared_impls:
+        HashMap<(types::structs::StructId, types::Identifier), DeclaredAssociatedFunction>,
+    main: Option<types::FQName>,
 }
 
 impl<'pre> DefinitionChecker<'pre> {
@@ -112,10 +108,17 @@ impl<'pre> DefinitionChecker<'pre> {
         let root_module = self.type_check_definitions(&self.root_module_declaration, None)?;
 
         if let Some(main) = self.main {
-            return Ok(RootModule::new_app(main, root_module, self.structs.take()));
+            return Ok(types::RootModule::new_app(
+                main,
+                root_module,
+                self.structs.take(),
+            ));
         }
 
-        Ok(RootModule::new_library(root_module, self.structs.take()))
+        Ok(types::RootModule::new_library(
+            root_module,
+            self.structs.take(),
+        ))
     }
 
     fn type_check_definitions(
@@ -124,7 +127,7 @@ impl<'pre> DefinitionChecker<'pre> {
         root_path: Option<types::FQName>,
     ) -> Result<types::Module, TypeCheckError> {
         let mut root_module: types::Module = types::Module::new();
-        let root_path = root_path.unwrap_or_else(|| FQName::parse(""));
+        let root_path = root_path.unwrap_or_else(|| types::FQName::parse(""));
         let mut impls = self.type_check_associated_function_definitions()?;
 
         for (item_path, declared_item) in declaration_to_check.items() {
@@ -176,11 +179,13 @@ impl<'pre> DefinitionChecker<'pre> {
     fn type_check_associated_function_definitions(
         &self,
     ) -> Result<
-        HashMap<types::StructId, HashMap<types::Identifier, AssociatedFunction>>,
+        HashMap<types::structs::StructId, HashMap<types::Identifier, types::AssociatedFunction>>,
         TypeCheckError,
     > {
-        let mut impls: HashMap<types::StructId, HashMap<types::Identifier, AssociatedFunction>> =
-            HashMap::new();
+        let mut impls: HashMap<
+            types::structs::StructId,
+            HashMap<types::Identifier, types::AssociatedFunction>,
+        > = HashMap::new();
         for ((struct_id, function_name), declared_associated_function) in &self.declared_impls {
             let associated_function = self.type_check_associated_function(
                 declared_associated_function,
@@ -215,15 +220,15 @@ impl<'pre> DefinitionChecker<'pre> {
 
     fn type_check_struct(
         &self,
-        struct_id: types::StructId,
-        impls: HashMap<types::Identifier, AssociatedFunction>,
+        struct_id: types::structs::StructId,
+        impls: HashMap<types::Identifier, types::AssociatedFunction>,
         declared_item: &DeclaredItem,
     ) -> types::Item {
         let all_structs = &mut self.structs.borrow_mut();
         let struct_ = all_structs.get_mut(&struct_id).unwrap();
 
         for (name, impl_) in impls {
-            struct_.fields.push(types::StructField {
+            struct_.fields.push(types::structs::StructField {
                 struct_id,
                 name,
                 type_: impl_.type_(),
@@ -242,7 +247,7 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         root_module: &mut types::Module,
         item_path: types::Identifier,
-        imported_item: FQName,
+        imported_item: types::FQName,
     ) {
         let imported_item = self
             .root_module_declaration
@@ -321,7 +326,7 @@ impl<'pre> DefinitionChecker<'pre> {
         error_location: ErrorLocation,
     ) -> Result<types::FunctionDefinition, TypeCheckError> {
         let mut locals = Locals::from_globals(&self.root_module_declaration, module);
-        let function_name = module.with_part(Identifier::parse(&declared_function.ast.name));
+        let function_name = module.with_part(types::Identifier::parse(&declared_function.ast.name));
 
         locals.push_arguments(&declared_function.arguments);
 
@@ -384,10 +389,10 @@ impl<'pre> DefinitionChecker<'pre> {
     fn type_check_statement(
         &self,
         declared_function: &DeclaredFunctionDefinition,
-        module: FQName,
+        module: types::FQName,
         error_location: ErrorLocation,
         locals: &mut Locals<'_, 'pre>,
-        function_name: FQName,
+        function_name: types::FQName,
         statement: &ast::Statement,
     ) -> Result<types::Statement, TypeCheckError> {
         Ok(match statement {
@@ -450,7 +455,7 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         expression: &ast::Expression,
         locals: &Locals,
-        module_path: FQName,
+        module_path: types::FQName,
         error_location: ErrorLocation,
     ) -> Result<types::Expression, TypeCheckError> {
         let position = expression.position;
@@ -475,9 +480,9 @@ impl<'pre> DefinitionChecker<'pre> {
                 ast::Literal::String(value, _) => Ok(types::Expression {
                     position,
                     type_: types::Type::new_not_generic(types::TypeKind::Object {
-                        type_name: InstantiatedStructId(
-                            StructId::FQName(*TYPE_NAME_STRING),
-                            TypeArgumentValues::new_empty(),
+                        type_name: types::structs::InstantiatedStructId(
+                            types::structs::StructId::FQName(*TYPE_NAME_STRING),
+                            types::TypeArgumentValues::new_empty(),
                         ),
                     }),
                     kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
@@ -513,8 +518,10 @@ impl<'pre> DefinitionChecker<'pre> {
                 };
 
                 // TODO get the type arguments from the expression
-                let instantiated_struct_id =
-                    InstantiatedStructId(*struct_id, types::TypeArgumentValues::new_empty());
+                let instantiated_struct_id = types::structs::InstantiatedStructId(
+                    *struct_id,
+                    types::TypeArgumentValues::new_empty(),
+                );
 
                 Ok(types::Expression {
                     position,
@@ -556,7 +563,7 @@ impl<'pre> DefinitionChecker<'pre> {
         target: &ast::Expression,
         passed_arguments: &[ast::Expression],
         locals: &Locals,
-        module_path: FQName,
+        module_path: types::FQName,
         error_location: ErrorLocation,
         position: ast::SourceRange,
     ) -> Result<types::Expression, TypeCheckError> {
@@ -649,9 +656,12 @@ impl<'pre> DefinitionChecker<'pre> {
 
     pub(super) const fn new(
         root_module_declaration: DeclaredModule<'pre>,
-        declared_impls: HashMap<(types::StructId, types::Identifier), DeclaredAssociatedFunction>,
-        main: Option<FQName>,
-        structs: HashMap<StructId, types::Struct>,
+        declared_impls: HashMap<
+            (types::structs::StructId, types::Identifier),
+            DeclaredAssociatedFunction,
+        >,
+        main: Option<types::FQName>,
+        structs: HashMap<types::structs::StructId, types::structs::Struct>,
     ) -> Self {
         Self {
             root_module_declaration,

@@ -62,24 +62,24 @@ impl Debug for FunctionHandle {
 }
 
 pub struct InstantiatedStructType<'ctx> {
-    definition: types::Struct,
+    definition: types::structs::Struct,
     static_field_values: HashMap<types::Identifier, Value<'ctx>>,
 }
 
-pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::InstantiatedStructId);
+pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::structs::InstantiatedStructId);
 
 impl<'ctx> StructInstance<'ctx> {
     pub(crate) const fn value(&self) -> PointerValue<'ctx> {
         self.0
     }
 
-    pub(crate) fn id(&self) -> types::InstantiatedStructId {
+    pub(crate) fn id(&self) -> types::structs::InstantiatedStructId {
         self.1.clone()
     }
 
     pub(crate) const fn new(
         pointer: PointerValue<'ctx>,
-        type_: types::InstantiatedStructId,
+        type_: types::structs::InstantiatedStructId,
     ) -> Self {
         Self(pointer, type_)
     }
@@ -186,12 +186,12 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     // types
     // TODO the constructor should not be called willy nilly, but instead this should be
     // constructed through CompilerScope, so there's only one instance per set of type arguments
-    pub(crate) fn new(description: types::Struct) -> Self {
+    pub(crate) fn new(description: types::structs::Struct) -> Self {
         Self::new_with_statics(description, HashMap::new())
     }
 
     pub(crate) fn new_with_statics(
-        description: types::Struct,
+        description: types::structs::Struct,
         mut static_fields: HashMap<types::Identifier, Value<'ctx>>,
     ) -> Self {
         let default_static_fields: Vec<_> = description
@@ -232,11 +232,11 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 #[derive(Clone)]
 pub enum Value<'ctx> {
     Empty,
-    Primitive(types::InstantiatedStructId, BasicValueEnum<'ctx>),
+    Primitive(types::structs::InstantiatedStructId, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     // TODO functions should be refered to by id
     Function(FunctionHandle),
-    Struct(types::Struct),
+    Struct(types::structs::Struct),
 }
 
 impl Debug for Value<'_> {

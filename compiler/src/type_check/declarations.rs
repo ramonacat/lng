@@ -142,7 +142,7 @@ impl<'pre> DeclaredModule<'pre> {
 #[derive(Debug, Clone)]
 pub(super) enum DeclaredItemKind<'pre> {
     Function(DeclaredFunction),
-    Struct(types::StructId),
+    Struct(types::structs::StructId),
     Import(DeclaredImport),
     Predeclared(&'pre types::Item),
     Module(DeclaredModule<'pre>),

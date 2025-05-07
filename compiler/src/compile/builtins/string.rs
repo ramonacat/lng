@@ -41,8 +41,8 @@ impl StringValue {
                 .as_basic_value_enum(),
         );
 
-        let id = types::InstantiatedStructId(
-            types::StructId::FQName(*TYPE_NAME_STRING),
+        let id = types::structs::InstantiatedStructId(
+            types::structs::StructId::FQName(*TYPE_NAME_STRING),
             types::TypeArgumentValues::new_empty(),
         );
 
@@ -62,20 +62,20 @@ impl StringValue {
     }
 }
 
-pub fn describe_structure() -> types::Struct {
-    let struct_id = types::StructId::FQName(*TYPE_NAME_STRING);
+pub fn describe_structure() -> types::structs::Struct {
+    let struct_id = types::structs::StructId::FQName(*TYPE_NAME_STRING);
 
-    types::Struct {
+    types::structs::Struct {
         name: *TYPE_NAME_STRING,
         type_arguments: types::TypeArguments::new_empty(),
         fields: vec![
-            types::StructField {
+            types::structs::StructField {
                 struct_id,
                 name: types::Identifier::parse("characters"),
                 type_: types::Type::u8(),
                 static_: false,
             },
-            types::StructField {
+            types::structs::StructField {
                 struct_id,
                 name: types::Identifier::parse("length"),
                 type_: types::Type::u64(),

@@ -103,7 +103,7 @@ impl Debug for GlobalScope<'_> {
 }
 
 impl GlobalScope<'_> {
-    pub(crate) fn new(structs: HashMap<types::StructId, types::Struct>) -> Self {
+    pub(crate) fn new(structs: HashMap<types::structs::StructId, types::structs::Struct>) -> Self {
         Self {
             modules: HashMap::new(),
             scope: Scope::root(),

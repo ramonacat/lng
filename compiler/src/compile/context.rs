@@ -8,7 +8,7 @@ use inkwell::{
     values::{IntValue, PointerValue},
 };
 
-use crate::types::{self, StructId};
+use crate::types;
 
 use super::{
     CompileError, CompileErrorDescription, scope::GlobalScope, unique_name,
@@ -16,17 +16,17 @@ use super::{
 };
 
 pub struct Builtins {
-    pub rc_handle: types::Struct,
+    pub rc_handle: types::structs::Struct,
 }
 
 pub struct AllStructs<'ctx> {
-    structs: HashMap<types::StructId, types::Struct>,
+    structs: HashMap<types::structs::StructId, types::structs::Struct>,
     instantiated_structs:
-        RwLock<HashMap<types::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
+        RwLock<HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
 }
 
 impl<'ctx> AllStructs<'ctx> {
-    pub(crate) fn new(structs: HashMap<StructId, types::Struct>) -> Self {
+    pub(crate) fn new(structs: HashMap<types::structs::StructId, types::structs::Struct>) -> Self {
         Self {
             structs,
             instantiated_structs: RwLock::new(HashMap::new()),
@@ -35,7 +35,7 @@ impl<'ctx> AllStructs<'ctx> {
 
     pub(crate) fn inspect_instantiated<T>(
         &self,
-        handle: &types::InstantiatedStructId,
+        handle: &types::structs::InstantiatedStructId,
         inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
     ) -> T {
         self.instantiate(handle);
@@ -44,7 +44,7 @@ impl<'ctx> AllStructs<'ctx> {
     }
 
     // TODO deal with setting the static fields here
-    fn instantiate(&self, id: &types::InstantiatedStructId) {
+    fn instantiate(&self, id: &types::structs::InstantiatedStructId) {
         self.instantiated_structs
             .write()
             .unwrap()
@@ -75,10 +75,10 @@ impl<'ctx> CompilerContext<'ctx> {
             .const_int(u64::from(value), false)
     }
 
-    pub fn get_std_type(name: &str) -> types::InstantiatedStructId {
+    pub fn get_std_type(name: &str) -> types::structs::InstantiatedStructId {
         // TODO what about std types that have type arguments?
-        types::InstantiatedStructId(
-            types::StructId::FQName(
+        types::structs::InstantiatedStructId(
+            types::structs::StructId::FQName(
                 types::FQName::parse("std").with_part(types::Identifier::parse(name)),
             ),
             types::TypeArgumentValues::new_empty(),
@@ -121,7 +121,7 @@ impl<'ctx> CompilerContext<'ctx> {
     pub fn make_struct_type(
         &self,
         struct_name: types::FQName,
-        fields: &[types::StructField],
+        fields: &[types::structs::StructField],
     ) -> CompiledStruct<'ctx> {
         let mut field_types = vec![];
         let mut field_indices = HashMap::new();

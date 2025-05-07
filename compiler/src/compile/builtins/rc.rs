@@ -17,7 +17,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
-    value_type: types::InstantiatedStructId,
+    value_type: types::structs::InstantiatedStructId,
 }
 
 static REFCOUNT_FIELD: LazyLock<types::Identifier> =
@@ -25,24 +25,24 @@ static REFCOUNT_FIELD: LazyLock<types::Identifier> =
 static POINTEE_FIELD: LazyLock<types::Identifier> =
     LazyLock::new(|| types::Identifier::parse("pointee"));
 
-pub fn describe_structure() -> types::Struct {
+pub fn describe_structure() -> types::structs::Struct {
     let struct_name = types::FQName::parse("std.rc");
     let type_argument = types::TypeArgument::new(types::Identifier::parse("TPointee"));
     let generic_argument_type =
         types::Type::new_generic(types::TypeKind::Generic(type_argument), vec![type_argument]);
-    let struct_id = types::StructId::FQName(struct_name);
+    let struct_id = types::structs::StructId::FQName(struct_name);
 
-    types::Struct {
+    types::structs::Struct {
         name: struct_name,
         type_arguments: types::TypeArguments::new(vec![type_argument]),
         fields: vec![
-            types::StructField {
+            types::structs::StructField {
                 struct_id,
                 name: *REFCOUNT_FIELD,
                 type_: types::Type::new_not_generic(types::TypeKind::U64),
                 static_: false,
             },
-            types::StructField {
+            types::structs::StructField {
                 struct_id,
                 name: *POINTEE_FIELD,
                 type_: types::Type::new_generic(
@@ -87,7 +87,7 @@ impl<'ctx> RcValue<'ctx> {
 
     pub const fn from_pointer(
         pointer: PointerValue<'ctx>,
-        value_type: types::InstantiatedStructId,
+        value_type: types::structs::InstantiatedStructId,
     ) -> Self {
         RcValue {
             pointer,
@@ -95,7 +95,7 @@ impl<'ctx> RcValue<'ctx> {
         }
     }
 
-    pub(crate) fn type_(&self) -> types::InstantiatedStructId {
+    pub(crate) fn type_(&self) -> types::structs::InstantiatedStructId {
         self.value_type.clone()
     }
 }
