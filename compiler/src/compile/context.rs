@@ -88,7 +88,6 @@ impl<'ctx> CompilerContext<'ctx> {
     fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
         match &type_.kind() {
             types::TypeKind::Unit | types::TypeKind::U8 => Box::new(self.llvm_context.i8_type()),
-            types::TypeKind::StructDescriptor(_) => todo!(),
             types::TypeKind::U64 => Box::new(self.llvm_context.i64_type()),
             types::TypeKind::Callable { .. }
             | types::TypeKind::Pointer(_)

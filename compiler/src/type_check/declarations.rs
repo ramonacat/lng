@@ -1,27 +1,14 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
-use crate::{
-    ast,
-    errors::ErrorLocation,
-    std::{TYPE_NAME_U64, TYPE_NAME_UNIT},
-    types,
-};
+use crate::{ast, errors::ErrorLocation, types};
 
 use super::errors::TypeCheckError;
 
 #[derive(Debug, Clone)]
-pub(super) struct DeclaredArgument {
-    pub(super) function_name: types::FQName,
-    pub(super) name: types::Identifier,
-    pub(super) type_: ast::TypeDescription,
-    pub(super) position: ast::SourceRange,
-}
-
-#[derive(Debug, Clone)]
 pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
-    pub(super) arguments: Vec<DeclaredArgument>,
-    pub(super) return_type: ast::TypeDescription,
+    pub(super) arguments: Vec<types::functions::Argument>,
+    pub(super) return_type: types::Type,
     pub(super) ast: ast::Function,
     pub(super) position: ast::SourceRange,
     pub(super) visibility: types::Visibility,
@@ -36,6 +23,40 @@ pub(super) struct DeclaredStructField {
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredImport {
     pub(super) imported_item: types::FQName,
+}
+
+pub(super) struct DeclaredRootModule<'pre> {
+    pub(super) structs: RefCell<HashMap<types::structs::StructId, types::structs::Struct>>,
+    pub(super) functions: RefCell<HashMap<types::functions::FunctionId, DeclaredFunction>>,
+    pub(super) module: RefCell<DeclaredModule<'pre>>,
+    pub(super) predeclared_functions:
+        RefCell<HashMap<types::functions::FunctionId, types::functions::Function>>,
+}
+impl<'pre> DeclaredRootModule<'pre> {
+    pub(crate) fn new() -> Self {
+        Self {
+            structs: RefCell::new(HashMap::new()),
+            functions: RefCell::new(HashMap::new()),
+            module: RefCell::new(DeclaredModule::new()),
+            predeclared_functions: RefCell::new(HashMap::new()),
+        }
+    }
+
+    pub(crate) fn from_predeclared(
+        original_module: &'pre types::Module,
+        structs: HashMap<types::structs::StructId, types::structs::Struct>,
+        functions: HashMap<types::functions::FunctionId, types::functions::Function>,
+    ) -> Self {
+        let mut module = DeclaredModule::new();
+        module.import_predeclared(original_module);
+
+        Self {
+            structs: RefCell::new(structs),
+            functions: RefCell::new(HashMap::new()),
+            predeclared_functions: RefCell::new(functions),
+            module: RefCell::new(module),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -129,7 +150,7 @@ impl<'pre> DeclaredModule<'pre> {
 
 #[derive(Debug, Clone)]
 pub(super) enum DeclaredItemKind<'pre> {
-    Function(DeclaredFunction),
+    Function(types::functions::FunctionId),
     Struct(types::structs::StructId),
     Import(DeclaredImport),
     Predeclared(&'pre types::Item),
@@ -145,8 +166,8 @@ pub(super) struct DeclaredItem<'pre> {
 impl std::fmt::Debug for DeclaredItem<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            DeclaredItemKind::Function(declared_function) => {
-                write!(f, "Function({})", declared_function.id)
+            DeclaredItemKind::Function(function_id) => {
+                write!(f, "Function({function_id})")
             }
             DeclaredItemKind::Struct(struct_id) => {
                 write!(f, "Struct({struct_id})")
@@ -169,36 +190,17 @@ impl DeclaredItem<'_> {
     ) -> Result<types::Type, TypeCheckError> {
         // TODO also handle the case of this item being generic
         match &self.kind {
-            DeclaredItemKind::Function(declared_function) => {
-                Ok(types::Type::new_not_generic(types::TypeKind::Callable {
-                    arguments: declared_function
-                        .arguments
-                        .iter()
-                        .map(|declaration| {
-                            Ok(types::functions::Argument {
-                                name: declaration.name,
-                                type_: resolve_type(
-                                    root_module,
-                                    current_module,
-                                    &declaration.type_,
-                                    error_location,
-                                )?
-                                .instance_type(),
-                                position: declaration.position,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                    return_type: Box::new(resolve_type(
-                        root_module,
-                        current_module,
-                        &declared_function.return_type,
-                        error_location,
-                    )?),
+            DeclaredItemKind::Function(function_id) => Ok(types::Type::new_not_generic(
+                types::TypeKind::Callable(*function_id),
+            )),
+            DeclaredItemKind::Struct(struct_id) => {
+                Ok(types::Type::new_not_generic(types::TypeKind::Object {
+                    type_name: types::structs::InstantiatedStructId(
+                        *struct_id,
+                        types::TypeArgumentValues::new_empty(),
+                    ),
                 }))
             }
-            DeclaredItemKind::Struct(struct_id) => Ok(types::Type::new_not_generic(
-                types::TypeKind::StructDescriptor(*struct_id),
-            )),
             DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => root_module
                 .get_item(*imported_item)
                 .unwrap()
@@ -229,17 +231,11 @@ pub(super) fn resolve_type(
                 )?),
             }))
         }
-        ast::TypeDescription::Named(name) if name == "()" => root_module
-            .get_item(*TYPE_NAME_UNIT)
-            .unwrap()
-            .type_(root_module, current_module, error_location),
-        ast::TypeDescription::Named(name) if name == "u64" => root_module
-            .get_item(*TYPE_NAME_U64)
-            .unwrap()
-            .type_(root_module, current_module, error_location),
+        ast::TypeDescription::Named(name) if name == "()" => Ok(types::Type::unit()),
+        ast::TypeDescription::Named(name) if name == "u64" => Ok(types::Type::u64()),
         ast::TypeDescription::Named(name) => {
             let name = types::Identifier::parse(name);
-            let item = root_module
+            let item = dbg!(root_module)
                 .get_item(dbg!(current_module.with_part(name)))
                 // TODO should there be a keyword for global scope access instead of this or_else?
                 .or_else(|| {
@@ -248,36 +244,17 @@ pub(super) fn resolve_type(
                 .unwrap();
 
             match item.kind {
-                DeclaredItemKind::Function(declared_function) => {
-                    Ok(types::Type::new_not_generic(types::TypeKind::Callable {
-                        arguments: declared_function
-                            .arguments
-                            .iter()
-                            .map(|a| {
-                                Ok(types::functions::Argument {
-                                    name: a.name,
-                                    type_: resolve_type(
-                                        root_module,
-                                        current_module,
-                                        &a.type_,
-                                        error_location,
-                                    )?
-                                    .instance_type(),
-                                    position: a.position,
-                                })
-                            })
-                            .collect::<Result<Vec<_>, _>>()?,
-                        return_type: Box::new(resolve_type(
-                            root_module,
-                            current_module,
-                            &declared_function.return_type,
-                            error_location,
-                        )?),
+                DeclaredItemKind::Function(function_id) => Ok(types::Type::new_not_generic(
+                    types::TypeKind::Callable(function_id),
+                )),
+                DeclaredItemKind::Struct(declared_struct) => {
+                    Ok(types::Type::new_not_generic(types::TypeKind::Object {
+                        type_name: types::structs::InstantiatedStructId(
+                            declared_struct,
+                            types::TypeArgumentValues::new_empty(),
+                        ),
                     }))
                 }
-                DeclaredItemKind::Struct(declared_struct) => Ok(types::Type::new_not_generic(
-                    types::TypeKind::StructDescriptor(declared_struct),
-                )),
                 DeclaredItemKind::Predeclared(item) => {
                     item.type_(root_module, current_module, error_location)
                 }

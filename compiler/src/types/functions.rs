@@ -18,8 +18,8 @@ pub enum FunctionId {
 impl Display for FunctionId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            FunctionId::FQName(fqname) => write!(f, "FQName({fqname})"),
-            FunctionId::Extern(identifier) => write!(f, "Extern({identifier})"),
+            Self::FQName(fqname) => write!(f, "FQName({fqname})"),
+            Self::Extern(identifier) => write!(f, "Extern({identifier})"),
         }
     }
 }
@@ -27,8 +27,8 @@ impl Display for FunctionId {
 impl FunctionId {
     pub(crate) fn into_mangled(self) -> MangledIdentifier {
         match self {
-            FunctionId::FQName(fqname) => fqname.into_mangled(),
-            FunctionId::Extern(identifier) => nomangle_identifier(identifier),
+            Self::FQName(fqname) => fqname.into_mangled(),
+            Self::Extern(identifier) => nomangle_identifier(identifier),
         }
     }
 }
@@ -48,10 +48,7 @@ impl Function {
         // TODO the function may actually have type arguments, so we need to consider that case
         // here
         Type {
-            kind: TypeKind::Callable {
-                arguments: self.arguments.clone(),
-                return_type: Box::new(self.return_type.clone()),
-            },
+            kind: TypeKind::Callable(self.id),
             argument_values: TypeArgumentValues::new_empty(),
             arguments: TypeArguments::new_empty(),
         }

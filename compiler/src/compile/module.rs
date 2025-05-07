@@ -111,7 +111,6 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::TypeKind::Array { element_type: a } => Value::Reference(
                     builtins::array::ArrayValue::build_instance(a.as_ref(), context),
                 ),
-                types::TypeKind::StructDescriptor(_) => todo!(),
                 types::TypeKind::Callable { .. } => todo!(),
                 types::TypeKind::U64 => {
                     Value::Primitive(CompilerContext::get_std_type("u64"), argument_value)

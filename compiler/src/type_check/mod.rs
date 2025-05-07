@@ -5,12 +5,16 @@ pub mod errors;
 
 use declaration_checker::DeclarationChecker;
 use declarations::{
-    DeclaredArgument, DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind,
-    DeclaredModule, DeclaredStructField,
+    DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
+    DeclaredRootModule, DeclaredStructField,
 };
 use errors::{TypeCheckError, TypeCheckErrorDescription};
 
-use crate::{ast, errors::ErrorLocation, types};
+use crate::{
+    ast,
+    errors::ErrorLocation,
+    types::{self, structs::InstantiatedStructId},
+};
 
 impl types::Item {
     fn type_(
@@ -21,10 +25,17 @@ impl types::Item {
     ) -> Result<types::Type, TypeCheckError> {
         // TODO handle possible generics here
         match &self.kind {
-            types::ItemKind::Function(function) => Ok(function.type_()),
-            types::ItemKind::Struct(struct_) => Ok(types::Type::new_not_generic(
-                types::TypeKind::StructDescriptor(*struct_),
+            types::ItemKind::Function(function_id) => Ok(types::Type::new_not_generic(
+                types::TypeKind::Callable(*function_id),
             )),
+            types::ItemKind::Struct(struct_) => {
+                Ok(types::Type::new_not_generic(types::TypeKind::Object {
+                    type_name: InstantiatedStructId(
+                        *struct_,
+                        types::TypeArgumentValues::new_empty(),
+                    ),
+                }))
+            }
             types::ItemKind::StructImport(_) => todo!(),
             types::ItemKind::Import(import) => root_module
                 .get_item(import.imported_item)
@@ -42,16 +53,15 @@ pub fn type_check(
     program: &[ast::SourceFile],
     std: Option<&types::RootModule>,
 ) -> Result<types::RootModule, TypeCheckError> {
-    let mut root_module_declaration = DeclaredModule::new();
-    let mut structs = None;
+    let root_module_declaration = std.map_or_else(DeclaredRootModule::new, |std| {
+        DeclaredRootModule::from_predeclared(
+            std.root_module(),
+            std.structs().clone(),
+            std.functions().clone(),
+        )
+    });
 
-    if let Some(std) = std {
-        root_module_declaration.import_predeclared(std.root_module());
-        structs = Some(std.structs().clone());
-    }
-
-    let type_checker =
-        DeclarationChecker::new(root_module_declaration, structs.unwrap_or_default());
+    let type_checker = DeclarationChecker::new(root_module_declaration);
 
     let definition_checker = type_checker.check(program)?;
     definition_checker.check()

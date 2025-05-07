@@ -1,11 +1,10 @@
+use crate::type_check::declarations::DeclaredRootModule;
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
 
 use super::{
-    DeclaredArgument, DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind,
-    DeclaredModule,
-    declarations::resolve_type,
+    DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
 
@@ -27,17 +26,9 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
         }
     }
 
-    fn push_arguments(&mut self, arguments: &[DeclaredArgument], current_module: types::FQName) {
+    fn push_arguments(&mut self, arguments: &[types::functions::Argument]) {
         for argument in arguments {
-            self.values.insert(
-                argument.name,
-                self.resolve_type(
-                    &argument.type_,
-                    dbg!(current_module),
-                    ErrorLocation::Position(argument.function_name, argument.position),
-                )
-                .unwrap(),
-            );
+            self.values.insert(argument.name, argument.type_.clone());
         }
     }
 
@@ -67,10 +58,7 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
                     .or_else(|| {
                         self.globals
                             .get_item(self.scope_module_name.with_part(id))
-                            .map(|x| {
-                                Ok(x.type_(self.globals, current_module, error_location)?
-                                    .instance_type())
-                            })
+                            .map(|x| x.type_(self.globals, current_module, error_location))
                     })
                     .unwrap_or_else(|| {
                         Err(
@@ -106,28 +94,44 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
 }
 
 pub(super) struct DefinitionChecker<'pre> {
-    root_module_declaration: DeclaredModule<'pre>,
-    structs: RefCell<HashMap<types::structs::StructId, types::structs::Struct>>,
-    declared_impls:
-        HashMap<types::structs::StructId, HashMap<types::functions::FunctionId, DeclaredFunction>>,
+    root_module_declaration: DeclaredRootModule<'pre>,
+    declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
+    functions: RefCell<HashMap<types::functions::FunctionId, types::functions::Function>>,
     main: Option<types::functions::FunctionId>,
 }
 
 impl<'pre> DefinitionChecker<'pre> {
     pub(super) fn check(self) -> Result<types::RootModule, TypeCheckError> {
-        let root_module = self.type_check_definitions(&self.root_module_declaration, None)?;
+        let root_module =
+            self.type_check_definitions(&self.root_module_declaration.module.borrow(), None)?;
 
-        if let Some(main) = self.main {
+        let Self {
+            root_module_declaration,
+            declared_impls: _,
+            functions: _,
+            main,
+        } = self;
+
+        let DeclaredRootModule {
+            structs,
+            functions: _,
+            module: _,
+            predeclared_functions: _,
+        } = root_module_declaration;
+
+        if let Some(main) = main {
             return Ok(types::RootModule::new_app(
                 main,
                 root_module,
-                self.structs.take(),
+                structs.into_inner(),
+                self.functions.take(),
             ));
         }
 
         Ok(types::RootModule::new_library(
             root_module,
-            self.structs.take(),
+            structs.into_inner(),
+            self.functions.take(),
         ))
     }
 
@@ -142,18 +146,26 @@ impl<'pre> DefinitionChecker<'pre> {
 
         for (item_path, declared_item) in declaration_to_check.items() {
             match &declared_item.kind {
-                DeclaredItemKind::Function(declared_function) => {
+                DeclaredItemKind::Function(function_id) => {
                     let body = self.type_check_function(
-                        declared_function,
+                        self.root_module_declaration
+                            .functions
+                            .borrow()
+                            .get(function_id)
+                            .unwrap(),
                         root_path,
                         // TODO figure out the real location here
                         ErrorLocation::Indeterminate,
                     )?;
 
+                    self.functions
+                        .borrow_mut()
+                        .insert(*function_id, body.clone());
+
                     root_module.declare_item(
                         *item_path,
                         types::Item {
-                            kind: types::ItemKind::Function(body),
+                            kind: types::ItemKind::Function(*function_id),
                             visibility: declared_item.visibility,
                         },
                     );
@@ -164,6 +176,7 @@ impl<'pre> DefinitionChecker<'pre> {
                         impls.remove(struct_id).unwrap_or_default(),
                         declared_item,
                     );
+
                     root_module.declare_item(*item_path, item);
                 }
                 DeclaredItemKind::Import(DeclaredImport { imported_item }) => {
@@ -204,7 +217,9 @@ impl<'pre> DefinitionChecker<'pre> {
             HashMap<types::functions::FunctionId, types::functions::Function>,
         > = HashMap::new();
         for (struct_id, declared_impls) in &self.declared_impls {
-            for (function_id, function) in declared_impls {
+            for function_id in declared_impls {
+                let functions = self.root_module_declaration.functions.borrow();
+                let function = functions.get(function_id).unwrap();
                 let function = self.type_check_function(
                     function,
                     // TODO we should not be matching on the struct_id here, but instead have access to
@@ -223,6 +238,10 @@ impl<'pre> DefinitionChecker<'pre> {
                     .entry(*struct_id)
                     .or_default()
                     .insert(*function_id, function.clone());
+
+                self.functions
+                    .borrow_mut()
+                    .insert(*function_id, function.clone());
             }
         }
         Ok(impls)
@@ -234,7 +253,7 @@ impl<'pre> DefinitionChecker<'pre> {
         impls: HashMap<types::functions::FunctionId, types::functions::Function>,
         declared_item: &DeclaredItem,
     ) -> types::Item {
-        let all_structs = &mut self.structs.borrow_mut();
+        let all_structs = &mut self.root_module_declaration.structs.borrow_mut();
         let struct_ = all_structs.get_mut(&struct_id).unwrap();
 
         for (name, impl_) in impls {
@@ -264,21 +283,12 @@ impl<'pre> DefinitionChecker<'pre> {
         item_path: types::Identifier,
         imported_item: types::FQName,
     ) {
-        let imported_item = self
-            .root_module_declaration
-            .get_item(imported_item)
-            .unwrap();
+        let root_module_declaration = self.root_module_declaration.module.borrow();
+        let imported_item = root_module_declaration.get_item(imported_item).unwrap();
         match &imported_item.kind {
-            DeclaredItemKind::Function(DeclaredFunction {
-                id: imported_item_id,
-                ..
-            })
+            DeclaredItemKind::Function(imported_item_id)
             | DeclaredItemKind::Predeclared(types::Item {
-                kind:
-                    types::ItemKind::Function(types::functions::Function {
-                        id: imported_item_id,
-                        ..
-                    }),
+                kind: types::ItemKind::Function(imported_item_id),
                 ..
             }) => {
                 // TODO this match should be removed and we should pass the ID directly to the
@@ -295,7 +305,7 @@ impl<'pre> DefinitionChecker<'pre> {
                         }),
                         visibility: types::Visibility::Internal, // TODO can imports be reexported?
                     },
-                )
+                );
             }
             DeclaredItemKind::Import(_) => todo!(),
             DeclaredItemKind::Struct(struct_id)
@@ -329,10 +339,11 @@ impl<'pre> DefinitionChecker<'pre> {
         module: types::FQName,
         error_location: ErrorLocation,
     ) -> Result<types::functions::Function, TypeCheckError> {
-        let mut locals = Locals::from_globals(&self.root_module_declaration, module);
+        let root_module = self.root_module_declaration.module.borrow();
+        let mut locals = Locals::from_globals(&root_module, module);
         let function_name = module.with_part(types::Identifier::parse(&declared_function.ast.name));
 
-        locals.push_arguments(&declared_function.arguments, module);
+        locals.push_arguments(&declared_function.arguments);
 
         let body = match &declared_function.ast.body {
             ast::FunctionBody::Statements(body_statements, _) => {
@@ -367,26 +378,12 @@ impl<'pre> DefinitionChecker<'pre> {
                 .map(|argument| {
                     Ok(types::functions::Argument {
                         name: argument.name,
-                        type_: resolve_type(
-                            &self.root_module_declaration,
-                            module,
-                            &argument.type_,
-                            ErrorLocation::Position(function_name, argument.position),
-                        )?
-                        .instance_type(),
+                        type_: argument.type_.clone(),
                         position: argument.position,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?,
-            return_type: resolve_type(
-                &self.root_module_declaration,
-                module,
-                &declared_function.return_type,
-                // TODO the position here should point at the actual return type, not the whole
-                // function
-                ErrorLocation::Position(function_name, declared_function.ast.position),
-            )?
-            .instance_type(),
+            return_type: declared_function.return_type.clone(),
             body,
             position: declared_function.position,
         })
@@ -439,16 +436,10 @@ impl<'pre> DefinitionChecker<'pre> {
                 let checked_expression =
                     self.type_check_expression(expression, &*locals, module, error_location)?;
 
-                let resolved_return_type = resolve_type(
-                    &self.root_module_declaration,
-                    module,
-                    &declared_function.return_type,
-                    ErrorLocation::Position(function_name, expression.position),
-                )?;
-                if checked_expression.type_ != resolved_return_type {
+                if checked_expression.type_ != declared_function.return_type {
                     return Err(TypeCheckErrorDescription::MismatchedReturnType {
                         actual: checked_expression.type_,
-                        expected: resolved_return_type,
+                        expected: declared_function.return_type.clone(),
                     }
                     .at(error_location));
                 }
@@ -525,22 +516,19 @@ impl<'pre> DefinitionChecker<'pre> {
                             TypeCheckErrorDescription::UndeclaredVariable(id).at(error_location)
                         })?;
 
-                let types::TypeKind::StructDescriptor(struct_id) = struct_type.kind() else {
+                let types::TypeKind::Object {
+                    type_name: instantiated_struct_id,
+                } = struct_type.kind()
+                else {
                     todo!();
                 };
-
-                // TODO get the type arguments from the expression
-                let instantiated_struct_id = types::structs::InstantiatedStructId(
-                    *struct_id,
-                    types::TypeArgumentValues::new_empty(),
-                );
 
                 Ok(types::Expression {
                     position,
                     type_: types::Type::new_not_generic(types::TypeKind::Object {
                         type_name: instantiated_struct_id.clone(),
                     }),
-                    kind: types::ExpressionKind::StructConstructor(instantiated_struct_id),
+                    kind: types::ExpressionKind::StructConstructor(instantiated_struct_id.clone()),
                 })
             }
             ast::ExpressionKind::FieldAccess { target, field_name } => {
@@ -551,6 +539,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 let struct_name = target.type_.struct_name();
 
                 let field_type = self
+                    .root_module_declaration
                     .structs
                     .borrow()
                     .get(&struct_name.0)
@@ -581,17 +570,39 @@ impl<'pre> DefinitionChecker<'pre> {
     ) -> Result<types::Expression, TypeCheckError> {
         let checked_target =
             self.type_check_expression(target, locals, module_path, error_location)?;
-        let types::TypeKind::Callable {
-            arguments: callable_arguments,
-            return_type,
-        } = checked_target.type_.kind()
-        else {
+        let types::TypeKind::Callable(function_id) = checked_target.type_.kind() else {
             return Err(
                 TypeCheckErrorDescription::CallingNotCallableItem(checked_target.type_)
                     .at(error_location),
             );
         };
-        let mut callable_arguments = callable_arguments.clone();
+        let (mut callable_arguments, return_type) = {
+            let root_module = self.root_module_declaration.functions.borrow();
+            if let Some(DeclaredFunction {
+                arguments: callable_arguments,
+                return_type,
+                ..
+            }) = root_module.get(function_id)
+            {
+                (callable_arguments.clone(), return_type.clone())
+            } else if let Some(types::functions::Function {
+                id: _,
+                arguments,
+                return_type,
+                body: _,
+                position: _,
+                visibility: _,
+            }) = self
+                .root_module_declaration
+                .predeclared_functions
+                .borrow()
+                .get(function_id)
+            {
+                (arguments.clone(), return_type.clone())
+            } else {
+                todo!();
+            }
+        };
         let self_argument = callable_arguments
             .first()
             .and_then(|a| {
@@ -657,7 +668,7 @@ impl<'pre> DefinitionChecker<'pre> {
         }
         let expression_type = types::Expression {
             position,
-            type_: *return_type.clone(),
+            type_: return_type,
             kind: types::ExpressionKind::Call {
                 target: Box::new(checked_target),
                 arguments: checked_arguments,
@@ -666,20 +677,16 @@ impl<'pre> DefinitionChecker<'pre> {
         Ok(expression_type)
     }
 
-    pub(super) const fn new(
-        root_module_declaration: DeclaredModule<'pre>,
-        declared_impls: HashMap<
-            types::structs::StructId,
-            HashMap<types::functions::FunctionId, DeclaredFunction>,
-        >,
+    pub(super) fn new(
+        root_module_declaration: DeclaredRootModule<'pre>,
+        declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
         main: Option<types::functions::FunctionId>,
-        structs: HashMap<types::structs::StructId, types::structs::Struct>,
     ) -> Self {
         Self {
             root_module_declaration,
             declared_impls,
             main,
-            structs: RefCell::new(structs),
+            functions: RefCell::new(HashMap::new()),
         }
     }
 }

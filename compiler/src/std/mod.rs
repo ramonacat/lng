@@ -12,8 +12,6 @@ use crate::{
 
 pub(crate) static TYPE_NAME_U64: LazyLock<types::FQName> =
     LazyLock::new(|| types::FQName::parse("std.u64"));
-pub(crate) static TYPE_NAME_UNIT: LazyLock<types::FQName> =
-    LazyLock::new(|| types::FQName::parse("std.unit"));
 pub(crate) static TYPE_NAME_STRING: LazyLock<types::FQName> =
     LazyLock::new(|| types::FQName::parse("std.string"));
 

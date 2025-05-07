@@ -294,7 +294,7 @@ impl<'ctx> Compiler<'ctx> {
         let global_scope = std.unwrap_or_else(|| {
             // If there is no std, then we want to get in early and create the builtins, so that
             // the rest of the compilation can just add methods, etc. to them
-            let mut scope = GlobalScope::new(HashMap::new());
+            let mut scope = GlobalScope::new(HashMap::new(), HashMap::new());
 
             let std = scope
                 .get_or_create_module(types::FQName::parse("std"), || context.create_module("std"));
@@ -331,6 +331,7 @@ impl<'ctx> Compiler<'ctx> {
         let main = program.main();
         let root_module = program.root_module();
         let mut structs = program.structs().clone();
+        let functions = program.functions().clone();
 
         // TODO this is a bit hacky, we should have an attribute on the structs marking them as
         // predefined, so that the definitions are ignored, but the impls are not
@@ -347,6 +348,7 @@ impl<'ctx> Compiler<'ctx> {
         );
 
         self.context.global_scope.structs = AllStructs::new(structs);
+        self.context.global_scope.functions = functions;
 
         self.declare_items(root_module, types::FQName::parse(""));
         self.resolve_imports(root_module, types::FQName::parse(""))?;
@@ -430,31 +432,42 @@ impl<'ctx> Compiler<'ctx> {
 
     fn declare_items(&mut self, program: &types::Module, root_path: types::FQName) {
         for (path, declaration) in program.items() {
-            let module = self.get_or_create_module(root_path);
+            self.get_or_create_module(root_path);
 
             match &declaration.kind {
-                types::ItemKind::Function(function) => {
-                    let function_handle = FunctionHandle {
-                        id: function.id,
-                        module_name: root_path,
-                        definition: function.clone(),
-                        linkage: if declaration.visibility == types::Visibility::Export
-                            || matches!(function.body, types::functions::FunctionBody::Extern(_))
-                        {
-                            Linkage::External
-                        } else {
-                            Linkage::Internal
-                        },
-                        position: function.position,
-                        arguments: function.arguments.clone(),
-                        return_type: function.return_type.clone(),
+                types::ItemKind::Function(function_id) => {
+                    let function_handle = {
+                        let function = self
+                            .context
+                            .global_scope
+                            .functions
+                            .get(function_id)
+                            .unwrap();
+
+                        FunctionHandle {
+                            id: *function_id,
+                            module_name: root_path,
+                            definition: function.clone(),
+                            linkage: if declaration.visibility == types::Visibility::Export
+                                || matches!(
+                                    function.body,
+                                    types::functions::FunctionBody::Extern(_)
+                                ) {
+                                Linkage::External
+                            } else {
+                                Linkage::Internal
+                            },
+                            position: function.position,
+                            arguments: function.arguments.clone(),
+                            return_type: function.return_type.clone(),
+                        }
                     };
 
                     // TODO remove this match, treat function.id as opaque
-                    module.set_variable(
-                        match function.id {
+                    self.get_or_create_module(root_path).set_variable(
+                        match function_id {
                             types::functions::FunctionId::FQName(fqname) => fqname.last(),
-                            types::functions::FunctionId::Extern(identifier) => identifier,
+                            types::functions::FunctionId::Extern(identifier) => *identifier,
                         },
                         Value::Function(function_handle),
                     );
@@ -782,7 +795,6 @@ impl<'ctx> Compiler<'ctx> {
                 id.clone(),
             )),
             types::TypeKind::Array { .. } => todo!(),
-            types::TypeKind::StructDescriptor(_) => todo!(),
             types::TypeKind::Callable { .. } => todo!(),
             types::TypeKind::U64 => todo!(),
             types::TypeKind::U8 => todo!(),

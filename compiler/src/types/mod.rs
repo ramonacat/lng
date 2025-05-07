@@ -7,7 +7,7 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
-use functions::{Argument, Function, FunctionId};
+use functions::{Function, FunctionId};
 use itertools::Itertools;
 use string_interner::{StringInterner, backend::StringBackend, symbol::SymbolU32};
 use structs::{InstantiatedStructId, Struct, StructId};
@@ -15,7 +15,7 @@ use structs::{InstantiatedStructId, Struct, StructId};
 use crate::{
     ast,
     name_mangler::{MangledIdentifier, mangle_fq_name},
-    std::{TYPE_NAME_U64, TYPE_NAME_UNIT},
+    std::TYPE_NAME_U64,
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -214,19 +214,10 @@ impl std::fmt::Display for TypeArgumentValues {
 pub enum TypeKind {
     Generic(TypeArgument),
     Unit,
-    Object {
-        type_name: InstantiatedStructId,
-    },
-    Array {
-        element_type: Box<Type>,
-    },
-    // TODO this should probably be simply an object, just of StructDescriptor<TargetStruct> type
-    StructDescriptor(StructId),
+    Object { type_name: InstantiatedStructId },
+    Array { element_type: Box<Type> },
     // TODO this should be an object with special properties
-    Callable {
-        arguments: Vec<Argument>,
-        return_type: Box<Type>,
-    },
+    Callable(FunctionId),
     // TODO add u128,u32,u16,u8 and signed counterparts
     // TODO add bool
     // TODO add float
@@ -254,61 +245,14 @@ impl Type {
             TypeKind::Object {
                 type_name: item_path,
             } => format!("{item_path}{type_argument_values}"),
-            TypeKind::StructDescriptor(struct_id) => format!("Struct({struct_id})"),
             TypeKind::Array {
                 element_type: inner,
             } => format!("{}[]", inner.debug_name()),
-            TypeKind::Callable {
-                arguments,
-                return_type,
-            } => format!(
-                "Callable<({}):{}>",
-                arguments
-                    .iter()
-                    .map(|x| format!("{}:{}", x.name, x.type_))
-                    .join(", "),
-                return_type
-            ),
+            TypeKind::Callable(function_id) => format!("Callable({function_id})",),
             TypeKind::U64 => "u64".to_string(),
             TypeKind::U8 => "u8".to_string(),
             TypeKind::Pointer(inner) => format!("*{}", inner.debug_name()),
             TypeKind::Generic(type_argument) => format!("Generic({type_argument})"),
-        }
-    }
-
-    pub(crate) fn instance_type(&self) -> Self {
-        match &self.kind {
-            TypeKind::Unit => todo!(),
-            TypeKind::Object { .. } => todo!(),
-            // TODO arrays cannot be instantiated, this case is wrong!
-            TypeKind::Array {
-                element_type: inner,
-            } => Self {
-                kind: TypeKind::Array {
-                    element_type: Box::new(inner.instance_type()),
-                },
-                arguments: TypeArguments::new_empty(),
-                argument_values: TypeArgumentValues::new_empty(),
-            },
-            TypeKind::StructDescriptor(struct_id) => {
-                let kind = match struct_id {
-                    StructId::FQName(fqname) if *fqname == *TYPE_NAME_UNIT => TypeKind::Unit,
-                    StructId::FQName(fqname) if *fqname == *TYPE_NAME_U64 => TypeKind::U64,
-                    StructId::FQName(_) => TypeKind::Object {
-                        type_name: InstantiatedStructId(*struct_id, self.argument_values.clone()),
-                    },
-                };
-                Self {
-                    kind,
-                    arguments: TypeArguments::new_empty(),
-                    argument_values: TypeArgumentValues::new_empty(),
-                }
-            }
-            TypeKind::Callable { .. } => todo!(),
-            TypeKind::U64 => todo!(),
-            TypeKind::U8 => todo!(),
-            TypeKind::Pointer(_) => todo!(),
-            TypeKind::Generic(_) => todo!(),
         }
     }
 
@@ -336,6 +280,10 @@ impl Type {
         Self::new_not_generic(TypeKind::U64)
     }
 
+    pub(crate) fn unit() -> Self {
+        Self::new_not_generic(TypeKind::Unit)
+    }
+
     pub(crate) const fn kind(&self) -> &TypeKind {
         &self.kind
     }
@@ -355,21 +303,9 @@ impl Type {
             TypeKind::Array { element_type } => TypeKind::Array {
                 element_type: Box::new(element_type.instantiate(type_argument_values)),
             },
-            TypeKind::StructDescriptor(_) => todo!(),
-            TypeKind::Callable {
-                arguments,
-                return_type,
-            } => {
-                let arguments = arguments
-                    .iter()
-                    .map(|x| x.instantiate(type_argument_values))
-                    .collect();
-                let return_type = Box::new(return_type.instantiate(type_argument_values));
-
-                TypeKind::Callable {
-                    arguments,
-                    return_type,
-                }
+            TypeKind::Callable(function_id) => {
+                // TODO we should actually go to the function table and instantiate it there
+                TypeKind::Callable(*function_id)
             }
             TypeKind::U64 => TypeKind::U64,
             TypeKind::U8 => TypeKind::U8,
@@ -391,7 +327,6 @@ impl Type {
             TypeKind::Unit => todo!(),
             TypeKind::Object { type_name } => type_name.clone(),
             TypeKind::Array { .. } => todo!(),
-            TypeKind::StructDescriptor(_) => todo!(),
             TypeKind::Callable { .. } => todo!(),
             TypeKind::U64 => InstantiatedStructId(
                 StructId::FQName(*TYPE_NAME_U64),
@@ -413,21 +348,7 @@ impl Display for Type {
             TypeKind::Array {
                 element_type: inner,
             } => write!(f, "{inner}[]"),
-            TypeKind::StructDescriptor(struct_id) => {
-                write!(f, "StructDescriptor<{struct_id}>")
-            }
-            TypeKind::Callable {
-                arguments,
-                return_type,
-            } => write!(
-                f,
-                "Callable({}): {return_type}",
-                arguments
-                    .iter()
-                    .map(|a| format!("{a}"))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            ),
+            TypeKind::Callable(function_id) => write!(f, "Callable({function_id})"),
             TypeKind::U8 => write!(f, "u8"),
             TypeKind::U64 => write!(f, "u64"),
             TypeKind::Pointer(to) => write!(f, "*{to}"),
@@ -485,7 +406,7 @@ pub struct Import {
 
 #[derive(Debug, Clone)]
 pub enum ItemKind {
-    Function(Function),
+    Function(FunctionId),
     Struct(StructId),
     Import(Import),
     Module(Module),
@@ -502,7 +423,7 @@ pub struct Item {
 impl std::fmt::Debug for Item {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            ItemKind::Function(function) => write!(f, "Function({})", function.id),
+            ItemKind::Function(function) => write!(f, "Function({function})"),
             ItemKind::Struct(struct_) => write!(f, "Struct({struct_})"),
             ItemKind::Import(import) => write!(f, "Import({})", import.imported_item),
             ItemKind::Module(module) => write!(f, "{module:?}"),
@@ -521,10 +442,12 @@ pub struct AppModule {
     main: FunctionId,
     module: Module,
     structs: HashMap<StructId, Struct>,
+    functions: HashMap<FunctionId, Function>,
 }
 pub struct LibraryModule {
     module: Module,
     structs: HashMap<StructId, Struct>,
+    functions: HashMap<FunctionId, Function>,
 }
 
 pub enum RootModule {
@@ -554,25 +477,36 @@ impl RootModule {
         }
     }
 
+    pub(crate) const fn functions(&self) -> &HashMap<FunctionId, Function> {
+        match self {
+            Self::App(app_module) => &app_module.functions,
+            Self::Library(library_module) => &library_module.functions,
+        }
+    }
+
     pub(crate) const fn new_app(
         main: FunctionId,
         root_module: Module,
         structs: HashMap<StructId, Struct>,
+        functions: HashMap<FunctionId, Function>,
     ) -> Self {
         Self::App(AppModule {
             main,
             module: root_module,
             structs,
+            functions,
         })
     }
 
     pub(crate) const fn new_library(
         root_module: Module,
         structs: HashMap<StructId, Struct>,
+        functions: HashMap<FunctionId, Function>,
     ) -> Self {
         Self::Library(LibraryModule {
             module: root_module,
             structs,
+            functions,
         })
     }
 }

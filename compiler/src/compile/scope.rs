@@ -81,6 +81,7 @@ pub struct GlobalScope<'ctx> {
     scope: Rc<Scope<'ctx>>,
     // TODO should it be made private?
     pub structs: AllStructs<'ctx>,
+    pub functions: HashMap<types::functions::FunctionId, types::functions::Function>,
 }
 
 impl Debug for GlobalScope<'_> {
@@ -103,11 +104,15 @@ impl Debug for GlobalScope<'_> {
 }
 
 impl GlobalScope<'_> {
-    pub(crate) fn new(structs: HashMap<types::structs::StructId, types::structs::Struct>) -> Self {
+    pub(crate) fn new(
+        structs: HashMap<types::structs::StructId, types::structs::Struct>,
+        functions: HashMap<types::functions::FunctionId, types::functions::Function>,
+    ) -> Self {
         Self {
             modules: HashMap::new(),
             scope: Scope::root(),
             structs: AllStructs::new(structs),
+            functions,
         }
     }
 }
