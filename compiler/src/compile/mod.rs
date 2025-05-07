@@ -257,8 +257,8 @@ impl<'ctx> CompiledFunction<'ctx> {
             .map_err(|e| {
                 e.into_compile_error_at(
                     match self.handle.id {
-                        types::FunctionId::FQName(id) => id,
-                        types::FunctionId::Extern(identifier) => {
+                        types::functions::FunctionId::FQName(id) => id,
+                        types::functions::FunctionId::Extern(identifier) => {
                             types::FQName::parse(&identifier.raw())
                         }
                     },
@@ -278,7 +278,7 @@ impl<'ctx> CompiledFunction<'ctx> {
 pub enum CompiledRootModule<'ctx> {
     App {
         scope: GlobalScope<'ctx>,
-        main: types::FunctionId,
+        main: types::functions::FunctionId,
     },
     Library {
         scope: GlobalScope<'ctx>,
@@ -359,8 +359,8 @@ impl<'ctx> Compiler<'ctx> {
                 .global_scope
                 // TODO remove this match, treat the id as opaque
                 .get_value(match main {
-                    types::FunctionId::FQName(fqname) => fqname,
-                    types::FunctionId::Extern(identifier) => {
+                    types::functions::FunctionId::FQName(fqname) => fqname,
+                    types::functions::FunctionId::Extern(identifier) => {
                         types::FQName::parse(&identifier.raw())
                     }
                 })
@@ -439,7 +439,7 @@ impl<'ctx> Compiler<'ctx> {
                         module_name: root_path,
                         definition: function.clone(),
                         linkage: if declaration.visibility == types::Visibility::Export
-                            || matches!(function.body, types::FunctionBody::Extern(_))
+                            || matches!(function.body, types::functions::FunctionBody::Extern(_))
                         {
                             Linkage::External
                         } else {
@@ -453,8 +453,8 @@ impl<'ctx> Compiler<'ctx> {
                     // TODO remove this match, treat function.id as opaque
                     module.set_variable(
                         match function.id {
-                            types::FunctionId::FQName(fqname) => fqname.last(),
-                            types::FunctionId::Extern(identifier) => identifier,
+                            types::functions::FunctionId::FQName(fqname) => fqname.last(),
+                            types::functions::FunctionId::Extern(identifier) => identifier,
                         },
                         Value::Function(function_handle),
                     );
@@ -480,7 +480,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_function(&mut self, handle: &FunctionHandle) -> Result<(), CompileError> {
-        let types::FunctionBody::Statements(statements) = &handle.definition.body else {
+        let types::functions::FunctionBody::Statements(statements) = &handle.definition.body else {
             return Ok(());
         };
 
@@ -766,8 +766,10 @@ impl<'ctx> Compiler<'ctx> {
             .map_err(|e| {
                 e.into_compile_error_at(
                     match compiled_function.handle.id {
-                        types::FunctionId::FQName(fqname) => fqname,
-                        types::FunctionId::Extern(identifier) => FQName::parse(&identifier.raw()),
+                        types::functions::FunctionId::FQName(fqname) => fqname,
+                        types::functions::FunctionId::Extern(identifier) => {
+                            FQName::parse(&identifier.raw())
+                        }
                     },
                     position,
                 )

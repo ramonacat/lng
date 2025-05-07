@@ -14,8 +14,9 @@ use super::{
 
 pub(super) struct DeclarationChecker<'pre> {
     root_module_declaration: DeclaredModule<'pre>,
-    declared_impls: HashMap<types::structs::StructId, HashMap<types::FunctionId, DeclaredFunction>>,
-    main: Option<types::FunctionId>,
+    declared_impls:
+        HashMap<types::structs::StructId, HashMap<types::functions::FunctionId, DeclaredFunction>>,
+    main: Option<types::functions::FunctionId>,
     structs: HashMap<types::structs::StructId, types::structs::Struct>,
 }
 
@@ -110,7 +111,7 @@ impl<'pre> DeclarationChecker<'pre> {
                                                 .arguments
                                                 .iter()
                                                 .map(|x| {
-                                                    Ok(types::Argument {
+                                                    Ok(types::functions::Argument {
                                                         name: x.name,
                                                         type_: resolve_type(
                                                             &self.root_module_declaration,
@@ -359,7 +360,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
 
         Ok(DeclaredFunction {
-            id: types::FunctionId::FQName(function_path),
+            id: types::functions::FunctionId::FQName(function_path),
             arguments,
             return_type: function.return_type.clone(),
             ast: function.clone(),
@@ -389,9 +390,11 @@ impl<'pre> DeclarationChecker<'pre> {
 
         DeclaredFunction {
             id: match &function.body {
-                ast::FunctionBody::Statements(_, _) => types::FunctionId::FQName(function_path),
+                ast::FunctionBody::Statements(_, _) => {
+                    types::functions::FunctionId::FQName(function_path)
+                }
                 ast::FunctionBody::Extern(extern_, _) => {
-                    types::FunctionId::Extern(types::Identifier::parse(&extern_))
+                    types::functions::FunctionId::Extern(types::Identifier::parse(&extern_))
                 }
             },
             arguments,

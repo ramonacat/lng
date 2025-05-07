@@ -19,7 +19,7 @@ pub(super) struct DeclaredArgument {
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredFunction {
-    pub(super) id: types::FunctionId,
+    pub(super) id: types::functions::FunctionId,
     pub(super) arguments: Vec<DeclaredArgument>,
     pub(super) return_type: ast::TypeDescription,
     pub(super) ast: ast::Function,
@@ -175,7 +175,7 @@ impl DeclaredItem<'_> {
                         .arguments
                         .iter()
                         .map(|declaration| {
-                            Ok(types::Argument {
+                            Ok(types::functions::Argument {
                                 name: declaration.name,
                                 type_: resolve_type(
                                     root_module,
@@ -254,7 +254,7 @@ pub(super) fn resolve_type(
                             .arguments
                             .iter()
                             .map(|a| {
-                                Ok(types::Argument {
+                                Ok(types::functions::Argument {
                                     name: a.name,
                                     type_: resolve_type(
                                         root_module,

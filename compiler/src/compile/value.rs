@@ -12,14 +12,14 @@ use super::{builtins::rc::RcValue, context::CompilerContext};
 
 #[derive(Clone)]
 pub struct FunctionHandle {
-    pub id: types::FunctionId,
+    pub id: types::functions::FunctionId,
     pub module_name: types::FQName,
     pub position: SourceRange,
     // TODO do we need arguments, if they're defined in the definition already???
-    pub arguments: Vec<types::Argument>,
+    pub arguments: Vec<types::functions::Argument>,
     pub return_type: types::Type,
     pub linkage: Linkage,
-    pub definition: types::Function,
+    pub definition: types::functions::Function,
 }
 
 impl FunctionHandle {
@@ -217,8 +217,8 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             // TODO remove this match, treat function_id as opaque
             static_fields.insert(
                 match name {
-                    types::FunctionId::FQName(fqname) => fqname.last(),
-                    types::FunctionId::Extern(identifier) => identifier,
+                    types::functions::FunctionId::FQName(fqname) => fqname.last(),
+                    types::functions::FunctionId::Extern(identifier) => identifier,
                 },
                 value,
             );

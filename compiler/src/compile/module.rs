@@ -15,7 +15,7 @@ pub struct CompiledModule<'ctx> {
     path: types::FQName,
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
-    imported_functions: HashMap<types::FunctionId, FunctionHandle>,
+    imported_functions: HashMap<types::functions::FunctionId, FunctionHandle>,
 }
 
 impl std::fmt::Debug for CompiledModule<'_> {
@@ -44,7 +44,7 @@ impl<'ctx> CompiledModule<'ctx> {
     fn declare_function_inner(
         &self,
         name: &MangledIdentifier,
-        arguments: &[types::Argument],
+        arguments: &[types::functions::Argument],
         return_type: &types::Type,
         linkage: Linkage,
         context: &CompilerContext<'ctx>,
@@ -59,7 +59,7 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         linkage: Linkage,
         name: &MangledIdentifier,
-        arguments: &[types::Argument],
+        arguments: &[types::functions::Argument],
         return_type: &types::Type,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {

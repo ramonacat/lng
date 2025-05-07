@@ -108,8 +108,9 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
 pub(super) struct DefinitionChecker<'pre> {
     root_module_declaration: DeclaredModule<'pre>,
     structs: RefCell<HashMap<types::structs::StructId, types::structs::Struct>>,
-    declared_impls: HashMap<types::structs::StructId, HashMap<types::FunctionId, DeclaredFunction>>,
-    main: Option<types::FunctionId>,
+    declared_impls:
+        HashMap<types::structs::StructId, HashMap<types::functions::FunctionId, DeclaredFunction>>,
+    main: Option<types::functions::FunctionId>,
 }
 
 impl<'pre> DefinitionChecker<'pre> {
@@ -192,12 +193,15 @@ impl<'pre> DefinitionChecker<'pre> {
     fn type_check_associated_function_definitions(
         &self,
     ) -> Result<
-        HashMap<types::structs::StructId, HashMap<types::FunctionId, types::Function>>,
+        HashMap<
+            types::structs::StructId,
+            HashMap<types::functions::FunctionId, types::functions::Function>,
+        >,
         TypeCheckError,
     > {
         let mut impls: HashMap<
             types::structs::StructId,
-            HashMap<types::FunctionId, types::Function>,
+            HashMap<types::functions::FunctionId, types::functions::Function>,
         > = HashMap::new();
         for (struct_id, declared_impls) in &self.declared_impls {
             for (function_id, function) in declared_impls {
@@ -206,8 +210,10 @@ impl<'pre> DefinitionChecker<'pre> {
                     // TODO we should not be matching on the struct_id here, but instead have access to
                     // the module name through other means!
                     match function_id {
-                        types::FunctionId::FQName(fqname) => fqname.without_last().without_last(),
-                        types::FunctionId::Extern(_) => todo!(),
+                        types::functions::FunctionId::FQName(fqname) => {
+                            fqname.without_last().without_last()
+                        }
+                        types::functions::FunctionId::Extern(_) => todo!(),
                     },
                     // TODO figure out the correct location to pass for errors
                     ErrorLocation::Indeterminate,
@@ -225,7 +231,7 @@ impl<'pre> DefinitionChecker<'pre> {
     fn type_check_struct(
         &self,
         struct_id: types::structs::StructId,
-        impls: HashMap<types::FunctionId, types::Function>,
+        impls: HashMap<types::functions::FunctionId, types::functions::Function>,
         declared_item: &DeclaredItem,
     ) -> types::Item {
         let all_structs = &mut self.structs.borrow_mut();
@@ -237,8 +243,8 @@ impl<'pre> DefinitionChecker<'pre> {
                 // TODO don't match on the FunctionId here, instead get the name thorugh other
                 // means
                 name: match name {
-                    types::FunctionId::FQName(fqname) => fqname.last(),
-                    types::FunctionId::Extern(_) => todo!(),
+                    types::functions::FunctionId::FQName(fqname) => fqname.last(),
+                    types::functions::FunctionId::Extern(_) => todo!(),
                 },
                 type_: impl_.type_(),
                 static_: true,
@@ -269,7 +275,7 @@ impl<'pre> DefinitionChecker<'pre> {
             })
             | DeclaredItemKind::Predeclared(types::Item {
                 kind:
-                    types::ItemKind::Function(types::Function {
+                    types::ItemKind::Function(types::functions::Function {
                         id: imported_item_id,
                         ..
                     }),
@@ -278,8 +284,8 @@ impl<'pre> DefinitionChecker<'pre> {
                 // TODO this match should be removed and we should pass the ID directly to the
                 // import
                 let imported_item_id = match imported_item_id {
-                    types::FunctionId::FQName(fqname) => fqname,
-                    types::FunctionId::Extern(_) => todo!(),
+                    types::functions::FunctionId::FQName(fqname) => fqname,
+                    types::functions::FunctionId::Extern(_) => todo!(),
                 };
                 root_module.declare_item(
                     item_path,
@@ -322,7 +328,7 @@ impl<'pre> DefinitionChecker<'pre> {
         declared_function: &DeclaredFunction,
         module: types::FQName,
         error_location: ErrorLocation,
-    ) -> Result<types::Function, TypeCheckError> {
+    ) -> Result<types::functions::Function, TypeCheckError> {
         let mut locals = Locals::from_globals(&self.root_module_declaration, module);
         let function_name = module.with_part(types::Identifier::parse(&declared_function.ast.name));
 
@@ -345,21 +351,21 @@ impl<'pre> DefinitionChecker<'pre> {
                     checked_statements.push(type_check_statement);
                 }
 
-                types::FunctionBody::Statements(checked_statements)
+                types::functions::FunctionBody::Statements(checked_statements)
             }
             ast::FunctionBody::Extern(foreign_name, _) => {
-                types::FunctionBody::Extern(types::Identifier::parse(foreign_name))
+                types::functions::FunctionBody::Extern(types::Identifier::parse(foreign_name))
             }
         };
 
-        Ok(types::Function {
+        Ok(types::functions::Function {
             id: declared_function.id,
             visibility: declared_function.visibility,
             arguments: declared_function
                 .arguments
                 .iter()
                 .map(|argument| {
-                    Ok(types::Argument {
+                    Ok(types::functions::Argument {
                         name: argument.name,
                         type_: resolve_type(
                             &self.root_module_declaration,
@@ -664,9 +670,9 @@ impl<'pre> DefinitionChecker<'pre> {
         root_module_declaration: DeclaredModule<'pre>,
         declared_impls: HashMap<
             types::structs::StructId,
-            HashMap<types::FunctionId, DeclaredFunction>,
+            HashMap<types::functions::FunctionId, DeclaredFunction>,
         >,
-        main: Option<types::FunctionId>,
+        main: Option<types::functions::FunctionId>,
         structs: HashMap<types::structs::StructId, types::structs::Struct>,
     ) -> Self {
         Self {

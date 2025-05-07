@@ -102,7 +102,7 @@ impl<'ctx> CompilerContext<'ctx> {
 
     pub fn make_function_type(
         &self,
-        arguments: &[types::Argument],
+        arguments: &[types::functions::Argument],
         return_type: &types::Type,
     ) -> FunctionType<'ctx> {
         let arguments = arguments
