@@ -5,8 +5,8 @@ pub mod errors;
 
 use declaration_checker::DeclarationChecker;
 use declarations::{
-    DeclaredArgument, DeclaredFunction, DeclaredFunctionDefinition, DeclaredImport, DeclaredItem,
-    DeclaredItemKind, DeclaredModule, DeclaredStructField,
+    DeclaredArgument, DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind,
+    DeclaredModule, DeclaredStructField,
 };
 use errors::{TypeCheckError, TypeCheckErrorDescription};
 

@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
 
 use super::{
-    DeclaredArgument, DeclaredFunction, DeclaredFunctionDefinition, DeclaredImport, DeclaredItem,
-    DeclaredItemKind, DeclaredModule, DeclaredStructField,
+    DeclaredArgument, DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind,
+    DeclaredModule, DeclaredStructField,
     declarations::resolve_type,
     definition_checker::DefinitionChecker,
     errors::{TypeCheckError, TypeCheckErrorDescription},
@@ -100,14 +100,13 @@ impl<'pre> DeclarationChecker<'pre> {
                         let mut fields_to_add = HashMap::new();
                         for function in &functions {
                             fields_to_add.insert(
-                                function.definition.ast.name.clone(),
+                                function.ast.name.clone(),
                                 DeclaredStructField {
                                     // TODO we should here handle the case of the type actually
                                     // being generic
                                     type_: types::Type::new_not_generic(
                                         types::TypeKind::Callable {
                                             arguments: function
-                                                .definition
                                                 .arguments
                                                 .iter()
                                                 .map(|x| {
@@ -130,7 +129,7 @@ impl<'pre> DeclarationChecker<'pre> {
                                                 resolve_type(
                                                     &self.root_module_declaration,
                                                     module_path,
-                                                    &function.definition.return_type,
+                                                    &function.return_type,
                                                     // TODO figure out the correct location here
                                                     ErrorLocation::Indeterminate,
                                                 )?
@@ -286,11 +285,9 @@ impl<'pre> DeclarationChecker<'pre> {
         function_declaration: &DeclaredFunction,
     ) -> Result<(), TypeCheckError> {
         // TODO give it an attributte or something to denote as main?
-        if function_declaration.definition.ast.name == "main"
-            && visibility == ast::Visibility::Export
-        {
-            if function_declaration.definition.arguments.len() == 1 {
-                if let Some(argument) = function_declaration.definition.arguments.first() {
+        if function_declaration.ast.name == "main" && visibility == ast::Visibility::Export {
+            if function_declaration.arguments.len() == 1 {
+                if let Some(argument) = function_declaration.arguments.first() {
                     if let types::TypeKind::Array {
                         element_type: array_item_type,
                     } = resolve_type(
@@ -313,7 +310,7 @@ impl<'pre> DeclarationChecker<'pre> {
                         }
                     }
                 }
-            } else if function_declaration.definition.arguments.is_empty() {
+            } else if function_declaration.arguments.is_empty() {
                 self.main = Some(function_declaration.id);
             }
         }
@@ -363,12 +360,10 @@ impl<'pre> DeclarationChecker<'pre> {
 
         Ok(DeclaredFunction {
             id: types::FunctionId::FQName(function_path),
-            definition: DeclaredFunctionDefinition {
-                arguments,
-                return_type: function.return_type.clone(),
-                ast: function.clone(),
-                position,
-            },
+            arguments,
+            return_type: function.return_type.clone(),
+            ast: function.clone(),
+            position,
             visibility: Self::convert_visibility(function.visibility),
         })
     }
@@ -399,12 +394,10 @@ impl<'pre> DeclarationChecker<'pre> {
                     types::FunctionId::Extern(types::Identifier::parse(&extern_))
                 }
             },
-            definition: DeclaredFunctionDefinition {
-                arguments,
-                return_type: function.return_type.clone(),
-                ast: function.clone(),
-                position,
-            },
+            arguments,
+            return_type: function.return_type.clone(),
+            ast: function.clone(),
+            position,
             visibility: Self::convert_visibility(function.visibility),
         }
     }

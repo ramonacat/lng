@@ -19,7 +19,7 @@ pub struct FunctionHandle {
     pub arguments: Vec<types::Argument>,
     pub return_type: types::Type,
     pub linkage: Linkage,
-    pub definition: types::FunctionDefinition,
+    pub definition: types::Function,
 }
 
 impl FunctionHandle {
@@ -198,15 +198,15 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             .map(|(name, impl_)| {
                 let handle = FunctionHandle {
                     id: impl_.id,
-                    definition: impl_.definition.clone(),
+                    definition: impl_.clone(),
                     linkage: if impl_.visibility == types::Visibility::Export {
                         Linkage::External
                     } else {
                         Linkage::Internal
                     },
-                    return_type: impl_.definition.return_type.clone(),
-                    arguments: impl_.definition.arguments.clone(),
-                    position: impl_.definition.position,
+                    return_type: impl_.return_type.clone(),
+                    arguments: impl_.arguments.clone(),
+                    position: impl_.position,
                     module_name: description.name.without_last(),
                 };
                 (*name, Value::Function(handle))

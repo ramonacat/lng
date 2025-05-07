@@ -437,17 +437,17 @@ impl<'ctx> Compiler<'ctx> {
                     let function_handle = FunctionHandle {
                         id: function.id,
                         module_name: root_path,
-                        definition: function.definition.clone(),
+                        definition: function.clone(),
                         linkage: if declaration.visibility == types::Visibility::Export
-                            || matches!(function.definition.body, types::FunctionBody::Extern(_))
+                            || matches!(function.body, types::FunctionBody::Extern(_))
                         {
                             Linkage::External
                         } else {
                             Linkage::Internal
                         },
-                        return_type: function.definition.return_type.clone(),
-                        arguments: function.definition.arguments.clone(),
-                        position: function.definition.position,
+                        position: function.position,
+                        arguments: function.arguments.clone(),
+                        return_type: function.return_type.clone(),
                     };
 
                     // TODO remove this match, treat function.id as opaque

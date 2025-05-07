@@ -469,33 +469,6 @@ impl Display for Argument {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct FunctionDefinition {
-    pub arguments: Vec<Argument>,
-    pub return_type: Type,
-    pub body: FunctionBody,
-    pub position: ast::SourceRange,
-}
-impl FunctionDefinition {
-    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
-        let arguments = self
-            .arguments
-            .iter()
-            .map(|x| x.instantiate(type_argument_values))
-            .collect();
-        let return_type = self.return_type.instantiate(type_argument_values);
-
-        Self {
-            arguments,
-            return_type,
-            // TODO body probably needs to be instantiated as well, as there could be references to
-            // type arguments eg. in let statements
-            body: self.body.clone(),
-            position: self.position,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionId {
     FQName(FQName),
@@ -523,7 +496,10 @@ impl FunctionId {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub id: FunctionId,
-    pub definition: FunctionDefinition,
+    pub arguments: Vec<Argument>,
+    pub return_type: Type,
+    pub body: FunctionBody,
+    pub position: ast::SourceRange,
     pub visibility: Visibility,
 }
 
@@ -533,11 +509,31 @@ impl Function {
         // here
         Type {
             kind: TypeKind::Callable {
-                arguments: self.definition.arguments.clone(),
-                return_type: Box::new(self.definition.return_type.clone()),
+                arguments: self.arguments.clone(),
+                return_type: Box::new(self.return_type.clone()),
             },
             argument_values: TypeArgumentValues::new_empty(),
             arguments: TypeArguments::new_empty(),
+        }
+    }
+
+    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        let arguments = self
+            .arguments
+            .iter()
+            .map(|x| x.instantiate(type_argument_values))
+            .collect();
+        let return_type = self.return_type.instantiate(type_argument_values);
+
+        Self {
+            id: self.id,
+            visibility: self.visibility,
+            arguments,
+            return_type,
+            // TODO body probably needs to be instantiated as well, as there could be references to
+            // type arguments eg. in let statements
+            body: self.body.clone(),
+            position: self.position,
         }
     }
 }

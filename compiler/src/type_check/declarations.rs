@@ -18,17 +18,12 @@ pub(super) struct DeclaredArgument {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct DeclaredFunctionDefinition {
+pub(super) struct DeclaredFunction {
+    pub(super) id: types::FunctionId,
     pub(super) arguments: Vec<DeclaredArgument>,
     pub(super) return_type: ast::TypeDescription,
     pub(super) ast: ast::Function,
     pub(super) position: ast::SourceRange,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct DeclaredFunction {
-    pub(super) id: types::FunctionId,
-    pub(super) definition: DeclaredFunctionDefinition,
     pub(super) visibility: types::Visibility,
 }
 
@@ -177,7 +172,6 @@ impl DeclaredItem<'_> {
             DeclaredItemKind::Function(declared_function) => {
                 Ok(types::Type::new_not_generic(types::TypeKind::Callable {
                     arguments: declared_function
-                        .definition
                         .arguments
                         .iter()
                         .map(|declaration| {
@@ -197,7 +191,7 @@ impl DeclaredItem<'_> {
                     return_type: Box::new(resolve_type(
                         root_module,
                         current_module,
-                        &declared_function.definition.return_type,
+                        &declared_function.return_type,
                         error_location,
                     )?),
                 }))
@@ -257,7 +251,6 @@ pub(super) fn resolve_type(
                 DeclaredItemKind::Function(declared_function) => {
                     Ok(types::Type::new_not_generic(types::TypeKind::Callable {
                         arguments: declared_function
-                            .definition
                             .arguments
                             .iter()
                             .map(|a| {
@@ -277,7 +270,7 @@ pub(super) fn resolve_type(
                         return_type: Box::new(resolve_type(
                             root_module,
                             current_module,
-                            &declared_function.definition.return_type,
+                            &declared_function.return_type,
                             error_location,
                         )?),
                     }))

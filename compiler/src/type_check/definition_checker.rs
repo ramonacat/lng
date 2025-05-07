@@ -3,8 +3,8 @@ use std::{cell::RefCell, collections::HashMap};
 use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
 
 use super::{
-    DeclaredArgument, DeclaredFunction, DeclaredFunctionDefinition, DeclaredImport, DeclaredItem,
-    DeclaredItemKind, DeclaredModule,
+    DeclaredArgument, DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind,
+    DeclaredModule,
     declarations::resolve_type,
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
@@ -201,7 +201,7 @@ impl<'pre> DefinitionChecker<'pre> {
         > = HashMap::new();
         for (struct_id, declared_impls) in &self.declared_impls {
             for (function_id, function) in declared_impls {
-                let function = self.type_check_associated_function(
+                let function = self.type_check_function(
                     function,
                     // TODO we should not be matching on the struct_id here, but instead have access to
                     // the module name through other means!
@@ -220,25 +220,6 @@ impl<'pre> DefinitionChecker<'pre> {
             }
         }
         Ok(impls)
-    }
-
-    fn type_check_function(
-        &self,
-        declared_function: &DeclaredFunction,
-        current_module: types::FQName,
-        error_location: ErrorLocation,
-    ) -> Result<types::Function, TypeCheckError> {
-        let definition = self.type_check_function_definition(
-            &declared_function.definition,
-            current_module,
-            error_location,
-        )?;
-
-        Ok(types::Function {
-            id: declared_function.id,
-            definition,
-            visibility: declared_function.visibility,
-        })
     }
 
     fn type_check_struct(
@@ -336,31 +317,12 @@ impl<'pre> DefinitionChecker<'pre> {
         }
     }
 
-    fn type_check_associated_function(
+    fn type_check_function(
         &self,
         declared_function: &DeclaredFunction,
-        current_module: types::FQName,
-        error_location: ErrorLocation,
-    ) -> Result<types::Function, TypeCheckError> {
-        let definition = self.type_check_function_definition(
-            &declared_function.definition,
-            current_module,
-            error_location,
-        )?;
-
-        Ok(types::Function {
-            id: declared_function.id,
-            definition,
-            visibility: declared_function.visibility,
-        })
-    }
-
-    fn type_check_function_definition(
-        &self,
-        declared_function: &DeclaredFunctionDefinition,
         module: types::FQName,
         error_location: ErrorLocation,
-    ) -> Result<types::FunctionDefinition, TypeCheckError> {
+    ) -> Result<types::Function, TypeCheckError> {
         let mut locals = Locals::from_globals(&self.root_module_declaration, module);
         let function_name = module.with_part(types::Identifier::parse(&declared_function.ast.name));
 
@@ -390,7 +352,9 @@ impl<'pre> DefinitionChecker<'pre> {
             }
         };
 
-        Ok(types::FunctionDefinition {
+        Ok(types::Function {
+            id: declared_function.id,
+            visibility: declared_function.visibility,
             arguments: declared_function
                 .arguments
                 .iter()
@@ -424,7 +388,7 @@ impl<'pre> DefinitionChecker<'pre> {
 
     fn type_check_statement(
         &self,
-        declared_function: &DeclaredFunctionDefinition,
+        declared_function: &DeclaredFunction,
         module: types::FQName,
         error_location: ErrorLocation,
         locals: &mut Locals<'_, 'pre>,
