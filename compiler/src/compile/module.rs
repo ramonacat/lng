@@ -15,7 +15,7 @@ pub struct CompiledModule<'ctx> {
     path: types::FQName,
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
-    imported_functions: HashMap<types::FQName, FunctionHandle>,
+    imported_functions: HashMap<types::FunctionId, FunctionHandle>,
 }
 
 impl std::fmt::Debug for CompiledModule<'_> {
@@ -67,7 +67,7 @@ impl<'ctx> CompiledModule<'ctx> {
     }
 
     pub(crate) fn import_function(&mut self, function: FunctionHandle) {
-        self.imported_functions.insert(function.fqname, function);
+        self.imported_functions.insert(function.id, function);
     }
 
     pub(crate) fn set_variable(&self, name: types::Identifier, value: Value<'ctx>) {
@@ -162,11 +162,11 @@ impl<'ctx> CompiledModule<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.llvm_module
-            .get_function(handle.name.as_str())
+            .get_function(handle.id.into_mangled().as_str())
             .unwrap_or_else(|| {
                 self.declare_function(
                     handle.linkage,
-                    &handle.name,
+                    &handle.id.into_mangled(),
                     &handle.arguments,
                     &handle.return_type,
                     context,

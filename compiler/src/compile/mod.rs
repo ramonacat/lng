@@ -29,7 +29,7 @@ use crate::{
     ast::SourceRange,
     errors::ErrorLocation,
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types,
+    types::{self, FQName},
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -253,7 +253,18 @@ impl<'ctx> CompiledFunction<'ctx> {
         context
             .builder
             .build_return(return_value)
-            .map_err(|e| e.into_compile_error_at(self.handle.fqname, self.handle.position))?;
+            // TODO remove this match, treat the functionid as opaque
+            .map_err(|e| {
+                e.into_compile_error_at(
+                    match self.handle.id {
+                        types::FunctionId::FQName(id) => id,
+                        types::FunctionId::Extern(identifier) => {
+                            types::FQName::parse(&identifier.raw())
+                        }
+                    },
+                    self.handle.position,
+                )
+            })?;
 
         Ok(())
     }
@@ -267,7 +278,7 @@ impl<'ctx> CompiledFunction<'ctx> {
 pub enum CompiledRootModule<'ctx> {
     App {
         scope: GlobalScope<'ctx>,
-        main: types::FQName,
+        main: types::FunctionId,
     },
     Library {
         scope: GlobalScope<'ctx>,
@@ -346,7 +357,13 @@ impl<'ctx> Compiler<'ctx> {
             let handle = self
                 .context
                 .global_scope
-                .get_value(main)
+                // TODO remove this match, treat the id as opaque
+                .get_value(match main {
+                    types::FunctionId::FQName(fqname) => fqname,
+                    types::FunctionId::Extern(identifier) => {
+                        types::FQName::parse(&identifier.raw())
+                    }
+                })
                 .unwrap()
                 .as_function()
                 .unwrap();
@@ -418,6 +435,8 @@ impl<'ctx> Compiler<'ctx> {
             match &declaration.kind {
                 types::ItemKind::Function(function) => {
                     let function_handle = FunctionHandle {
+                        id: function.id,
+                        module_name: root_path,
                         definition: function.definition.clone(),
                         linkage: if declaration.visibility == types::Visibility::Export
                             || matches!(function.definition.body, types::FunctionBody::Extern(_))
@@ -426,15 +445,19 @@ impl<'ctx> Compiler<'ctx> {
                         } else {
                             Linkage::Internal
                         },
-                        name: function.mangled_name(),
-                        fqname: function.name,
                         return_type: function.definition.return_type.clone(),
                         arguments: function.definition.arguments.clone(),
                         position: function.definition.position,
-                        module_name: function.name.without_last(),
                     };
 
-                    module.set_variable(function.name.last(), Value::Function(function_handle));
+                    // TODO remove this match, treat function.id as opaque
+                    module.set_variable(
+                        match function.id {
+                            types::FunctionId::FQName(fqname) => fqname.last(),
+                            types::FunctionId::Extern(identifier) => identifier,
+                        },
+                        Value::Function(function_handle),
+                    );
                 }
                 types::ItemKind::Module(module_declaration) => {
                     self.declare_items(module_declaration, root_path.with_part(path));
@@ -694,7 +717,7 @@ impl<'ctx> Compiler<'ctx> {
             .global_scope
             .get_module(function.module_name)
             .unwrap()
-            .has_function(&function.name)
+            .has_function(&function.id.into_mangled())
         {
             self.compile_function(&function).unwrap();
         }
@@ -739,7 +762,16 @@ impl<'ctx> Compiler<'ctx> {
                 &call_arguments,
                 &unique_name(&["call_result"]),
             )
-            .map_err(|e| e.into_compile_error_at(compiled_function.handle.fqname, position))?;
+            // TODO treat FunctionId as opaque, remove this match
+            .map_err(|e| {
+                e.into_compile_error_at(
+                    match compiled_function.handle.id {
+                        types::FunctionId::FQName(fqname) => fqname,
+                        types::FunctionId::Extern(identifier) => FQName::parse(&identifier.raw()),
+                    },
+                    position,
+                )
+            })?;
         let call_result = call_result.as_any_value_enum();
         let value = match function.return_type.kind() {
             types::TypeKind::Unit => Value::Empty,

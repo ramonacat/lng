@@ -3,7 +3,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use super::{AssociatedFunction, FQName, Identifier, Type, TypeArgumentValues, TypeArguments};
+use super::{FQName, Function, FunctionId, Identifier, Type, TypeArgumentValues, TypeArguments};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructDescriptorType {
@@ -49,7 +49,8 @@ pub struct Struct {
     #[allow(unused)] // TODO this will be needed once we have a syntax for type instantiation
     pub type_arguments: TypeArguments,
     pub fields: Vec<StructField>,
-    pub impls: HashMap<Identifier, AssociatedFunction>,
+    // TODO eventually change to just a vec of FunctionIds
+    pub impls: HashMap<FunctionId, Function>,
 }
 
 // TODO the Hash, Eq, PartialEq implementations are questionable, get rid of them (but for that we

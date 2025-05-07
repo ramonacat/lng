@@ -5,8 +5,8 @@ pub mod errors;
 
 use declaration_checker::DeclarationChecker;
 use declarations::{
-    DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
-    DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStructField,
+    DeclaredArgument, DeclaredFunction, DeclaredFunctionDefinition, DeclaredImport, DeclaredItem,
+    DeclaredItemKind, DeclaredModule, DeclaredStructField,
 };
 use errors::{TypeCheckError, TypeCheckErrorDescription};
 
@@ -16,6 +16,7 @@ impl types::Item {
     fn type_(
         &self,
         root_module: &DeclaredModule,
+        current_module: types::FQName,
         error_location: ErrorLocation,
     ) -> Result<types::Type, TypeCheckError> {
         // TODO handle possible generics here
@@ -31,7 +32,7 @@ impl types::Item {
                     TypeCheckErrorDescription::ItemDoesNotExist(import.imported_item)
                         .at(error_location)
                 })?
-                .type_(root_module, error_location),
+                .type_(root_module, current_module, error_location),
             types::ItemKind::Module(_) => todo!(),
         }
     }

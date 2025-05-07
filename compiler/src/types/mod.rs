@@ -496,36 +496,35 @@ impl FunctionDefinition {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Function {
-    pub name: FQName,
-    pub definition: FunctionDefinition,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FunctionId {
+    FQName(FQName),
+    Extern(Identifier),
 }
 
-#[derive(Debug, Clone)]
-pub struct AssociatedFunction {
-    pub struct_: FQName,
-    pub name: Identifier,
-    pub definition: FunctionDefinition,
-    pub visibility: Visibility,
-}
-impl AssociatedFunction {
-    pub(crate) fn type_(&self) -> Type {
-        // TODO the function may actually have type arguments, so we need to consider that case
-        // here
-        Type {
-            kind: TypeKind::Callable {
-                arguments: self.definition.arguments.clone(),
-                return_type: Box::new(self.definition.return_type.clone()),
-            },
-            arguments: TypeArguments::new_empty(),
-            argument_values: TypeArgumentValues::new_empty(),
+impl Display for FunctionId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FunctionId::FQName(fqname) => write!(f, "FQName({fqname})"),
+            FunctionId::Extern(identifier) => write!(f, "Extern({identifier})"),
         }
     }
+}
 
-    pub(crate) fn mangled_name(&self) -> MangledIdentifier {
-        self.struct_.with_part(self.name).into_mangled()
+impl FunctionId {
+    pub(crate) fn into_mangled(self) -> MangledIdentifier {
+        match self {
+            FunctionId::FQName(fqname) => fqname.into_mangled(),
+            FunctionId::Extern(identifier) => nomangle_identifier(identifier),
+        }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub id: FunctionId,
+    pub definition: FunctionDefinition,
+    pub visibility: Visibility,
 }
 
 impl Function {
@@ -539,13 +538,6 @@ impl Function {
             },
             argument_values: TypeArgumentValues::new_empty(),
             arguments: TypeArguments::new_empty(),
-        }
-    }
-
-    pub(crate) fn mangled_name(&self) -> MangledIdentifier {
-        match &self.definition.body {
-            FunctionBody::Extern(foreign_name) => nomangle_identifier(*foreign_name),
-            FunctionBody::Statements(_) => self.name.into_mangled(),
         }
     }
 }
@@ -622,7 +614,7 @@ pub struct Item {
 impl std::fmt::Debug for Item {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            ItemKind::Function(function) => write!(f, "Function({})", function.name),
+            ItemKind::Function(function) => write!(f, "Function({})", function.id),
             ItemKind::Struct(struct_) => write!(f, "Struct({struct_})"),
             ItemKind::Import(import) => write!(f, "Import({})", import.imported_item),
             ItemKind::Module(module) => write!(f, "{module:?}"),
@@ -638,7 +630,7 @@ pub enum Visibility {
 }
 
 pub struct AppModule {
-    main: FQName,
+    main: FunctionId,
     module: Module,
     structs: HashMap<StructId, Struct>,
 }
@@ -653,7 +645,7 @@ pub enum RootModule {
 }
 
 impl RootModule {
-    pub(crate) const fn main(&self) -> Option<FQName> {
+    pub(crate) const fn main(&self) -> Option<FunctionId> {
         match self {
             Self::App(app_module) => Some(app_module.main),
             Self::Library(_) => None,
@@ -675,7 +667,7 @@ impl RootModule {
     }
 
     pub(crate) const fn new_app(
-        main: FQName,
+        main: FunctionId,
         root_module: Module,
         structs: HashMap<StructId, Struct>,
     ) -> Self {

@@ -6,14 +6,13 @@ use inkwell::{
 };
 use itertools::Itertools;
 
-use crate::{ast::SourceRange, name_mangler::MangledIdentifier, types};
+use crate::{ast::SourceRange, types};
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
 
 #[derive(Clone)]
 pub struct FunctionHandle {
-    pub name: MangledIdentifier,
-    pub fqname: types::FQName,
+    pub id: types::FunctionId,
     pub module_name: types::FQName,
     pub position: SourceRange,
     // TODO do we need arguments, if they're defined in the definition already???
@@ -37,8 +36,7 @@ impl FunctionHandle {
         let return_type = self.return_type.instantiate(type_argument_values);
 
         Self {
-            name: self.name.clone(),
-            fqname: self.fqname,
+            id: self.id,
             module_name: self.module_name,
             position: self.position,
             arguments,
@@ -57,7 +55,7 @@ impl Debug for FunctionHandle {
             .map(|a| format!("{}:{}", a.name, a.type_))
             .join(", ");
 
-        write!(f, "Fn<{}({})>", self.name.as_str(), arguments)
+        write!(f, "Fn<{}({})>", self.id, arguments)
     }
 }
 
@@ -199,14 +197,13 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             .iter()
             .map(|(name, impl_)| {
                 let handle = FunctionHandle {
+                    id: impl_.id,
                     definition: impl_.definition.clone(),
-                    fqname: description.name.with_part(*name),
                     linkage: if impl_.visibility == types::Visibility::Export {
                         Linkage::External
                     } else {
                         Linkage::Internal
                     },
-                    name: impl_.mangled_name(),
                     return_type: impl_.definition.return_type.clone(),
                     arguments: impl_.definition.arguments.clone(),
                     position: impl_.definition.position,
@@ -217,7 +214,14 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             .collect();
 
         for (name, value) in default_static_fields {
-            static_fields.insert(name, value);
+            // TODO remove this match, treat function_id as opaque
+            static_fields.insert(
+                match name {
+                    types::FunctionId::FQName(fqname) => fqname.last(),
+                    types::FunctionId::Extern(identifier) => identifier,
+                },
+                value,
+            );
         }
 
         Self {

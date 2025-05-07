@@ -2,16 +2,11 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{
-    ast,
-    errors::ErrorLocation,
-    std::TYPE_NAME_STRING,
-    types::{self, Identifier},
-};
+use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
 
 use super::{
-    DeclaredArgument, DeclaredAssociatedFunction, DeclaredFunction, DeclaredFunctionDefinition,
-    DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule, DeclaredStructField,
+    DeclaredArgument, DeclaredFunction, DeclaredFunctionDefinition, DeclaredImport, DeclaredItem,
+    DeclaredItemKind, DeclaredModule, DeclaredStructField,
     declarations::resolve_type,
     definition_checker::DefinitionChecker,
     errors::{TypeCheckError, TypeCheckErrorDescription},
@@ -19,9 +14,8 @@ use super::{
 
 pub(super) struct DeclarationChecker<'pre> {
     root_module_declaration: DeclaredModule<'pre>,
-    declared_impls:
-        HashMap<(types::structs::StructId, types::Identifier), DeclaredAssociatedFunction>,
-    main: Option<types::FQName>,
+    declared_impls: HashMap<types::structs::StructId, HashMap<types::FunctionId, DeclaredFunction>>,
+    main: Option<types::FunctionId>,
     structs: HashMap<types::structs::StructId, types::structs::Struct>,
 }
 
@@ -106,7 +100,7 @@ impl<'pre> DeclarationChecker<'pre> {
                         let mut fields_to_add = HashMap::new();
                         for function in &functions {
                             fields_to_add.insert(
-                                function.name,
+                                function.definition.ast.name.clone(),
                                 DeclaredStructField {
                                     // TODO we should here handle the case of the type actually
                                     // being generic
@@ -123,11 +117,9 @@ impl<'pre> DeclarationChecker<'pre> {
                                                             &self.root_module_declaration,
                                                             module_path,
                                                             &x.type_,
-                                                            ErrorLocation::Position(
-                                                                module_path
-                                                                    .with_part(function.name),
-                                                                x.position,
-                                                            ),
+                                                            // TODO figure out the correct location
+                                                            // here
+                                                            ErrorLocation::Indeterminate,
                                                         )?
                                                         .instance_type(),
                                                         position,
@@ -139,12 +131,8 @@ impl<'pre> DeclarationChecker<'pre> {
                                                     &self.root_module_declaration,
                                                     module_path,
                                                     &function.definition.return_type,
-                                                    // TODO this position should point specifically at
-                                                    // the return type, not the whole function
-                                                    ErrorLocation::Position(
-                                                        module_path.with_part(function.name),
-                                                        function.definition.position,
-                                                    ),
+                                                    // TODO figure out the correct location here
+                                                    ErrorLocation::Indeterminate,
                                                 )?
                                                 .instance_type(),
                                             ),
@@ -154,10 +142,10 @@ impl<'pre> DeclarationChecker<'pre> {
                                 },
                             );
 
-                            self.declared_impls.insert(
-                                (types::structs::StructId::FQName(struct_path), function.name),
-                                function.clone(),
-                            );
+                            self.declared_impls
+                                .entry(types::structs::StructId::FQName(struct_path))
+                                .or_default()
+                                .insert(function.id, function.clone());
                         }
 
                         let Some(struct_) = self
@@ -171,7 +159,7 @@ impl<'pre> DeclarationChecker<'pre> {
                         for (field_name, field) in fields_to_add {
                             struct_.fields.push(types::structs::StructField {
                                 struct_id: types::structs::StructId::FQName(struct_path),
-                                name: field_name,
+                                name: types::Identifier::parse(&field_name),
                                 type_: field.type_,
                                 static_: field.static_,
                             });
@@ -231,9 +219,9 @@ impl<'pre> DeclarationChecker<'pre> {
 
                                 static_: false,
                                 struct_id: types::structs::StructId::FQName(
-                                    module_path.with_part(Identifier::parse(&struct_.name)),
+                                    module_path.with_part(types::Identifier::parse(&struct_.name)),
                                 ),
-                                name: Identifier::parse(&field.name),
+                                name: types::Identifier::parse(&field.name),
                             });
                         }
                         let name = module_path.with_part(types::Identifier::parse(&struct_.name));
@@ -297,7 +285,8 @@ impl<'pre> DeclarationChecker<'pre> {
         visibility: ast::Visibility,
         function_declaration: &DeclaredFunction,
     ) -> Result<(), TypeCheckError> {
-        if function_declaration.name.last() == types::Identifier::parse("main")
+        // TODO give it an attributte or something to denote as main?
+        if function_declaration.definition.ast.name == "main"
             && visibility == ast::Visibility::Export
         {
             if function_declaration.definition.arguments.len() == 1 {
@@ -308,7 +297,8 @@ impl<'pre> DeclarationChecker<'pre> {
                         &self.root_module_declaration,
                         module_path,
                         &argument.type_,
-                        ErrorLocation::Position(function_declaration.name, argument.position),
+                        // TODO figure out the correct location here
+                        ErrorLocation::Indeterminate,
                     )?
                     .kind()
                     {
@@ -318,13 +308,13 @@ impl<'pre> DeclarationChecker<'pre> {
                                     todo!("show a nice error here, main is already defined");
                                 }
 
-                                self.main = Some(function_declaration.name);
+                                self.main = Some(function_declaration.id);
                             }
                         }
                     }
                 }
             } else if function_declaration.definition.arguments.is_empty() {
-                self.main = Some(function_declaration.name);
+                self.main = Some(function_declaration.id);
             }
         }
 
@@ -343,7 +333,7 @@ impl<'pre> DeclarationChecker<'pre> {
         function: &ast::Function,
         self_type: types::FQName,
         position: ast::SourceRange,
-    ) -> Result<DeclaredAssociatedFunction, TypeCheckError> {
+    ) -> Result<DeclaredFunction, TypeCheckError> {
         let function_name = types::Identifier::parse(&function.name);
         let function_path = self_type.with_part(function_name);
         let mut arguments = vec![];
@@ -371,9 +361,8 @@ impl<'pre> DeclarationChecker<'pre> {
             });
         }
 
-        Ok(DeclaredAssociatedFunction {
-            struct_: function_path.without_last(),
-            name: function_name,
+        Ok(DeclaredFunction {
+            id: types::FunctionId::FQName(function_path),
             definition: DeclaredFunctionDefinition {
                 arguments,
                 return_type: function.return_type.clone(),
@@ -404,13 +393,19 @@ impl<'pre> DeclarationChecker<'pre> {
         }
 
         DeclaredFunction {
-            name: function_path,
+            id: match &function.body {
+                ast::FunctionBody::Statements(_, _) => types::FunctionId::FQName(function_path),
+                ast::FunctionBody::Extern(extern_, _) => {
+                    types::FunctionId::Extern(types::Identifier::parse(&extern_))
+                }
+            },
             definition: DeclaredFunctionDefinition {
                 arguments,
                 return_type: function.return_type.clone(),
                 ast: function.clone(),
                 position,
             },
+            visibility: Self::convert_visibility(function.visibility),
         }
     }
 

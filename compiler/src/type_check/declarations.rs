@@ -27,14 +27,7 @@ pub(super) struct DeclaredFunctionDefinition {
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredFunction {
-    pub(super) name: types::FQName,
-    pub(super) definition: DeclaredFunctionDefinition,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct DeclaredAssociatedFunction {
-    pub(super) struct_: types::FQName,
-    pub(super) name: types::Identifier,
+    pub(super) id: types::FunctionId,
     pub(super) definition: DeclaredFunctionDefinition,
     pub(super) visibility: types::Visibility,
 }
@@ -158,7 +151,7 @@ impl std::fmt::Debug for DeclaredItem<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             DeclaredItemKind::Function(declared_function) => {
-                write!(f, "Function({})", declared_function.name)
+                write!(f, "Function({})", declared_function.id)
             }
             DeclaredItemKind::Struct(struct_id) => {
                 write!(f, "Struct({struct_id})")
@@ -176,6 +169,7 @@ impl DeclaredItem<'_> {
     pub(super) fn type_(
         &self,
         root_module: &DeclaredModule,
+        current_module: types::FQName,
         error_location: ErrorLocation,
     ) -> Result<types::Type, TypeCheckError> {
         // TODO also handle the case of this item being generic
@@ -191,7 +185,7 @@ impl DeclaredItem<'_> {
                                 name: declaration.name,
                                 type_: resolve_type(
                                     root_module,
-                                    declared_function.name.without_last(),
+                                    current_module,
                                     &declaration.type_,
                                     error_location,
                                 )?
@@ -202,7 +196,7 @@ impl DeclaredItem<'_> {
                         .collect::<Result<Vec<_>, _>>()?,
                     return_type: Box::new(resolve_type(
                         root_module,
-                        declared_function.name.without_last(),
+                        current_module,
                         &declared_function.definition.return_type,
                         error_location,
                     )?),
@@ -214,8 +208,10 @@ impl DeclaredItem<'_> {
             DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => root_module
                 .get_item(*imported_item)
                 .unwrap()
-                .type_(root_module, error_location),
-            DeclaredItemKind::Predeclared(item) => item.type_(root_module, error_location),
+                .type_(root_module, current_module, error_location),
+            DeclaredItemKind::Predeclared(item) => {
+                item.type_(root_module, current_module, error_location)
+            }
             DeclaredItemKind::Module(_) => todo!(),
         }
     }
@@ -242,11 +238,11 @@ pub(super) fn resolve_type(
         ast::TypeDescription::Named(name) if name == "()" => root_module
             .get_item(*TYPE_NAME_UNIT)
             .unwrap()
-            .type_(root_module, error_location),
+            .type_(root_module, current_module, error_location),
         ast::TypeDescription::Named(name) if name == "u64" => root_module
             .get_item(*TYPE_NAME_U64)
             .unwrap()
-            .type_(root_module, error_location),
+            .type_(root_module, current_module, error_location),
         ast::TypeDescription::Named(name) => {
             let name = types::Identifier::parse(name);
             let item = root_module
@@ -269,7 +265,7 @@ pub(super) fn resolve_type(
                                     name: a.name,
                                     type_: resolve_type(
                                         root_module,
-                                        declared_function.name.without_last(),
+                                        current_module,
                                         &a.type_,
                                         error_location,
                                     )?
@@ -280,7 +276,7 @@ pub(super) fn resolve_type(
                             .collect::<Result<Vec<_>, _>>()?,
                         return_type: Box::new(resolve_type(
                             root_module,
-                            declared_function.name.without_last(),
+                            current_module,
                             &declared_function.definition.return_type,
                             error_location,
                         )?),
@@ -289,11 +285,15 @@ pub(super) fn resolve_type(
                 DeclaredItemKind::Struct(declared_struct) => Ok(types::Type::new_not_generic(
                     types::TypeKind::StructDescriptor(declared_struct),
                 )),
-                DeclaredItemKind::Predeclared(item) => item.type_(root_module, error_location),
+                DeclaredItemKind::Predeclared(item) => {
+                    item.type_(root_module, current_module, error_location)
+                }
                 DeclaredItemKind::Import(declared_import) => {
                     let imported_item = root_module.get_item(declared_import.imported_item);
 
-                    imported_item.unwrap().type_(root_module, error_location)
+                    imported_item
+                        .unwrap()
+                        .type_(root_module, current_module, error_location)
                 }
                 DeclaredItemKind::Module(_) => todo!(),
             }
