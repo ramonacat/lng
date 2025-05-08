@@ -1,4 +1,4 @@
 [workspace]
 resolver = "2"
-members = [ "compiler", "compiler-bin" ]
+members = [ "compiler", "compiler-bin" , "compiler-derive"]
 default-members = ["compiler-bin"]

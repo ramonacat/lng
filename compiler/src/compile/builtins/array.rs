@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
 
+use compiler_derive::BuiltinStruct;
 use inkwell::values::BasicValue;
 
 use crate::{
@@ -18,44 +19,15 @@ static LENGTH_FIELD: LazyLock<types::Identifier> =
 static CAPACITY_FIELD: LazyLock<types::Identifier> =
     LazyLock::new(|| types::Identifier::parse("capacity"));
 
-// TODO A macro that generates both the struct on rust side and the StructHandle from a single
-// definition
-pub fn describe_structure() -> types::structs::Struct {
-    let type_argument_name = types::TypeArgument::new(types::Identifier::parse("TItem"));
-    let generic_argument_type = types::Type::new_generic(
-        types::TypeKind::Generic(type_argument_name),
-        vec![type_argument_name],
-    );
-    let struct_id = types::structs::StructId::FQName(*TYPE_NAME_ARRAY);
-
-    types::structs::Struct {
-        name: *TYPE_NAME_ARRAY,
-        type_arguments: types::TypeArguments::new(vec![type_argument_name]),
-        fields: vec![
-            types::structs::StructField {
-                struct_id,
-                name: *ITEMS_FIELD,
-                type_: types::Type::new_generic(
-                    types::TypeKind::Pointer(Box::new(generic_argument_type)),
-                    vec![type_argument_name],
-                ),
-                static_: false,
-            },
-            types::structs::StructField {
-                struct_id,
-                name: *LENGTH_FIELD,
-                type_: types::Type::new_not_generic(types::TypeKind::U64),
-                static_: false,
-            },
-            types::structs::StructField {
-                struct_id,
-                name: *CAPACITY_FIELD,
-                type_: types::Type::new_not_generic(types::TypeKind::U64),
-                static_: false,
-            },
-        ],
-        impls: HashMap::new(),
-    }
+#[derive(BuiltinStruct)]
+#[fqname("std.array")]
+#[generic(TItem)]
+#[repr(C)]
+pub struct BuiltinArray<TItem> {
+    #[array]
+    pub items: *const TItem,
+    pub length: u64,
+    pub capacity: u64,
 }
 
 pub struct ArrayValue {}

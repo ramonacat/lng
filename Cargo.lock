@@ -81,6 +81,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "compiler"
 version = "0.1.0"
 dependencies = [
+ "compiler-derive",
  "inkwell",
  "itertools",
  "lalrpop",
@@ -95,6 +96,15 @@ name = "compiler-bin"
 version = "0.1.0"
 dependencies = [
  "compiler",
+]
+
+[[package]]
+name = "compiler-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

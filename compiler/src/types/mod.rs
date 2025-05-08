@@ -272,10 +272,6 @@ impl Type {
         }
     }
 
-    pub(crate) fn u8() -> Self {
-        Self::new_not_generic(TypeKind::U8)
-    }
-
     pub(crate) fn u64() -> Self {
         Self::new_not_generic(TypeKind::U64)
     }

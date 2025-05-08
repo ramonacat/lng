@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
 
+use compiler_derive::BuiltinStruct;
 use inkwell::{
     basic_block::BasicBlock,
     values::{BasicValue, PointerValue},
@@ -14,6 +15,15 @@ use crate::{
     types,
 };
 
+#[derive(BuiltinStruct)]
+#[fqname("std.rc")]
+#[generic(TPointee)]
+#[repr(C)]
+pub struct BuiltinRc<TPointee> {
+    pub refcount: u64,
+    pub pointee: *const TPointee,
+}
+
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
@@ -25,38 +35,8 @@ static REFCOUNT_FIELD: LazyLock<types::Identifier> =
 static POINTEE_FIELD: LazyLock<types::Identifier> =
     LazyLock::new(|| types::Identifier::parse("pointee"));
 
-pub fn describe_structure() -> types::structs::Struct {
-    let struct_name = types::FQName::parse("std.rc");
-    let type_argument = types::TypeArgument::new(types::Identifier::parse("TPointee"));
-    let generic_argument_type =
-        types::Type::new_generic(types::TypeKind::Generic(type_argument), vec![type_argument]);
-    let struct_id = types::structs::StructId::FQName(struct_name);
-
-    types::structs::Struct {
-        name: struct_name,
-        type_arguments: types::TypeArguments::new(vec![type_argument]),
-        fields: vec![
-            types::structs::StructField {
-                struct_id,
-                name: *REFCOUNT_FIELD,
-                type_: types::Type::new_not_generic(types::TypeKind::U64),
-                static_: false,
-            },
-            types::structs::StructField {
-                struct_id,
-                name: *POINTEE_FIELD,
-                type_: types::Type::new_generic(
-                    types::TypeKind::Pointer(Box::new(generic_argument_type)),
-                    vec![type_argument],
-                ),
-                static_: false,
-            },
-        ],
-        impls: HashMap::new(),
-    }
-}
-
 impl<'ctx> RcValue<'ctx> {
+    #[must_use]
     pub fn build_init<'src>(
         name: &str,
         struct_instance: &StructInstance<'ctx>,
@@ -81,10 +61,12 @@ impl<'ctx> RcValue<'ctx> {
         }
     }
 
+    #[must_use]
     pub const fn as_ptr(&self) -> PointerValue<'ctx> {
         self.pointer
     }
 
+    #[must_use]
     pub const fn from_pointer(
         pointer: PointerValue<'ctx>,
         value_type: types::structs::InstantiatedStructId,
@@ -95,6 +77,7 @@ impl<'ctx> RcValue<'ctx> {
         }
     }
 
+    #[must_use]
     pub(crate) fn type_(&self) -> types::structs::InstantiatedStructId {
         self.value_type.clone()
     }

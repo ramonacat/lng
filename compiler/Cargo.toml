@@ -10,6 +10,7 @@ rand = "0.9.1"
 thiserror = "2.0.12"
 string-interner = "0.19.0"
 lalrpop-util = {version = "0.22.1", features = ["lexer"]}
+compiler-derive = {path = "../compiler-derive/"}
 
 [build-dependencies]
 lalrpop = "0.22.1"

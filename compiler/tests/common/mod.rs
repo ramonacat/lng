@@ -1,12 +1,12 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use compiler::{
-    compile::compile,
-    parser::parse_file,
-    std::{
-        runtime::{LngRc, LngString},
-        type_check_std,
+    compile::{
+        builtins::{rc::BuiltinRc, string::BuiltinString},
+        compile,
     },
+    parser::parse_file,
+    std::type_check_std,
     type_check::type_check,
 };
 use inkwell::{execution_engine::ExecutionEngine, module::Module};
@@ -16,7 +16,7 @@ thread_local! {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn test_println(arg: *const LngRc<LngString>) {
+extern "C" fn test_println(arg: *const BuiltinRc<BuiltinString>) {
     let arg = unsafe { &*(*arg).pointee }.to_string();
 
     TEST_RESUTLS.with_borrow_mut(|results| {

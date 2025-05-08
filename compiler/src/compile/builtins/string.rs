@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use compiler_derive::BuiltinStruct;
 use inkwell::values::BasicValue as _;
 
 use crate::{
@@ -10,15 +11,26 @@ use crate::{
 
 use super::rc::RcValue;
 
+#[derive(Debug, BuiltinStruct)]
+#[fqname("std.string")]
+#[repr(C)]
+pub struct BuiltinString {
+    #[array]
+    pub characters: *const u8,
+    pub length: u64,
+}
+
 pub struct StringValue {
     value: String,
 }
 
 impl StringValue {
+    #[must_use]
     pub const fn new_literal(value: String) -> Self {
         Self { value }
     }
 
+    #[must_use]
     pub fn build_instance<'ctx>(
         &self,
         name: &str,
@@ -59,29 +71,5 @@ impl StringValue {
                 });
 
         RcValue::build_init(name, &StructInstance::new(literal_value, id), context)
-    }
-}
-
-pub fn describe_structure() -> types::structs::Struct {
-    let struct_id = types::structs::StructId::FQName(*TYPE_NAME_STRING);
-
-    types::structs::Struct {
-        name: *TYPE_NAME_STRING,
-        type_arguments: types::TypeArguments::new_empty(),
-        fields: vec![
-            types::structs::StructField {
-                struct_id,
-                name: types::Identifier::parse("characters"),
-                type_: types::Type::u8(),
-                static_: false,
-            },
-            types::structs::StructField {
-                struct_id,
-                name: types::Identifier::parse("length"),
-                type_: types::Type::u64(),
-                static_: false,
-            },
-        ],
-        impls: HashMap::new(),
     }
 }

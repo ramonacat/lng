@@ -1,4 +1,4 @@
-mod builtins;
+pub mod builtins;
 mod context;
 mod module;
 pub(crate) mod scope;

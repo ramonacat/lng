@@ -1,19 +1,14 @@
-use std::{ffi::c_char, fmt::Debug};
-
 use inkwell::{execution_engine::ExecutionEngine, module::Module};
 
-// keep in sync with stdlib `string`!!!
-#[repr(C)]
-#[derive(Debug)]
-pub struct LngString {
-    pub contents: *const c_char,
-    pub length: u64,
-}
+use crate::compile::builtins::{rc::BuiltinRc, string::BuiltinString};
 
-impl std::fmt::Display for LngString {
+impl std::fmt::Display for BuiltinString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let slice = unsafe {
-            std::slice::from_raw_parts(self.contents.cast(), usize::try_from(self.length).unwrap())
+            std::slice::from_raw_parts(
+                self.characters.cast(),
+                usize::try_from(self.length).unwrap(),
+            )
         };
 
         let string = String::from_utf8(slice.to_vec()).unwrap();
@@ -21,16 +16,8 @@ impl std::fmt::Display for LngString {
     }
 }
 
-// keep in sync with the definiton in compiler
-#[repr(C)]
-#[derive(Debug)]
-pub struct LngRc<T: Debug> {
-    pub refcount: u64,
-    pub pointee: *const T,
-}
-
 #[unsafe(no_mangle)]
-extern "C" fn println(arg: *const LngRc<LngString>) {
+extern "C" fn println(arg: *const BuiltinRc<BuiltinString>) {
     let pointee = unsafe { &*(*arg).pointee };
 
     println!("{pointee}");
@@ -39,16 +26,16 @@ extern "C" fn println(arg: *const LngRc<LngString>) {
 // TODO this is a bit cursed, as the allocator here might be different from the one that's used by
 // the jitted code, so when it's freed in the jitted code, it is UB. We should find a way to move
 // the allocations to the other side! Maybe just implement the function natively? :)
-extern "C" fn u64_to_string(arg: u64) -> *const LngRc<LngString> {
+extern "C" fn u64_to_string(arg: u64) -> *const BuiltinRc<BuiltinString> {
     let bytes = arg.to_string().into_bytes();
     let length = bytes.len();
 
     let characters = Box::leak(Box::new(bytes)).as_ptr();
-    let lng_string = LngString {
-        contents: characters.cast(),
+    let lng_string = BuiltinString {
+        characters: characters.cast(),
         length: length as u64,
     };
-    let lng_rc = LngRc {
+    let lng_rc = BuiltinRc {
         refcount: 1,
         pointee: Box::leak(Box::new(lng_string)),
     };
