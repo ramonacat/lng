@@ -1,4 +1,4 @@
-use crate::type_check::declarations::DeclaredRootModule;
+use crate::{type_check::declarations::DeclaredRootModule, types::Identifier};
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{ast, std::TYPE_NAME_STRING, types};
@@ -144,7 +144,7 @@ impl<'pre> DefinitionChecker<'pre> {
         let root_path = root_path.unwrap_or_else(|| types::FQName::parse(""));
         let mut impls = self.type_check_associated_function_definitions()?;
 
-        for (item_path, declared_item) in declaration_to_check.items() {
+        for (item_name, declared_item) in declaration_to_check.items() {
             match &declared_item.kind {
                 DeclaredItemKind::Function(function_id) => {
                     let body = self.type_check_function(
@@ -160,7 +160,7 @@ impl<'pre> DefinitionChecker<'pre> {
                         .insert(*function_id, body.clone());
 
                     root_module.declare_item(
-                        *item_path,
+                        *item_name,
                         types::Item {
                             kind: types::ItemKind::Function(*function_id),
                             visibility: declared_item.visibility,
@@ -173,21 +173,22 @@ impl<'pre> DefinitionChecker<'pre> {
                         *struct_id,
                         impls.remove(struct_id).unwrap_or_default(),
                         declared_item,
+                        *item_name,
                     );
 
-                    root_module.declare_item(*item_path, item);
+                    root_module.declare_item(*item_name, item);
                 }
                 DeclaredItemKind::Import(DeclaredImport { imported_item }) => {
-                    self.type_check_import(&mut root_module, *item_path, *imported_item);
+                    self.type_check_import(&mut root_module, *item_name, *imported_item);
                 }
                 DeclaredItemKind::Predeclared(_) => {}
                 DeclaredItemKind::Module(module_declaration) => {
                     let submodule_root = self.type_check_definitions(
                         module_declaration,
-                        Some(root_path.with_part(*item_path)),
+                        Some(root_path.with_part(*item_name)),
                     )?;
                     root_module.declare_item(
-                        *item_path,
+                        *item_name,
                         // TODO ensure the visibility here is set correctly
                         types::Item {
                             kind: types::ItemKind::Module(submodule_root),
@@ -239,6 +240,7 @@ impl<'pre> DefinitionChecker<'pre> {
         struct_id: types::structs::StructId,
         impls: HashMap<types::functions::FunctionId, types::functions::Function>,
         declared_item: &DeclaredItem,
+        declared_name: Identifier,
     ) -> types::Item {
         let all_structs = &mut self.root_module_declaration.structs.borrow_mut();
         let struct_ = all_structs.get_mut(&struct_id).unwrap();
@@ -246,12 +248,7 @@ impl<'pre> DefinitionChecker<'pre> {
         for (name, impl_) in impls {
             struct_.fields.push(types::structs::StructField {
                 struct_id,
-                // TODO don't match on the FunctionId here, instead get the name thorugh other
-                // means
-                name: match name {
-                    types::functions::FunctionId::FQName(fqname) => fqname.last(),
-                    types::functions::FunctionId::Extern(_) => todo!(),
-                },
+                name: declared_name,
                 type_: impl_.type_(),
                 static_: true,
             });

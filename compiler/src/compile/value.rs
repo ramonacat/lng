@@ -127,8 +127,6 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         instance
     }
 
-    // TODO perhaps have a type for instance that can hold both the pointer and type_argument
-    // values?
     pub fn build_field_load(
         &self,
         field: types::Identifier,
