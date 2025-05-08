@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     ast::{self, SourceSpan},
+    identifier::Identifier,
     types,
 };
 
@@ -66,7 +67,7 @@ impl<'pre> DeclaredRootModule<'pre> {
 
 #[derive(Clone)]
 pub(super) struct DeclaredModule<'pre> {
-    pub(super) items: HashMap<types::Identifier, DeclaredItem<'pre>>,
+    pub(super) items: HashMap<Identifier, DeclaredItem<'pre>>,
 }
 
 impl std::fmt::Debug for DeclaredModule<'_> {
@@ -152,7 +153,7 @@ impl<'pre> DeclaredModule<'pre> {
         }
     }
 
-    pub(crate) fn items(&self) -> impl Iterator<Item = (&types::Identifier, &DeclaredItem)> {
+    pub(crate) fn items(&self) -> impl Iterator<Item = (&Identifier, &DeclaredItem)> {
         self.items.iter()
     }
 }
@@ -244,7 +245,7 @@ pub(super) fn resolve_type(
         ast::TypeDescription::Named(name) if name == "()" => Ok(types::Type::unit()),
         ast::TypeDescription::Named(name) if name == "u64" => Ok(types::Type::u64()),
         ast::TypeDescription::Named(name) => {
-            let name = types::Identifier::parse(name);
+            let name = Identifier::parse(name);
             let item = dbg!(root_module)
                 .get_item(dbg!(current_module.with_part(name)))
                 // TODO should there be a keyword for global scope access instead of this or_else?

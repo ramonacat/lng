@@ -5,6 +5,7 @@ use inkwell::values::BasicValue as _;
 
 use crate::{
     compile::{context::CompilerContext, value::StructInstance},
+    identifier::Identifier,
     std::TYPE_NAME_STRING,
     types,
 };
@@ -43,11 +44,11 @@ impl StringValue {
 
         let mut field_values = HashMap::new();
         field_values.insert(
-            types::Identifier::parse("characters"),
+            Identifier::parse("characters"),
             characters_value.as_basic_value_enum(),
         );
         field_values.insert(
-            types::Identifier::parse("length"),
+            Identifier::parse("length"),
             context
                 .const_u64(self.value.len() as u64)
                 .as_basic_value_enum(),

@@ -49,7 +49,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
 
         fields_gen.push(quote::quote! { crate::types::structs::StructField {
             struct_id,
-            name: crate::types::Identifier::parse(#field_name_lit),
+            name: crate::identifier::Identifier::parse(#field_name_lit),
             type_: #field_type_lng,
             static_: false
         }});
@@ -58,7 +58,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
     let generics = if let Some(generic_type) = generic_type {
         let generic_type_lit = Literal::string(&generic_type);
         quote::quote! {
-            let type_argument_name = crate::types::TypeArgument::new(crate::types::Identifier::parse(#generic_type_lit));
+            let type_argument_name = crate::types::TypeArgument::new(crate::identifier::Identifier::parse(#generic_type_lit));
             let type_argument_names = vec![type_argument_name];
             let generic_argument_type = crate::types::Type::new_generic(
                 crate::types::TypeKind::Generic(type_argument_name),

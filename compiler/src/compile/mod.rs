@@ -27,6 +27,7 @@ use value::{FunctionHandle, StructInstance, Value};
 
 use crate::{
     ast,
+    identifier::Identifier,
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
     types,
 };
@@ -129,14 +130,14 @@ pub enum CompileErrorDescription {
     ModuleNotFound(types::FQName),
     FunctionNotFound {
         module_name: types::FQName,
-        function_name: types::Identifier,
+        function_name: Identifier,
     },
     InternalError(String),
     StructNotFound {
         module_name: types::FQName,
-        struct_name: types::Identifier,
+        struct_name: Identifier,
     },
-    FieldNotFound(types::FQName, types::Identifier),
+    FieldNotFound(types::FQName, Identifier),
     MissingGenericArguments(types::FQName, types::TypeArguments),
 }
 
@@ -264,15 +265,15 @@ impl<'ctx> Compiler<'ctx> {
                 .get_or_create_module(types::FQName::parse("std"), || context.create_module("std"));
 
             std.set_variable(
-                types::Identifier::parse("string"),
+                Identifier::parse("string"),
                 Value::Struct(string::describe_structure()),
             );
             std.set_variable(
-                types::Identifier::parse("array"),
+                Identifier::parse("array"),
                 Value::Struct(array::describe_structure()),
             );
             std.set_variable(
-                types::Identifier::parse("rc"),
+                Identifier::parse("rc"),
                 Value::Struct(rc::describe_structure()),
             );
             scope
@@ -536,9 +537,7 @@ impl<'ctx> Compiler<'ctx> {
         compiled_function: &mut CompiledFunction<'ctx>,
     ) -> Result<(), CompileError> {
         for statement in statements {
-            let self_value = compiled_function
-                .scope
-                .get_value(types::Identifier::parse("self"));
+            let self_value = compiled_function.scope.get_value(Identifier::parse("self"));
 
             match statement {
                 types::Statement::Expression(expression) => {

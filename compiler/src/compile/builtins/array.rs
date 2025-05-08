@@ -5,6 +5,7 @@ use inkwell::values::BasicValue;
 
 use crate::{
     compile::{context::CompilerContext, unique_name, value::StructInstance},
+    identifier::Identifier,
     types,
 };
 
@@ -12,12 +13,9 @@ use super::rc::RcValue;
 
 pub static TYPE_NAME_ARRAY: LazyLock<types::FQName> =
     LazyLock::new(|| types::FQName::parse("std.array"));
-static ITEMS_FIELD: LazyLock<types::Identifier> =
-    LazyLock::new(|| types::Identifier::parse("items"));
-static LENGTH_FIELD: LazyLock<types::Identifier> =
-    LazyLock::new(|| types::Identifier::parse("length"));
-static CAPACITY_FIELD: LazyLock<types::Identifier> =
-    LazyLock::new(|| types::Identifier::parse("capacity"));
+static ITEMS_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("items"));
+static LENGTH_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("length"));
+static CAPACITY_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("capacity"));
 
 #[derive(BuiltinStruct)]
 #[fqname("std.array")]
@@ -55,7 +53,7 @@ impl ArrayValue {
 
         let mut tav = HashMap::new();
         tav.insert(
-            types::TypeArgument::new(types::Identifier::parse("TItem")),
+            types::TypeArgument::new(Identifier::parse("TItem")),
             item_type.clone(),
         );
         let tav = types::TypeArgumentValues::new(tav);

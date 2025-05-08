@@ -8,7 +8,7 @@ use inkwell::{
     values::{IntValue, PointerValue},
 };
 
-use crate::types;
+use crate::{identifier::Identifier, types};
 
 use super::{scope::GlobalScope, unique_name, value::InstantiatedStructType};
 
@@ -76,7 +76,7 @@ impl<'ctx> CompilerContext<'ctx> {
         // TODO what about std types that have type arguments?
         types::structs::InstantiatedStructId(
             types::structs::StructId::FQName(
-                types::FQName::parse("std").with_part(types::Identifier::parse(name)),
+                types::FQName::parse("std").with_part(Identifier::parse(name)),
             ),
             types::TypeArgumentValues::new_empty(),
         )
@@ -136,13 +136,13 @@ impl<'ctx> CompilerContext<'ctx> {
 
 pub struct CompiledStruct<'ctx> {
     llvm_type: StructType<'ctx>,
-    field_indices: HashMap<types::Identifier, u32>,
+    field_indices: HashMap<Identifier, u32>,
 }
 
 impl<'ctx> CompiledStruct<'ctx> {
     pub fn field_pointer(
         &self,
-        field: types::Identifier,
+        field: Identifier,
         instance: PointerValue<'ctx>,
         context: &CompilerContext<'ctx>,
     ) -> (BasicTypeEnum<'ctx>, PointerValue<'ctx>) {

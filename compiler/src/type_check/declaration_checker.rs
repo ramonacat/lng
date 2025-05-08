@@ -2,7 +2,7 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{ast, std::TYPE_NAME_STRING, types};
+use crate::{ast, identifier::Identifier, std::TYPE_NAME_STRING, types};
 
 use super::{
     DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
@@ -47,14 +47,14 @@ impl<'pre> DeclarationChecker<'pre> {
                 let (name, path) = import.path.split_last().unwrap();
                 let exporting_module_name =
                     types::FQName::from_parts(path.iter().map(String::as_str));
-                let item_name = types::Identifier::parse(name);
+                let item_name = Identifier::parse(name);
 
                 let importing_module_path = types::FQName::parse(&file.name.to_string());
                 let imported_as = importing_module_path.with_part(
                     import
                         .alias
                         .as_ref()
-                        .map_or_else(|| item_name, |x| types::Identifier::parse(x)),
+                        .map_or_else(|| item_name, |x| Identifier::parse(x)),
                 );
                 self.root_module_declaration.module.borrow_mut().declare(
                     imported_as,
@@ -82,7 +82,7 @@ impl<'pre> DeclarationChecker<'pre> {
                 match &declaration.kind {
                     ast::DeclarationKind::Function(_) | ast::DeclarationKind::Struct(_) => {}
                     ast::DeclarationKind::Impl(impl_declaration) => {
-                        let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
+                        let struct_name = Identifier::parse(&impl_declaration.struct_name);
                         let struct_path = module_path.with_part(struct_name);
 
                         let functions = impl_declaration
@@ -147,7 +147,7 @@ impl<'pre> DeclarationChecker<'pre> {
                         for (field_name, field) in fields_to_add {
                             struct_to_modify.fields.push(types::structs::StructField {
                                 struct_id: types::structs::StructId::FQName(struct_path),
-                                name: types::Identifier::parse(&field_name),
+                                name: Identifier::parse(&field_name),
                                 type_: field.type_,
                                 static_: field.static_,
                             });
@@ -201,7 +201,7 @@ impl<'pre> DeclarationChecker<'pre> {
                             .insert(function_id, function_declaration.clone());
 
                         self.root_module_declaration.module.borrow_mut().declare(
-                            module_path.with_part(types::Identifier::parse(&function.name)),
+                            module_path.with_part(Identifier::parse(&function.name)),
                             DeclaredItem {
                                 visibility: Self::convert_visibility(function.visibility),
                                 kind: DeclaredItemKind::Function(function_id),
@@ -256,12 +256,12 @@ impl<'pre> DeclarationChecker<'pre> {
 
                 static_: false,
                 struct_id: types::structs::StructId::FQName(
-                    module_path.with_part(types::Identifier::parse(&struct_.name)),
+                    module_path.with_part(Identifier::parse(&struct_.name)),
                 ),
-                name: types::Identifier::parse(&field.name),
+                name: Identifier::parse(&field.name),
             });
         }
-        let name = module_path.with_part(types::Identifier::parse(&struct_.name));
+        let name = module_path.with_part(Identifier::parse(&struct_.name));
         let id = types::structs::StructId::FQName(name);
         self.root_module_declaration.structs.borrow_mut().insert(
             id,
@@ -327,13 +327,13 @@ impl<'pre> DeclarationChecker<'pre> {
         self_type: types::FQName,
         position: ast::SourceSpan,
     ) -> Result<DeclaredFunction, TypeCheckError> {
-        let function_name = types::Identifier::parse(&function.name);
+        let function_name = Identifier::parse(&function.name);
         let function_path = self_type.with_part(function_name);
         let mut arguments = vec![];
 
         for arg in &function.arguments {
             arguments.push(types::functions::Argument {
-                name: types::Identifier::parse(&arg.name),
+                name: Identifier::parse(&arg.name),
                 type_: resolve_type(
                     &self.root_module_declaration.module.borrow(),
                     current_module,
@@ -368,14 +368,14 @@ impl<'pre> DeclarationChecker<'pre> {
         module_path: types::FQName,
         position: ast::SourceSpan,
     ) -> DeclaredFunction {
-        let function_name = types::Identifier::parse(&function.name);
+        let function_name = Identifier::parse(&function.name);
         let function_path = module_path.with_part(function_name);
 
         let mut arguments = vec![];
 
         for arg in &function.arguments {
             arguments.push(types::functions::Argument {
-                name: types::Identifier::parse(&arg.name),
+                name: Identifier::parse(&arg.name),
                 type_: resolve_type(
                     &self.root_module_declaration.module.borrow(),
                     module_path,
@@ -393,7 +393,7 @@ impl<'pre> DeclarationChecker<'pre> {
                     types::functions::FunctionId::FQName(function_path)
                 }
                 ast::FunctionBody::Extern(extern_, _) => {
-                    types::functions::FunctionId::Extern(types::Identifier::parse(extern_))
+                    types::functions::FunctionId::Extern(Identifier::parse(extern_))
                 }
             },
             module_name: module_path,

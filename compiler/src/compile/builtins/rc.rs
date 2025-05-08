@@ -12,6 +12,7 @@ use crate::{
         unique_name,
         value::{InstantiatedStructType, StructInstance},
     },
+    identifier::Identifier,
     types,
 };
 
@@ -30,10 +31,8 @@ pub struct RcValue<'ctx> {
     value_type: types::structs::InstantiatedStructId,
 }
 
-static REFCOUNT_FIELD: LazyLock<types::Identifier> =
-    LazyLock::new(|| types::Identifier::parse("refcount"));
-static POINTEE_FIELD: LazyLock<types::Identifier> =
-    LazyLock::new(|| types::Identifier::parse("pointee"));
+static REFCOUNT_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("refcount"));
+static POINTEE_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("pointee"));
 
 impl<'ctx> RcValue<'ctx> {
     #[must_use]

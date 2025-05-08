@@ -14,43 +14,10 @@ use structs::{InstantiatedStructId, Struct, StructId};
 
 use crate::{
     ast,
+    identifier::Identifier,
     name_mangler::{MangledIdentifier, mangle_fq_name},
     std::TYPE_NAME_U64,
 };
-
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct Identifier(SymbolU32);
-
-impl std::fmt::Debug for Identifier {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Identifier({self})")
-    }
-}
-
-static IDENTIFIERS: LazyLock<RwLock<StringInterner<StringBackend>>> =
-    LazyLock::new(|| RwLock::new(StringInterner::default()));
-
-impl Identifier {
-    pub fn parse(raw: &str) -> Self {
-        let symbol = IDENTIFIERS.write().unwrap().get_or_intern(raw);
-        Self(symbol)
-    }
-
-    pub(crate) fn raw(self) -> String {
-        IDENTIFIERS
-            .read()
-            .unwrap()
-            .resolve(self.0)
-            .unwrap()
-            .to_string()
-    }
-}
-
-impl Display for Identifier {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.raw())
-    }
-}
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct FQName(SymbolU32);
@@ -67,10 +34,15 @@ impl Display for FQName {
     }
 }
 
+static FQNAMES: LazyLock<RwLock<StringInterner<StringBackend>>> =
+    LazyLock::new(|| RwLock::new(StringInterner::default()));
+
 impl FQName {
     // TODO add from_identifier and check all usages of parse&from_parts that can be simplified
     pub fn parse(raw: &str) -> Self {
-        let interned = IDENTIFIERS.write().unwrap().get_or_intern(raw);
+        // TODO do we really want to have a separate internet for FQNames? Or should those just
+        // wrap an Identifier?
+        let interned = FQNAMES.write().unwrap().get_or_intern(raw);
 
         Self(interned)
     }
@@ -80,12 +52,7 @@ impl FQName {
     }
 
     pub fn with_part(self, new_part: Identifier) -> Self {
-        let raw = IDENTIFIERS
-            .read()
-            .unwrap()
-            .resolve(self.0)
-            .unwrap()
-            .to_string();
+        let raw = FQNAMES.read().unwrap().resolve(self.0).unwrap().to_string();
 
         if raw.is_empty() {
             Self::parse(&format!("{new_part}"))
@@ -95,12 +62,7 @@ impl FQName {
     }
 
     pub fn parts(self) -> Vec<Identifier> {
-        let raw = IDENTIFIERS
-            .read()
-            .unwrap()
-            .resolve(self.0)
-            .unwrap()
-            .to_string();
+        let raw = FQNAMES.read().unwrap().resolve(self.0).unwrap().to_string();
 
         raw.split('.').map(Identifier::parse).collect()
     }

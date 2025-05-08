@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display};
 
-use crate::{ast, types};
+use crate::{ast, identifier::Identifier, types};
 
 #[derive(Debug)]
 pub struct TypeCheckError {
@@ -19,21 +19,21 @@ impl Display for TypeCheckError {
 pub enum TypeCheckErrorDescription {
     UnexpectedArgumentTypeInCall {
         target: types::Type,
-        argument_name: types::Identifier,
+        argument_name: Identifier,
         expected_type: types::Type,
         actual_type: types::Type,
     },
     IncorrectNumberOfArgumentsPassed(types::Type),
     FunctionArgumentCannotBeVoid {
-        argument_name: types::Identifier,
+        argument_name: Identifier,
     },
     ModuleDoesNotExist(types::FQName),
     ItemDoesNotExist(types::FQName),
-    ItemNotExported(types::FQName, types::Identifier),
-    UndeclaredVariable(types::Identifier),
+    ItemNotExported(types::FQName, Identifier),
+    UndeclaredVariable(Identifier),
     ImplNotOnStruct(types::FQName),
     MismatchedAssignmentType {
-        target_variable: types::Identifier,
+        target_variable: Identifier,
         variable_type: types::Type,
         assigned_type: types::Type,
     },

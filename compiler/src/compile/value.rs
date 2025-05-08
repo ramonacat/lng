@@ -6,7 +6,7 @@ use inkwell::{
 };
 use itertools::Itertools;
 
-use crate::{ast::SourceSpan, types};
+use crate::{ast::SourceSpan, identifier::Identifier, types};
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
 
@@ -62,7 +62,7 @@ impl Debug for FunctionHandle {
 
 pub struct InstantiatedStructType<'ctx> {
     definition: types::structs::Struct,
-    static_field_values: HashMap<types::Identifier, Value<'ctx>>,
+    static_field_values: HashMap<Identifier, Value<'ctx>>,
 }
 
 pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::structs::InstantiatedStructId);
@@ -102,7 +102,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         &self,
         context: &CompilerContext<'ctx>,
         binding_name: &str,
-        mut field_values: HashMap<types::Identifier, BasicValueEnum<'ctx>>,
+        mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
         // TODO ensure the type has all the type arguments filled in here
         let llvm_type = context.make_struct_type(&self.definition.fields);
@@ -130,7 +130,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 
     pub fn build_field_load(
         &self,
-        field: types::Identifier,
+        field: Identifier,
         instance: PointerValue<'ctx>,
         binding_name: &str,
         context: &CompilerContext<'ctx>,
@@ -147,7 +147,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 
     pub fn build_field_store(
         &self,
-        field_name: types::Identifier,
+        field_name: Identifier,
         instance: PointerValue<'ctx>,
         value: BasicValueEnum<'ctx>,
         context: &CompilerContext<'ctx>,
@@ -163,7 +163,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     pub(crate) fn read_field_value(
         &self,
         _instance: Value<'ctx>,
-        name: types::Identifier,
+        name: Identifier,
     ) -> Option<Value<'ctx>> {
         let field = self.definition.fields.iter().find(|f| f.name == name)?;
 
@@ -185,7 +185,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 
     pub(crate) fn new_with_statics(
         description: types::structs::Struct,
-        mut static_fields: HashMap<types::Identifier, Value<'ctx>>,
+        mut static_fields: HashMap<Identifier, Value<'ctx>>,
     ) -> Self {
         let default_static_fields: Vec<_> = description
             .impls
@@ -267,7 +267,7 @@ impl<'ctx> Value<'ctx> {
 
     pub fn read_field_value(
         &self,
-        field_path: types::Identifier,
+        field_path: Identifier,
         context: &CompilerContext<'ctx>,
     ) -> Option<Self> {
         match self {

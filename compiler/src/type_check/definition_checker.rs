@@ -1,4 +1,4 @@
-use crate::{type_check::declarations::DeclaredRootModule, types::Identifier};
+use crate::{identifier::Identifier, type_check::declarations::DeclaredRootModule};
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{ast, std::TYPE_NAME_STRING, types};
@@ -9,7 +9,7 @@ use super::{
 };
 
 struct Locals<'globals, 'pre> {
-    values: HashMap<types::Identifier, types::Type>,
+    values: HashMap<Identifier, types::Type>,
     globals: &'globals DeclaredModule<'pre>,
     scope_module_name: types::FQName,
 }
@@ -49,7 +49,7 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
                 }))
             }
             ast::TypeDescription::Named(name) => {
-                let id = types::Identifier::parse(name);
+                let id = Identifier::parse(name);
 
                 self.values
                     .get(&id)
@@ -70,13 +70,13 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
         }
     }
 
-    fn push_variable(&mut self, name: types::Identifier, r#type: types::Type) {
+    fn push_variable(&mut self, name: Identifier, r#type: types::Type) {
         self.values.insert(name, r#type);
     }
 
     fn get(
         &self,
-        id: types::Identifier,
+        id: Identifier,
         current_module: types::FQName,
         error_location: ast::SourceSpan,
     ) -> Result<Option<types::Type>, TypeCheckError> {
@@ -265,7 +265,7 @@ impl<'pre> DefinitionChecker<'pre> {
     fn type_check_import(
         &self,
         root_module: &mut types::Module,
-        item_path: types::Identifier,
+        item_path: Identifier,
         imported_item: types::FQName,
     ) {
         let root_module_declaration = self.root_module_declaration.module.borrow();
@@ -335,7 +335,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 types::functions::FunctionBody::Statements(checked_statements)
             }
             ast::FunctionBody::Extern(foreign_name, _) => {
-                types::functions::FunctionBody::Extern(types::Identifier::parse(foreign_name))
+                types::functions::FunctionBody::Extern(Identifier::parse(foreign_name))
             }
         };
 
@@ -383,17 +383,17 @@ impl<'pre> DefinitionChecker<'pre> {
 
                 if checked_expression.type_ != type_ {
                     return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
-                        target_variable: types::Identifier::parse(name),
+                        target_variable: Identifier::parse(name),
                         variable_type: type_,
                         assigned_type: checked_expression.type_,
                     }
                     .at(expression.position));
                 }
 
-                locals.push_variable(types::Identifier::parse(name), type_);
+                locals.push_variable(Identifier::parse(name), type_);
 
                 types::Statement::Let(types::LetStatement {
-                    binding: types::Identifier::parse(name),
+                    binding: Identifier::parse(name),
                     value: checked_expression,
                 })
             }
@@ -454,7 +454,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 }),
             },
             ast::ExpressionKind::VariableReference(name) => {
-                let id = types::Identifier::parse(name);
+                let id = Identifier::parse(name);
 
                 let value_type = locals
                     .get(id, module_path, expression.position)?
@@ -469,7 +469,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 })
             }
             ast::ExpressionKind::StructConstructor(struct_name) => {
-                let id = types::Identifier::parse(struct_name);
+                let id = Identifier::parse(struct_name);
 
                 let struct_type = locals
                     .get(id, module_path, expression.position)?
@@ -495,7 +495,7 @@ impl<'pre> DefinitionChecker<'pre> {
             ast::ExpressionKind::FieldAccess { target, field_name } => {
                 let target = self.type_check_expression(target, locals, module_path)?;
 
-                let field_name = types::Identifier::parse(field_name);
+                let field_name = Identifier::parse(field_name);
                 let struct_name = target.type_.struct_name();
 
                 let field_type = self
@@ -564,7 +564,7 @@ impl<'pre> DefinitionChecker<'pre> {
         let self_argument = callable_arguments
             .first()
             .and_then(|a| {
-                if a.name == types::Identifier::parse("self") {
+                if a.name == Identifier::parse("self") {
                     Some(a)
                 } else {
                     None

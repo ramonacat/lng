@@ -2,12 +2,12 @@ use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::RwLock};
 
 use inkwell::module::Module;
 
-use crate::types;
+use crate::{identifier::Identifier, types};
 
 use super::{Value, context::AllStructs, module::CompiledModule};
 
 pub struct Scope<'ctx> {
-    locals: RwLock<HashMap<types::Identifier, Value<'ctx>>>,
+    locals: RwLock<HashMap<Identifier, Value<'ctx>>>,
     parent: Option<Rc<Scope<'ctx>>>,
 }
 
@@ -58,12 +58,12 @@ impl<'ctx> Scope<'ctx> {
         })
     }
 
-    pub(crate) fn set_value(&self, name: types::Identifier, value: Value<'ctx>) {
+    pub(crate) fn set_value(&self, name: Identifier, value: Value<'ctx>) {
         let old = self.locals.write().unwrap().insert(name, value);
         assert!(old.is_none());
     }
 
-    pub(crate) fn get_value(&self, name: types::Identifier) -> Option<Value<'ctx>> {
+    pub(crate) fn get_value(&self, name: Identifier) -> Option<Value<'ctx>> {
         if let Some(variable) = self.locals.read().unwrap().get(&name) {
             return Some(variable.clone());
         }

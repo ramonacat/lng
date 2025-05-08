@@ -1,10 +1,10 @@
 use itertools::Itertools;
 
-use crate::types::{FQName, Identifier};
+use crate::{identifier::Identifier, types};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IdentifierKind {
-    FQName(FQName),
+    FQName(types::FQName),
     Identifier(Identifier),
 }
 
@@ -20,7 +20,7 @@ impl MangledIdentifier {
     }
 }
 
-pub fn mangle_fq_name(fq_name: FQName) -> MangledIdentifier {
+pub fn mangle_fq_name(fq_name: types::FQName) -> MangledIdentifier {
     let mangled_module_path = fq_name
         .parts()
         .iter()

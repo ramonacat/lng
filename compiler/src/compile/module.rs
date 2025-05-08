@@ -5,7 +5,7 @@ use super::{
     context::CompilerContext,
     rc::{self, RcValue},
 };
-use crate::{name_mangler::MangledIdentifier, types};
+use crate::{identifier::Identifier, name_mangler::MangledIdentifier, types};
 use inkwell::{
     module::{Linkage, Module},
     values::FunctionValue,
@@ -68,11 +68,11 @@ impl<'ctx> CompiledModule<'ctx> {
         self.imported_functions.insert(function.id, function);
     }
 
-    pub(crate) fn set_variable(&self, name: types::Identifier, value: Value<'ctx>) {
+    pub(crate) fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
         self.scope.set_value(name, value);
     }
 
-    pub(crate) fn get_variable(&self, name: types::Identifier) -> Option<Value<'ctx>> {
+    pub(crate) fn get_variable(&self, name: Identifier) -> Option<Value<'ctx>> {
         self.scope.get_value(name)
     }
 

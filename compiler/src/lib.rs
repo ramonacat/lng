@@ -7,6 +7,7 @@ mod types;
 
 pub mod ast;
 pub mod compile;
+mod identifier;
 pub mod parser;
 pub mod std;
 pub mod type_check;
