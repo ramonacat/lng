@@ -346,6 +346,7 @@ impl<'pre> DeclarationChecker<'pre> {
 
         Ok(DeclaredFunction {
             id: types::functions::FunctionId::FQName(function_path),
+            module_name: current_module,
             arguments,
             // TODO figure out the correct error location here
             return_type: resolve_type(
@@ -395,6 +396,7 @@ impl<'pre> DeclarationChecker<'pre> {
                     types::functions::FunctionId::Extern(types::Identifier::parse(extern_))
                 }
             },
+            module_name: module_path,
             arguments,
             return_type: resolve_type(
                 &self.root_module_declaration.module.borrow(),

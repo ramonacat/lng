@@ -10,6 +10,8 @@ use super::errors::TypeCheckError;
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
+    // TODO create a type for ModuleId, akin to FunctionId/StructId
+    pub(super) module_name: types::FQName,
     pub(super) arguments: Vec<types::functions::Argument>,
     pub(super) return_type: types::Type,
     pub(super) ast: ast::Function,
