@@ -10,23 +10,36 @@ use inkwell::{
 
 use crate::{identifier::Identifier, types};
 
-use super::{scope::GlobalScope, unique_name, value::InstantiatedStructType};
+use super::{
+    scope::GlobalScope,
+    unique_name,
+    value::{InstantiatedFunctionType, InstantiatedStructType},
+};
 
 pub struct Builtins {
     pub rc_handle: types::structs::Struct,
 }
 
+// TODO rename -> AllItems or something
 pub struct AllStructs<'ctx> {
     structs: HashMap<types::structs::StructId, types::structs::Struct>,
     instantiated_structs:
         RwLock<HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
+    functions: HashMap<types::functions::FunctionId, types::functions::Function>,
+    instantiated_functions:
+        RwLock<HashMap<types::functions::InstantiatedFunctionId, InstantiatedFunctionType>>,
 }
 
 impl<'ctx> AllStructs<'ctx> {
-    pub(crate) fn new(structs: HashMap<types::structs::StructId, types::structs::Struct>) -> Self {
+    pub(crate) fn new(
+        structs: HashMap<types::structs::StructId, types::structs::Struct>,
+        functions: HashMap<types::functions::FunctionId, types::functions::Function>,
+    ) -> Self {
         Self {
             structs,
             instantiated_structs: RwLock::new(HashMap::new()),
+            functions,
+            instantiated_functions: RwLock::new(HashMap::new()),
         }
     }
 
@@ -51,6 +64,35 @@ impl<'ctx> AllStructs<'ctx> {
 
                 InstantiatedStructType::new(instantiated)
             });
+    }
+
+    pub(crate) fn inspect_instantiated_function<T>(
+        &self,
+        id: &types::functions::InstantiatedFunctionId,
+        inspect: impl FnOnce(Option<&InstantiatedFunctionType>) -> T,
+    ) -> T {
+        self.instantiate_function(id);
+
+        inspect(self.instantiated_functions.read().unwrap().get(id))
+    }
+
+    fn instantiate_function(&self, id: &types::functions::InstantiatedFunctionId) {
+        self.instantiated_functions
+            .write()
+            .unwrap()
+            .entry(id.clone())
+            .or_insert_with(|| {
+                let instantiated = self.functions.get(&id.0).unwrap().instantiate(&id.1);
+
+                InstantiatedFunctionType::new(instantiated)
+            });
+    }
+}
+
+impl std::fmt::Debug for AllStructs<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "structs: {:?}", self.structs.keys())?;
+        writeln!(f, "functions: {:?}", self.functions.keys())
     }
 }
 

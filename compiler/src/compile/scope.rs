@@ -81,7 +81,6 @@ pub struct GlobalScope<'ctx> {
     scope: Rc<Scope<'ctx>>,
     // TODO should it be made private?
     pub structs: AllStructs<'ctx>,
-    pub functions: HashMap<types::functions::FunctionId, types::functions::Function>,
 }
 
 impl Debug for GlobalScope<'_> {
@@ -92,6 +91,10 @@ impl Debug for GlobalScope<'_> {
             writeln!(f, "  {}: ", module.0)?;
             module.1.debug_print(f, 1)?;
         }
+
+        writeln!(f, "---STRUCTS---")?;
+
+        writeln!(f, "{:?}", &self.structs)?;
 
         writeln!(f, "===SCOPE===")?;
 
@@ -111,8 +114,7 @@ impl GlobalScope<'_> {
         Self {
             modules: HashMap::new(),
             scope: Scope::root(),
-            structs: AllStructs::new(structs),
-            functions,
+            structs: AllStructs::new(structs, functions),
         }
     }
 }

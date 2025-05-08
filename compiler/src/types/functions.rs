@@ -33,9 +33,14 @@ impl FunctionId {
     }
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct InstantiatedFunctionId(pub FunctionId, pub TypeArgumentValues);
+
 #[derive(Debug, Clone)]
 pub struct Function {
     pub id: FunctionId,
+    // TODO create types::modules::ModuleId and use it here
+    pub module_name: FQName,
     pub arguments: Vec<Argument>,
     pub return_type: Type,
     pub body: FunctionBody,
@@ -53,12 +58,34 @@ impl Function {
             arguments: TypeArguments::new_empty(),
         }
     }
+
+    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        Self {
+            id: self.id,
+            module_name: self.module_name,
+            arguments: self
+                .arguments
+                .iter()
+                .map(|x| x.instantiate(type_argument_values))
+                .collect(),
+            return_type: self.return_type.instantiate(type_argument_values),
+            body: self.body.instantiate(type_argument_values),
+            position: self.position,
+            visibility: self.visibility,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum FunctionBody {
     Extern(Identifier),
     Statements(Vec<Statement>),
+}
+impl FunctionBody {
+    fn instantiate(&self, _type_argument_values: &TypeArgumentValues) -> Self {
+        // TODO actually make sure the generic types are replaced!
+        self.clone()
+    }
 }
 
 #[derive(Debug, Clone)]

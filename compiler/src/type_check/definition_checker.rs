@@ -115,22 +115,28 @@ impl<'pre> DefinitionChecker<'pre> {
             structs,
             functions: _,
             module: _,
-            predeclared_functions: _,
+            predeclared_functions,
         } = root_module_declaration;
+
+        let mut functions = self.functions.take();
+
+        for (name, function) in predeclared_functions.take() {
+            functions.insert(name, function);
+        }
 
         if let Some(main) = main {
             return Ok(types::RootModule::new_app(
                 main,
                 root_module,
                 structs.into_inner(),
-                self.functions.take(),
+                functions,
             ));
         }
 
         Ok(types::RootModule::new_library(
             root_module,
             structs.into_inner(),
-            self.functions.take(),
+            functions,
         ))
     }
 
@@ -340,6 +346,7 @@ impl<'pre> DefinitionChecker<'pre> {
 
         Ok(types::functions::Function {
             id: declared_function.id,
+            module_name: declared_function.module_name,
             visibility: declared_function.visibility,
             arguments: declared_function
                 .arguments
@@ -523,12 +530,14 @@ impl<'pre> DefinitionChecker<'pre> {
         position: ast::SourceSpan,
     ) -> Result<types::Expression, TypeCheckError> {
         let checked_target = self.type_check_expression(target, locals, module_path)?;
+
         let types::TypeKind::Callable(function_id) = checked_target.type_.kind() else {
             return Err(
                 TypeCheckErrorDescription::CallingNotCallableItem(checked_target.type_)
                     .at(position),
             );
         };
+
         let (mut callable_arguments, return_type) = {
             let root_module = self.root_module_declaration.functions.borrow();
             if let Some(DeclaredFunction {
@@ -545,6 +554,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 body: _,
                 position: _,
                 visibility: _,
+                module_name: _,
             }) = self
                 .root_module_declaration
                 .predeclared_functions
@@ -553,9 +563,10 @@ impl<'pre> DefinitionChecker<'pre> {
             {
                 (arguments.clone(), return_type.clone())
             } else {
-                todo!();
+                panic!("calling unknown function: {function_id}");
             }
         };
+
         let self_argument = callable_arguments
             .first()
             .and_then(|a| {

@@ -1,64 +1,11 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use inkwell::{
-    module::Linkage,
-    values::{BasicValue as _, BasicValueEnum, PointerValue},
-};
+use inkwell::values::{BasicValue as _, BasicValueEnum, PointerValue};
 use itertools::Itertools;
 
-use crate::{ast::SourceSpan, identifier::Identifier, types};
+use crate::{identifier::Identifier, types};
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
-
-#[derive(Clone)]
-pub struct FunctionHandle {
-    pub id: types::functions::FunctionId,
-    pub module_name: types::FQName,
-    pub position: SourceSpan,
-    pub arguments: Vec<types::functions::Argument>,
-    pub return_type: types::Type,
-    pub linkage: Linkage,
-    pub body: types::functions::FunctionBody,
-}
-
-impl FunctionHandle {
-    // TODO this method should not be exist, FunctionHandle should be a lightweight pointer to some
-    // table with all the declared functions, and this struct should only be created for
-    // already instantiated functions
-    pub(crate) fn instantiate(&self, type_argument_values: &types::TypeArgumentValues) -> Self {
-        let arguments = self
-            .arguments
-            .iter()
-            .map(|x| x.instantiate(type_argument_values))
-            .collect();
-
-        let return_type = self.return_type.instantiate(type_argument_values);
-
-        Self {
-            id: self.id,
-            module_name: self.module_name,
-            position: self.position,
-            arguments,
-            return_type,
-            linkage: self.linkage,
-            // TODO we should also instantiate the body! there might be uses of the generic
-            // variable there!
-            body: self.body.clone(),
-        }
-    }
-}
-
-impl Debug for FunctionHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let arguments = self
-            .arguments
-            .iter()
-            .map(|a| format!("{}:{}", a.name, a.type_))
-            .join(", ");
-
-        write!(f, "Fn<{}({})>", self.id, arguments)
-    }
-}
 
 pub struct InstantiatedStructType<'ctx> {
     definition: types::structs::Struct,
@@ -66,6 +13,15 @@ pub struct InstantiatedStructType<'ctx> {
 }
 
 pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::structs::InstantiatedStructId);
+
+pub struct InstantiatedFunctionType {
+    pub(crate) definition: types::functions::Function,
+}
+impl InstantiatedFunctionType {
+    pub(crate) const fn new(definition: types::functions::Function) -> Self {
+        Self { definition }
+    }
+}
 
 impl<'ctx> StructInstance<'ctx> {
     pub(crate) const fn value(&self) -> PointerValue<'ctx> {
@@ -190,22 +146,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         let default_static_fields: Vec<_> = description
             .impls
             .iter()
-            .map(|(name, impl_)| {
-                let handle = FunctionHandle {
-                    id: impl_.id,
-                    body: impl_.body.clone(),
-                    linkage: if impl_.visibility == types::Visibility::Export {
-                        Linkage::External
-                    } else {
-                        Linkage::Internal
-                    },
-                    return_type: impl_.return_type.clone(),
-                    arguments: impl_.arguments.clone(),
-                    position: impl_.position,
-                    module_name: description.name.without_last(),
-                };
-                (*name, Value::Function(handle))
-            })
+            .map(|(name, impl_)| (*name, Value::Function(impl_.id)))
             .collect();
 
         for (name, value) in default_static_fields {
@@ -234,7 +175,8 @@ pub enum Value<'ctx> {
     Primitive(types::structs::InstantiatedStructId, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     // TODO functions should be refered to by id
-    Function(FunctionHandle),
+    Function(types::functions::FunctionId),
+    // TODO this should be StructId
     Struct(types::structs::Struct),
 }
 
@@ -286,14 +228,6 @@ impl<'ctx> Value<'ctx> {
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::Empty => todo!(),
-        }
-    }
-
-    pub fn as_function(&self) -> Option<FunctionHandle> {
-        if let Value::Function(handle) = self {
-            Some(handle.clone())
-        } else {
-            None
         }
     }
 }

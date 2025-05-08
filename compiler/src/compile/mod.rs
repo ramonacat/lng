@@ -17,19 +17,19 @@ use inkwell::{
     builder::BuilderError,
     context::Context,
     execution_engine::ExecutionEngine,
-    module::{Linkage, Module},
+    module::Module,
     values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum},
 };
 use module::CompiledModule;
 use rand::Rng;
 use scope::{GlobalScope, Scope};
-use value::{FunctionHandle, StructInstance, Value};
+use value::{StructInstance, Value};
 
 use crate::{
     ast,
     identifier::Identifier,
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types,
+    types::{self, TypeArgumentValues, functions::InstantiatedFunctionId},
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -71,7 +71,6 @@ pub fn compile(
         main,
     } = compiled_root_module
     else {
-        dbg!(compiled_root_module);
         todo!();
     };
 
@@ -211,7 +210,8 @@ impl IntoCompileError for BuilderError {
 }
 
 pub(crate) struct CompiledFunction<'ctx> {
-    handle: FunctionHandle,
+    // TODO can this just be FunctionId?
+    handle: types::functions::Function,
 
     entry: BasicBlock<'ctx>,
     end: BasicBlock<'ctx>,
@@ -312,8 +312,7 @@ impl<'ctx> Compiler<'ctx> {
             array::describe_structure(),
         );
 
-        self.context.global_scope.structs = AllStructs::new(structs);
-        self.context.global_scope.functions = functions;
+        self.context.global_scope.structs = AllStructs::new(structs, functions);
 
         self.declare_items(root_module, types::FQName::parse(""));
         self.resolve_imports(root_module, types::FQName::parse(""))?;
@@ -321,21 +320,22 @@ impl<'ctx> Compiler<'ctx> {
         // self.define_items(root_module, FQName::parse(""))?;
 
         if let Some(main) = main {
-            let handle = self
+            let definition = self
                 .context
                 .global_scope
-                // TODO remove this match, treat the id as opaque
-                .get_value(match main {
-                    types::functions::FunctionId::FQName(fqname) => fqname,
-                    types::functions::FunctionId::Extern(identifier) => {
-                        types::FQName::parse(&identifier.raw())
-                    }
-                })
-                .unwrap()
-                .as_function()
-                .unwrap();
-            // TODO verify in type_check that main has no generic arguments
-            self.compile_function(&handle).unwrap();
+                .structs
+                .inspect_instantiated_function(
+                    &InstantiatedFunctionId(main, TypeArgumentValues::new_empty()),
+                    |function| {
+                        let function = function.unwrap();
+                        // TODO verify in type_check that main has no generic arguments
+                        // TODO can we avoid this clone?
+                        function.definition.clone()
+                    },
+                );
+
+            self.compile_function(&definition).unwrap();
+
             Ok(CompiledRootModule::App {
                 scope: self.context.global_scope,
                 main,
@@ -370,15 +370,15 @@ impl<'ctx> Compiler<'ctx> {
                     match value {
                         Value::Primitive(_, _) => todo!(),
                         Value::Reference(_) => todo!(),
-                        Value::Function(function) => {
-                            module.import_function(function.clone());
+                        Value::Function(function_id) => {
+                            module.import_function(function_id);
 
-                            let function_value = Value::Function(function.clone());
+                            let function_value = Value::Function(function_id);
 
                             module.set_variable(name, function_value);
                         }
-                        Value::Struct(struct_) => {
-                            module.set_variable(name, Value::Struct(struct_.clone()));
+                        Value::Struct(struct_id) => {
+                            module.set_variable(name, Value::Struct(struct_id));
                         }
                         Value::Empty => todo!(),
                     }
@@ -399,41 +399,9 @@ impl<'ctx> Compiler<'ctx> {
 
             match &declaration.kind {
                 types::ItemKind::Function(function_id) => {
-                    let function_handle = {
-                        let function = self
-                            .context
-                            .global_scope
-                            .functions
-                            .get(function_id)
-                            .unwrap();
-
-                        FunctionHandle {
-                            id: *function_id,
-                            module_name: root_path,
-                            linkage: if declaration.visibility == types::Visibility::Export
-                                || matches!(
-                                    function.body,
-                                    types::functions::FunctionBody::Extern(_)
-                                ) {
-                                Linkage::External
-                            } else {
-                                Linkage::Internal
-                            },
-                            position: function.position,
-                            arguments: function.arguments.clone(),
-                            return_type: function.return_type.clone(),
-                            body: function.body.clone(),
-                        }
-                    };
-
                     // TODO remove this match, treat function.id as opaque
-                    self.get_or_create_module(root_path).set_variable(
-                        match function_id {
-                            types::functions::FunctionId::FQName(fqname) => fqname.last(),
-                            types::functions::FunctionId::Extern(identifier) => *identifier,
-                        },
-                        Value::Function(function_handle),
-                    );
+                    self.get_or_create_module(root_path)
+                        .set_variable(path, Value::Function(*function_id));
                 }
                 types::ItemKind::Module(module_declaration) => {
                     self.declare_items(module_declaration, root_path.with_part(path));
@@ -453,7 +421,10 @@ impl<'ctx> Compiler<'ctx> {
             })
     }
 
-    fn compile_function(&mut self, handle: &FunctionHandle) -> Result<(), CompileError> {
+    fn compile_function(
+        &mut self,
+        handle: &types::functions::Function,
+    ) -> Result<(), CompileError> {
         let types::functions::FunctionBody::Statements(statements) = &handle.body else {
             return Ok(());
         };
@@ -464,10 +435,7 @@ impl<'ctx> Compiler<'ctx> {
 
         // TODO in reality, at this point we should already have the handle instantiated, do this
         // earlier!
-        let mut compiled_function = module.begin_compile_function(
-            handle.instantiate(&types::TypeArgumentValues::new_empty()),
-            &self.context,
-        );
+        let mut compiled_function = module.begin_compile_function(handle, &self.context);
 
         self.compile_statements(statements, module_path, &mut compiled_function)?;
 
@@ -673,33 +641,40 @@ impl<'ctx> Compiler<'ctx> {
             self.compile_expression(target, self_.cloned(), compiled_function, module_path)?;
         let self_value = compiled_target.0;
 
-        let function = match &compiled_target.1 {
-            Value::Function(function_handle) => function_handle,
+        let function_id = match &compiled_target.1 {
+            Value::Function(function_id) => function_id,
             Value::Empty => todo!(),
             Value::Primitive(_, _) => todo!(),
             Value::Reference(_) => todo!(),
             Value::Struct(_) => todo!(),
         };
 
-        // TODO the instantiation should be done earlier
-        let function = function.instantiate(&types::TypeArgumentValues::new_empty());
-
+        // TODO we should already have an InstantiatedFunctionId here, probably?
+        let definition = self
+            .context
+            .global_scope
+            .structs
+            .inspect_instantiated_function(
+                &InstantiatedFunctionId(*function_id, TypeArgumentValues::new_empty()),
+                |function| function.unwrap().definition.clone(),
+            );
         if !self
             .context
             .global_scope
-            .get_module(function.module_name)
+            .get_module(definition.module_name)
             .unwrap()
-            .has_function(&function.id.into_mangled())
+            // TODO mangle the instantiated FunctionId here!
+            .has_function(&function_id.into_mangled())
         {
-            self.compile_function(&function).unwrap();
+            self.compile_function(&definition).unwrap();
         }
 
-        let compiled_target_function = self
+        let function_value = self
             .context
             .global_scope
             .get_module(module_path)
             .unwrap()
-            .get_or_create_function(&function, &self.context);
+            .get_or_create_function(&definition, &self.context);
 
         self.context
             .builder
@@ -730,14 +705,14 @@ impl<'ctx> Compiler<'ctx> {
             .context
             .builder
             .build_call(
-                compiled_target_function,
+                function_value,
                 &call_arguments,
                 &unique_name(&["call_result"]),
             )
             // TODO treat FunctionId as opaque, remove this match
             .map_err(|e| e.at(position))?;
         let call_result = call_result.as_any_value_enum();
-        let value = match function.return_type.kind() {
+        let value = match definition.return_type.kind() {
             types::TypeKind::Unit => Value::Empty,
             types::TypeKind::Object { type_name: id } => Value::Reference(RcValue::from_pointer(
                 call_result.into_pointer_value(),

@@ -62,5 +62,6 @@ pub fn type_check(
     let type_checker = DeclarationChecker::new(root_module_declaration);
 
     let definition_checker = type_checker.check(program)?;
+
     definition_checker.check()
 }

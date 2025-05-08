@@ -1,7 +1,7 @@
-use std::{collections::HashMap, rc::Rc};
+use std::rc::Rc;
 
 use super::{
-    CompiledFunction, FunctionHandle, Scope, Value, builtins,
+    CompiledFunction, Scope, Value, builtins,
     context::CompilerContext,
     rc::{self, RcValue},
 };
@@ -11,10 +11,22 @@ use inkwell::{
     values::FunctionValue,
 };
 
+impl types::functions::Function {
+    const fn linkage(&self) -> Linkage {
+        match self.id {
+            types::functions::FunctionId::FQName(_) => match self.visibility {
+                types::Visibility::Export => Linkage::External,
+                types::Visibility::Internal => Linkage::Internal,
+            },
+            types::functions::FunctionId::Extern(_) => Linkage::External,
+        }
+    }
+}
+
 pub struct CompiledModule<'ctx> {
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
-    imported_functions: HashMap<types::functions::FunctionId, FunctionHandle>,
+    imported_functions: Vec<types::functions::FunctionId>,
 }
 
 impl std::fmt::Debug for CompiledModule<'_> {
@@ -24,11 +36,11 @@ impl std::fmt::Debug for CompiledModule<'_> {
 }
 
 impl<'ctx> CompiledModule<'ctx> {
-    pub fn new(scope: Rc<Scope<'ctx>>, llvm_module: Module<'ctx>) -> Self {
+    pub const fn new(scope: Rc<Scope<'ctx>>, llvm_module: Module<'ctx>) -> Self {
         Self {
             llvm_module,
             scope,
-            imported_functions: HashMap::new(),
+            imported_functions: vec![],
         }
     }
 
@@ -64,8 +76,8 @@ impl<'ctx> CompiledModule<'ctx> {
         self.declare_function_inner(name, arguments, return_type, linkage, context)
     }
 
-    pub(crate) fn import_function(&mut self, function: FunctionHandle) {
-        self.imported_functions.insert(function.id, function);
+    pub(crate) fn import_function(&mut self, function: types::functions::FunctionId) {
+        self.imported_functions.push(function);
     }
 
     pub(crate) fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
@@ -78,13 +90,13 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn begin_compile_function(
         &self,
-        handle: FunctionHandle,
+        handle: &types::functions::Function,
         context: &CompilerContext<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
         let mut rcs = vec![];
         let scope = self.scope.child();
 
-        let llvm_function = self.get_or_create_function(&handle, context);
+        let llvm_function = self.get_or_create_function(handle, context);
 
         let entry_block = context
             .llvm_context
@@ -125,7 +137,7 @@ impl<'ctx> CompiledModule<'ctx> {
         rc::build_prologue(&rcs, context);
 
         CompiledFunction {
-            handle,
+            handle: handle.clone(),
             scope,
             entry: entry_block,
             end: end_block,
@@ -146,14 +158,14 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn get_or_create_function(
         &self,
-        handle: &FunctionHandle,
+        handle: &types::functions::Function,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.llvm_module
             .get_function(handle.id.into_mangled().as_str())
             .unwrap_or_else(|| {
                 self.declare_function(
-                    handle.linkage,
+                    handle.linkage(),
                     &handle.id.into_mangled(),
                     &handle.arguments,
                     &handle.return_type,
