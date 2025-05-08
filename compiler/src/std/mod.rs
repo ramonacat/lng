@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 use inkwell::context::Context;
 
 use crate::{
+    ast,
     compile::{CompileError, CompiledRootModule, Compiler},
     type_check::{errors::TypeCheckError, type_check},
     types,
@@ -17,7 +18,7 @@ pub(crate) static TYPE_NAME_STRING: LazyLock<types::FQName> =
 
 pub fn type_check_std() -> Result<types::RootModule, TypeCheckError> {
     let asts = vec![crate::parser::parse_file(
-        "std",
+        ast::SourceFileName::new("std".to_string()),
         include_str!("../../stdlib/std.lng"),
     )];
 

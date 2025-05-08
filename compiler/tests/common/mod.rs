@@ -1,6 +1,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use compiler::{
+    ast,
     compile::{
         builtins::{rc::BuiltinRc, string::BuiltinString},
         compile,
@@ -39,7 +40,7 @@ fn register_test_mappings(engine: &ExecutionEngine, module: &Module) {
 pub fn run(program: HashMap<&str, &str>) -> String {
     let asts = program
         .into_iter()
-        .map(|(name, contents)| parse_file(name, contents))
+        .map(|(name, contents)| parse_file(ast::SourceFileName::new(name.to_string()), contents))
         .collect::<Vec<_>>();
 
     let std_program = type_check_std().unwrap();

@@ -1,5 +1,5 @@
 use crate::ast;
-grammar;
+grammar(filename: ast::SourceFileName);
 
 Identifier: String = {
     r"\p{ID_Start}\p{ID_Continue}*" => <>.to_string()
@@ -11,15 +11,15 @@ ImportPath: Vec<String> = {
 }
 
 Import: ast::Import = {
-    "import" <path:ImportPath> ";" => ast::Import { 
+    <start:@L> "import" <path:ImportPath> ";" <end:@R> => ast::Import { 
         path, 
         alias: None,
-        position: ast::SourceRange::new((0,0), (0,0))
+        position: ast::SourceRange::new(filename, start, end)
     },
-    "import" <path:ImportPath> "as" <alias:Identifier> ";" => ast::Import { 
+    <start:@L> "import" <path:ImportPath> "as" <alias:Identifier> ";" <end:@R> => ast::Import { 
         path, 
         alias: Some(alias),
-        position: ast::SourceRange::new((0,0), (0,0))
+        position: ast::SourceRange::new(filename, start, end)
     }
 }
 
@@ -42,10 +42,10 @@ Type: ast::TypeDescription = {
 }
 
 FunctionArgument: ast::Argument = {
-    <name:Identifier> ":" <type_:Type> => ast::Argument {
+    <start:@L> <name:Identifier> ":" <type_:Type> <end:@R> => ast::Argument {
         name,
         type_,
-        position: ast::SourceRange::new((0,0), (0,0))
+        position: ast::SourceRange::new(filename, start, end)
     }
 }
 
@@ -68,29 +68,29 @@ Expressions: Vec<ast::Expression> = {
 }
 
 Literal: ast::Literal = {
-    r#""(?:\\"|.)*""# => ast::Literal::String(<>[1..<>.len()-1].to_string(), ast::SourceRange::new((0,0), (0,0))),
+    <start:@L> <lit:r#""(?:\\"|.)*""#> <end:@R> => ast::Literal::String(lit[1..lit.len()-1].to_string(), ast::SourceRange::new(filename, start, end)),
     r#"[1-9][0-9]*"# => ast::Literal::UnsignedInteger(<>.parse().unwrap()),
 }
 
 Expression: ast::Expression = {
-    <literal:Literal> => ast::Expression {
-        position: ast::SourceRange::new((0,0), (0,0)),
+    <start:@L> <literal:Literal> <end:@R> => ast::Expression {
+        position: ast::SourceRange::new(filename, start, end),
         kind: ast::ExpressionKind::Literal(literal)
     },
-    <variable:Identifier> => ast::Expression {
-        position: ast::SourceRange::new((0,0), (0,0)),
+    <start:@L> <variable:Identifier> <end:@R> => ast::Expression {
+        position: ast::SourceRange::new(filename, start, end),
         kind: ast::ExpressionKind::VariableReference(variable)
     },
-    <target:Expression> "(" <arguments:Expressions?> ")" => ast::Expression {
-        position: ast::SourceRange::new((0,0), (0,0)),
+    <start:@L> <target:Expression> "(" <arguments:Expressions?> ")" <end:@R> => ast::Expression {
+        position: ast::SourceRange::new(filename, start, end),
         kind: ast::ExpressionKind::Call{target: Box::new(target), arguments: arguments.unwrap_or_default() }
     },
-    <name:Identifier> "{" "}" => ast::Expression {
-        position: ast::SourceRange::new((0,0), (0,0)),
+    <start:@L> <name:Identifier> "{" "}" <end:@R> => ast::Expression {
+        position: ast::SourceRange::new(filename, start, end),
         kind: ast::ExpressionKind::StructConstructor(name)
     },
-    <target:Expression> "." <field_name:Identifier> => ast::Expression {
-        position: ast::SourceRange::new((0,0), (0,0)),
+    <start:@L> <target:Expression> "." <field_name:Identifier> <end:@R> => ast::Expression {
+        position: ast::SourceRange::new(filename, start, end),
         kind: ast::ExpressionKind::FieldAccess {
             target: Box::new(target), field_name
         }
@@ -99,29 +99,29 @@ Expression: ast::Expression = {
 
 Statement: ast::Statement = {
     "let" <name:Identifier> ":" <type_:Type> "=" <expression:Expression> ";" => ast::Statement::Let(name, type_, expression),
-    "return" <expression:Expression> ";" => ast::Statement::Return(expression, ast::SourceRange::new((0,0), (0,0))),
-    <expression:Expression> ";" => ast::Statement::Expression(expression, ast::SourceRange::new((0,0), (0,0)))
+    <start:@L> "return" <expression:Expression> ";" <end:@R> => ast::Statement::Return(expression, ast::SourceRange::new(filename, start, end)),
+    <start:@L> <expression:Expression> ";" <end:@R> => ast::Statement::Expression(expression, ast::SourceRange::new(filename, start, end))
 }
 
 FunctionBody: ast::FunctionBody = {
-    "{" <statements:(<Statement>)*> "}" => {
-        ast::FunctionBody::Statements(statements, ast::SourceRange::new((0,0), (0,0)))
+    <start:@L> "{" <statements:(<Statement>)*> "}" <end:@R> => {
+        ast::FunctionBody::Statements(statements, ast::SourceRange::new(filename, start,end))
     }, 
-    "extern" "(" <name:Identifier> ")" ";" => {
-        ast::FunctionBody::Extern(name, ast::SourceRange::new((0,0), (0,0)))
+    <start:@L> "extern" "(" <name:Identifier> ")" ";" <end:@R> => {
+        ast::FunctionBody::Extern(name, ast::SourceRange::new(filename, start, end))
     }
 }
 
 Function: ast::Function = {
-    <visibility:Visibility> "fn" <name:Identifier> "(" <arguments:FunctionArguments?> ")" ":" <return_type:Type>
-        <body:FunctionBody> 
+    <start:@L> <visibility:Visibility> "fn" <name:Identifier> "(" <arguments:FunctionArguments?> ")" ":" <return_type:Type>
+        <body:FunctionBody> <end:@R>
         => ast::Function {
             visibility,
             name,
             arguments: arguments.unwrap_or_default(),
             return_type,
             body,
-            position: ast::SourceRange::new((0,0), (0,0))
+            position: ast::SourceRange::new(filename, start, end)
         }
 }
 
@@ -133,17 +133,17 @@ ImplDeclaration: ast::Impl = {
 }
 
 Declaration: ast::Declaration = {
-    <s:StructDeclaration> => ast::Declaration {
+    <start:@L> <s:StructDeclaration> <end:@R> => ast::Declaration {
         kind: ast::DeclarationKind::Struct(s),
-        position: ast::SourceRange::new((0,0), (0,0))
+        position: ast::SourceRange::new(filename, start, end)
     },
-    <impl_:ImplDeclaration> => ast::Declaration {
+    <start:@L> <impl_:ImplDeclaration> <end:@R> => ast::Declaration {
         kind: ast::DeclarationKind::Impl(impl_),
-        position: ast::SourceRange::new((0,0), (0,0))
+        position: ast::SourceRange::new(filename, start, end)
     },
-    <function:Function> => ast::Declaration {
+    <start:@L> <function:Function> <end:@R> => ast::Declaration {
         kind: ast::DeclarationKind::Function(function),
-        position: ast::SourceRange::new((0,0), (0,0))
+        position: ast::SourceRange::new(filename, start, end)
     }
 }
 
@@ -151,6 +151,6 @@ pub SourceFile: ast::SourceFile = {
     <imports:(<Import>)*> <declarations:(<Declaration>)*> => ast::SourceFile {
         imports,
         declarations,
-        name: String::new()
+        name: filename
     }
 }

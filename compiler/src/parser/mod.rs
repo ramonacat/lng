@@ -23,16 +23,12 @@ lalrpop_mod!(
 );
 
 #[must_use]
-pub fn parse_file(name: &str, contents: &str) -> ast::SourceFile {
-    let ast = grammar::SourceFileParser::new().parse(contents);
+pub fn parse_file(name: ast::SourceFileName, contents: &str) -> ast::SourceFile {
+    let ast = grammar::SourceFileParser::new().parse(name, contents);
 
     // TODO Actual error handling
     match ast {
-        Ok(mut ast) => {
-            ast.name = name.to_string();
-
-            ast
-        }
+        Ok(ast) => ast,
         Err(e) => match e {
             lalrpop_util::ParseError::InvalidToken { location } => {
                 todo!("invalid token: {}", &contents[location..])

@@ -24,7 +24,7 @@ impl<'pre> DeclarationChecker<'pre> {
         // hierarchy (i.e. main.test will definitely appear after main)
         let mut modules_to_declare = program
             .iter()
-            .map(|x| types::FQName::parse(&x.name))
+            .map(|x| types::FQName::parse(&x.name.to_string()))
             .collect::<Vec<_>>();
         modules_to_declare.sort_by_key(|name| name.len());
 
@@ -48,7 +48,7 @@ impl<'pre> DeclarationChecker<'pre> {
                     types::FQName::from_parts(path.iter().map(String::as_str));
                 let item_name = types::Identifier::parse(name);
 
-                let importing_module_path = types::FQName::parse(&file.name);
+                let importing_module_path = types::FQName::parse(&file.name.to_string());
                 let imported_as = importing_module_path.with_part(
                     import
                         .alias
@@ -73,7 +73,7 @@ impl<'pre> DeclarationChecker<'pre> {
         program: &[ast::SourceFile],
     ) -> Result<(), TypeCheckError> {
         for file in program {
-            let module_path = types::FQName::parse(&file.name);
+            let module_path = types::FQName::parse(&file.name.to_string());
             for declaration in &file.declarations {
                 let position = declaration.position;
 
@@ -164,7 +164,7 @@ impl<'pre> DeclarationChecker<'pre> {
         program: &[ast::SourceFile],
     ) -> Result<(), TypeCheckError> {
         for file in program {
-            let module_path = types::FQName::parse(&file.name);
+            let module_path = types::FQName::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -177,7 +177,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
 
         for file in program {
-            let module_path = types::FQName::parse(&file.name);
+            let module_path = types::FQName::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -213,7 +213,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
 
         for file in program {
-            let module_path = types::FQName::parse(&file.name);
+            let module_path = types::FQName::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {

@@ -1,22 +1,48 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    sync::{LazyLock, RwLock},
+};
+
+use string_interner::{StringInterner, backend::StringBackend, symbol::SymbolU32};
+
+static FILENAMES: LazyLock<RwLock<StringInterner<StringBackend>>> =
+    LazyLock::new(|| RwLock::new(StringInterner::default()));
 
 #[derive(Debug, Clone, Copy)]
 pub enum SourceRange {
-    Visible((usize, usize), (usize, usize)),
+    Visible(SourceFileName, usize, usize),
     Internal,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SourceFileName(SymbolU32);
+
+impl SourceFileName {
+    #[must_use]
+    pub fn new(name: String) -> Self {
+        let symbol = FILENAMES.write().unwrap().get_or_intern(name);
+        Self(symbol)
+    }
+}
+
+impl Display for SourceFileName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", FILENAMES.read().unwrap().resolve(self.0).unwrap())
+    }
+}
+
 impl SourceRange {
-    pub const fn new(start: (usize, usize), end: (usize, usize)) -> Self {
-        Self::Visible(start, end)
+    #[must_use]
+    pub const fn new(filename: SourceFileName, start: usize, end: usize) -> Self {
+        Self::Visible(filename, start, end)
     }
 }
 
 impl Display for SourceRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Visible(start, end) => {
-                write!(f, "({}, {}) to ({}, {})", start.0, start.1, end.0, end.1)
+            Self::Visible(filename, start, end) => {
+                write!(f, "{filename}({start}, {end})")
             }
             Self::Internal => write!(f, "(internal)"),
         }
@@ -167,7 +193,7 @@ pub struct Import {
 
 #[derive(Debug)]
 pub struct SourceFile {
-    pub name: String,
+    pub name: SourceFileName,
     pub declarations: Vec<Declaration>,
     pub imports: Vec<Import>,
 }
