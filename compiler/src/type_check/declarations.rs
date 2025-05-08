@@ -1,6 +1,9 @@
 use std::{cell::RefCell, collections::HashMap};
 
-use crate::{ast, errors::ErrorLocation, types};
+use crate::{
+    ast::{self, SourceSpan},
+    types,
+};
 
 use super::errors::TypeCheckError;
 
@@ -10,7 +13,7 @@ pub(super) struct DeclaredFunction {
     pub(super) arguments: Vec<types::functions::Argument>,
     pub(super) return_type: types::Type,
     pub(super) ast: ast::Function,
-    pub(super) position: ast::SourceRange,
+    pub(super) position: ast::SourceSpan,
     pub(super) visibility: types::Visibility,
 }
 
@@ -88,6 +91,7 @@ impl<'pre> DeclaredModule<'pre> {
                 DeclaredItem {
                     kind: DeclaredItemKind::Predeclared(item),
                     visibility,
+                    position: item.position,
                 },
             );
         }
@@ -108,6 +112,7 @@ impl<'pre> DeclaredModule<'pre> {
                 DeclaredItemKind::Predeclared(types::Item {
                     kind: types::ItemKind::Module(_),
                     visibility: _,
+                    position: ast::SourceSpan::Internal,
                 }) => {
                     // do nothing, the structure must've been already setup
                 }
@@ -135,9 +140,11 @@ impl<'pre> DeclaredModule<'pre> {
             DeclaredItemKind::Predeclared(types::Item {
                 kind: types::ItemKind::Module(m),
                 visibility,
+                position: ast::SourceSpan::Internal,
             }) => Some(DeclaredItem {
                 kind: DeclaredItemKind::Predeclared(m.get_item(rest).unwrap()),
                 visibility: *visibility,
+                position: ast::SourceSpan::Internal,
             }),
             _ => todo!(),
         }
@@ -161,6 +168,7 @@ pub(super) enum DeclaredItemKind<'pre> {
 pub(super) struct DeclaredItem<'pre> {
     pub(super) kind: DeclaredItemKind<'pre>,
     pub(super) visibility: types::Visibility,
+    pub(super) position: SourceSpan,
 }
 
 impl std::fmt::Debug for DeclaredItem<'_> {
@@ -186,7 +194,7 @@ impl DeclaredItem<'_> {
         &self,
         root_module: &DeclaredModule,
         current_module: types::FQName,
-        error_location: ErrorLocation,
+        error_location: ast::SourceSpan,
     ) -> Result<types::Type, TypeCheckError> {
         // TODO also handle the case of this item being generic
         match &self.kind {
@@ -217,7 +225,7 @@ pub(super) fn resolve_type(
     root_module: &DeclaredModule,
     current_module: types::FQName,
     r#type: &ast::TypeDescription,
-    error_location: ErrorLocation,
+    error_location: ast::SourceSpan,
 ) -> Result<types::Type, TypeCheckError> {
     // TODO handle generics here
     match r#type {

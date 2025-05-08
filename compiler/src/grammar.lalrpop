@@ -14,12 +14,12 @@ Import: ast::Import = {
     <start:@L> "import" <path:ImportPath> ";" <end:@R> => ast::Import { 
         path, 
         alias: None,
-        position: ast::SourceRange::new(filename, start, end)
+        position: ast::SourceSpan::new(filename, start, end)
     },
     <start:@L> "import" <path:ImportPath> "as" <alias:Identifier> ";" <end:@R> => ast::Import { 
         path, 
         alias: Some(alias),
-        position: ast::SourceRange::new(filename, start, end)
+        position: ast::SourceSpan::new(filename, start, end)
     }
 }
 
@@ -28,10 +28,11 @@ Visibility: ast::Visibility = {
 }
 
 StructDeclaration: ast::Struct = {
-    <visibility:Visibility> "struct" <name:Identifier> "{" "}" => ast::Struct {
+    <start:@L> <visibility:Visibility> "struct" <name:Identifier> "{" "}" <end:@R> => ast::Struct {
         name,
         fields: vec![],
-        visibility
+        visibility,
+        position: ast::SourceSpan::new(filename, start, end)
     }
 }
 
@@ -45,7 +46,7 @@ FunctionArgument: ast::Argument = {
     <start:@L> <name:Identifier> ":" <type_:Type> <end:@R> => ast::Argument {
         name,
         type_,
-        position: ast::SourceRange::new(filename, start, end)
+        position: ast::SourceSpan::new(filename, start, end)
     }
 }
 
@@ -68,29 +69,29 @@ Expressions: Vec<ast::Expression> = {
 }
 
 Literal: ast::Literal = {
-    <start:@L> <lit:r#""(?:\\"|.)*""#> <end:@R> => ast::Literal::String(lit[1..lit.len()-1].to_string(), ast::SourceRange::new(filename, start, end)),
+    <start:@L> <lit:r#""(?:\\"|.)*""#> <end:@R> => ast::Literal::String(lit[1..lit.len()-1].to_string(), ast::SourceSpan::new(filename, start, end)),
     r#"[1-9][0-9]*"# => ast::Literal::UnsignedInteger(<>.parse().unwrap()),
 }
 
 Expression: ast::Expression = {
     <start:@L> <literal:Literal> <end:@R> => ast::Expression {
-        position: ast::SourceRange::new(filename, start, end),
+        position: ast::SourceSpan::new(filename, start, end),
         kind: ast::ExpressionKind::Literal(literal)
     },
     <start:@L> <variable:Identifier> <end:@R> => ast::Expression {
-        position: ast::SourceRange::new(filename, start, end),
+        position: ast::SourceSpan::new(filename, start, end),
         kind: ast::ExpressionKind::VariableReference(variable)
     },
     <start:@L> <target:Expression> "(" <arguments:Expressions?> ")" <end:@R> => ast::Expression {
-        position: ast::SourceRange::new(filename, start, end),
+        position: ast::SourceSpan::new(filename, start, end),
         kind: ast::ExpressionKind::Call{target: Box::new(target), arguments: arguments.unwrap_or_default() }
     },
     <start:@L> <name:Identifier> "{" "}" <end:@R> => ast::Expression {
-        position: ast::SourceRange::new(filename, start, end),
+        position: ast::SourceSpan::new(filename, start, end),
         kind: ast::ExpressionKind::StructConstructor(name)
     },
     <start:@L> <target:Expression> "." <field_name:Identifier> <end:@R> => ast::Expression {
-        position: ast::SourceRange::new(filename, start, end),
+        position: ast::SourceSpan::new(filename, start, end),
         kind: ast::ExpressionKind::FieldAccess {
             target: Box::new(target), field_name
         }
@@ -99,16 +100,16 @@ Expression: ast::Expression = {
 
 Statement: ast::Statement = {
     "let" <name:Identifier> ":" <type_:Type> "=" <expression:Expression> ";" => ast::Statement::Let(name, type_, expression),
-    <start:@L> "return" <expression:Expression> ";" <end:@R> => ast::Statement::Return(expression, ast::SourceRange::new(filename, start, end)),
-    <start:@L> <expression:Expression> ";" <end:@R> => ast::Statement::Expression(expression, ast::SourceRange::new(filename, start, end))
+    <start:@L> "return" <expression:Expression> ";" <end:@R> => ast::Statement::Return(expression, ast::SourceSpan::new(filename, start, end)),
+    <start:@L> <expression:Expression> ";" <end:@R> => ast::Statement::Expression(expression, ast::SourceSpan::new(filename, start, end))
 }
 
 FunctionBody: ast::FunctionBody = {
     <start:@L> "{" <statements:(<Statement>)*> "}" <end:@R> => {
-        ast::FunctionBody::Statements(statements, ast::SourceRange::new(filename, start,end))
+        ast::FunctionBody::Statements(statements, ast::SourceSpan::new(filename, start,end))
     }, 
     <start:@L> "extern" "(" <name:Identifier> ")" ";" <end:@R> => {
-        ast::FunctionBody::Extern(name, ast::SourceRange::new(filename, start, end))
+        ast::FunctionBody::Extern(name, ast::SourceSpan::new(filename, start, end))
     }
 }
 
@@ -121,7 +122,7 @@ Function: ast::Function = {
             arguments: arguments.unwrap_or_default(),
             return_type,
             body,
-            position: ast::SourceRange::new(filename, start, end)
+            position: ast::SourceSpan::new(filename, start, end)
         }
 }
 
@@ -135,15 +136,15 @@ ImplDeclaration: ast::Impl = {
 Declaration: ast::Declaration = {
     <start:@L> <s:StructDeclaration> <end:@R> => ast::Declaration {
         kind: ast::DeclarationKind::Struct(s),
-        position: ast::SourceRange::new(filename, start, end)
+        position: ast::SourceSpan::new(filename, start, end)
     },
     <start:@L> <impl_:ImplDeclaration> <end:@R> => ast::Declaration {
         kind: ast::DeclarationKind::Impl(impl_),
-        position: ast::SourceRange::new(filename, start, end)
+        position: ast::SourceSpan::new(filename, start, end)
     },
     <start:@L> <function:Function> <end:@R> => ast::Declaration {
         kind: ast::DeclarationKind::Function(function),
-        position: ast::SourceRange::new(filename, start, end)
+        position: ast::SourceSpan::new(filename, start, end)
     }
 }
 

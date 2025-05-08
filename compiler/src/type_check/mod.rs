@@ -12,7 +12,6 @@ use errors::{TypeCheckError, TypeCheckErrorDescription};
 
 use crate::{
     ast,
-    errors::ErrorLocation,
     types::{self, structs::InstantiatedStructId},
 };
 
@@ -21,7 +20,7 @@ impl types::Item {
         &self,
         root_module: &DeclaredModule,
         current_module: types::FQName,
-        error_location: ErrorLocation,
+        error_location: ast::SourceSpan,
     ) -> Result<types::Type, TypeCheckError> {
         // TODO handle possible generics here
         match &self.kind {

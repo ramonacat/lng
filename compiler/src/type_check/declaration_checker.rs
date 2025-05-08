@@ -2,7 +2,7 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
+use crate::{ast, std::TYPE_NAME_STRING, types};
 
 use super::{
     DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
@@ -35,6 +35,7 @@ impl<'pre> DeclarationChecker<'pre> {
                     kind: DeclaredItemKind::Module(DeclaredModule::new()),
                     // TODO how do we determine the visibility for modules?
                     visibility: types::Visibility::Export,
+                    position: ast::SourceSpan::Internal,
                 },
             );
         }
@@ -62,6 +63,7 @@ impl<'pre> DeclarationChecker<'pre> {
                             imported_item: exporting_module_name.with_part(item_name),
                         }),
                         visibility: types::Visibility::Internal,
+                        position: import.position,
                     },
                 );
             }
@@ -82,7 +84,6 @@ impl<'pre> DeclarationChecker<'pre> {
                     ast::DeclarationKind::Impl(impl_declaration) => {
                         let struct_name = types::Identifier::parse(&impl_declaration.struct_name);
                         let struct_path = module_path.with_part(struct_name);
-                        let error_location = ErrorLocation::Position(struct_path, position);
 
                         let functions = impl_declaration
                             .functions
@@ -140,7 +141,7 @@ impl<'pre> DeclarationChecker<'pre> {
                             structs.get_mut(&types::structs::StructId::FQName(struct_path))
                         else {
                             return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
-                                .at(error_location));
+                                .at(position));
                         };
 
                         for (field_name, field) in fields_to_add {
@@ -204,6 +205,7 @@ impl<'pre> DeclarationChecker<'pre> {
                             DeclaredItem {
                                 visibility: Self::convert_visibility(function.visibility),
                                 kind: DeclaredItemKind::Function(function_id),
+                                position: function.position,
                             },
                         );
                     }
@@ -225,10 +227,7 @@ impl<'pre> DeclarationChecker<'pre> {
                                 &self.root_module_declaration.module.borrow(),
                                 module_path,
                                 &field.type_,
-                                ErrorLocation::Position(
-                                    module_path.with_part(types::Identifier::parse(&struct_.name)),
-                                    field.position,
-                                ),
+                                field.position,
                             )?;
                         }
                     }
@@ -252,10 +251,7 @@ impl<'pre> DeclarationChecker<'pre> {
                     &self.root_module_declaration.module.borrow(),
                     module_path,
                     &field.type_,
-                    ErrorLocation::Position(
-                        module_path.with_part(types::Identifier::parse(&struct_.name)),
-                        field.position,
-                    ),
+                    field.position,
                 )?,
 
                 static_: false,
@@ -281,6 +277,7 @@ impl<'pre> DeclarationChecker<'pre> {
             DeclaredItem {
                 kind: DeclaredItemKind::Struct(id),
                 visibility: Self::convert_visibility(struct_.visibility),
+                position: struct_.position,
             },
         );
         Ok(())
@@ -328,7 +325,7 @@ impl<'pre> DeclarationChecker<'pre> {
         function: &ast::Function,
         current_module: types::FQName,
         self_type: types::FQName,
-        position: ast::SourceRange,
+        position: ast::SourceSpan,
     ) -> Result<DeclaredFunction, TypeCheckError> {
         let function_name = types::Identifier::parse(&function.name);
         let function_path = self_type.with_part(function_name);
@@ -341,7 +338,7 @@ impl<'pre> DeclarationChecker<'pre> {
                     &self.root_module_declaration.module.borrow(),
                     current_module,
                     &arg.type_,
-                    ErrorLocation::Position(function_path, arg.position),
+                    arg.position,
                 )?,
                 position: arg.position,
             });
@@ -355,7 +352,8 @@ impl<'pre> DeclarationChecker<'pre> {
                 &self.root_module_declaration.module.borrow(),
                 current_module,
                 &function.return_type,
-                ErrorLocation::Indeterminate,
+                position, // TODO this should be the position where the return type is declared,
+                          // not the whole declaration
             )?,
             ast: function.clone(),
             position,
@@ -367,7 +365,7 @@ impl<'pre> DeclarationChecker<'pre> {
         &self,
         function: &ast::Function,
         module_path: types::FQName,
-        position: ast::SourceRange,
+        position: ast::SourceSpan,
     ) -> DeclaredFunction {
         let function_name = types::Identifier::parse(&function.name);
         let function_path = module_path.with_part(function_name);
@@ -381,7 +379,7 @@ impl<'pre> DeclarationChecker<'pre> {
                     &self.root_module_declaration.module.borrow(),
                     module_path,
                     &arg.type_,
-                    ErrorLocation::Position(function_path, arg.position),
+                    arg.position,
                 )
                 .unwrap(),
                 position: arg.position,
@@ -398,12 +396,11 @@ impl<'pre> DeclarationChecker<'pre> {
                 }
             },
             arguments,
-            // TODO figure out the correct error location
             return_type: resolve_type(
                 &self.root_module_declaration.module.borrow(),
                 module_path,
                 &function.return_type,
-                ErrorLocation::Indeterminate,
+                position, // TODO this should be the return type, not the whole function
             )
             .unwrap(),
             ast: function.clone(),

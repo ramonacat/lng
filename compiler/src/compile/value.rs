@@ -6,7 +6,7 @@ use inkwell::{
 };
 use itertools::Itertools;
 
-use crate::{ast::SourceRange, types};
+use crate::{ast::SourceSpan, types};
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
 
@@ -14,7 +14,7 @@ use super::{builtins::rc::RcValue, context::CompilerContext};
 pub struct FunctionHandle {
     pub id: types::functions::FunctionId,
     pub module_name: types::FQName,
-    pub position: SourceRange,
+    pub position: SourceSpan,
     // TODO do we need arguments, if they're defined in the definition already???
     pub arguments: Vec<types::functions::Argument>,
     pub return_type: types::Type,
@@ -104,7 +104,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         mut field_values: HashMap<types::Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
         // TODO ensure the type has all the type arguments filled in here
-        let llvm_type = context.make_struct_type(self.definition.name, &self.definition.fields);
+        let llvm_type = context.make_struct_type(&self.definition.fields);
 
         let instance = context
             .builder
@@ -116,9 +116,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 
         for field in self.definition.fields.iter().filter(|x| !x.static_) {
             let field_value = field_values.remove(&field.name).unwrap();
-            let (_, field_pointer) = llvm_type
-                .field_pointer(field.name, instance, context)
-                .unwrap();
+            let (_, field_pointer) = llvm_type.field_pointer(field.name, instance, context);
 
             context
                 .builder
@@ -139,9 +137,8 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> BasicValueEnum<'ctx> {
         let (field_type, field_pointer) = context
-            .make_struct_type(self.definition.name, &self.definition.fields)
-            .field_pointer(field, instance, context)
-            .unwrap();
+            .make_struct_type(&self.definition.fields)
+            .field_pointer(field, instance, context);
 
         context
             .builder
@@ -157,9 +154,8 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         context: &CompilerContext<'ctx>,
     ) {
         let (_, field_pointer) = context
-            .make_struct_type(self.definition.name, &self.definition.fields)
-            .field_pointer(field_name, instance, context)
-            .unwrap();
+            .make_struct_type(&self.definition.fields)
+            .field_pointer(field_name, instance, context);
 
         context.builder.build_store(field_pointer, value).unwrap();
     }

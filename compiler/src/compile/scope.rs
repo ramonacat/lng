@@ -125,7 +125,7 @@ impl<'ctx> GlobalScope<'ctx> {
     ) -> &mut CompiledModule<'ctx> {
         self.modules
             .entry(path)
-            .or_insert_with(|| CompiledModule::new(path, self.scope.child(), create_llvm_module()))
+            .or_insert_with(|| CompiledModule::new(self.scope.child(), create_llvm_module()))
     }
 
     pub fn get_module(&self, path: types::FQName) -> Option<&CompiledModule<'ctx>> {

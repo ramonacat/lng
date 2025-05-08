@@ -1,7 +1,7 @@
 use crate::type_check::declarations::DeclaredRootModule;
 use std::{cell::RefCell, collections::HashMap};
 
-use crate::{ast, errors::ErrorLocation, std::TYPE_NAME_STRING, types};
+use crate::{ast, std::TYPE_NAME_STRING, types};
 
 use super::{
     DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
@@ -36,7 +36,7 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
         &self,
         type_: &ast::TypeDescription,
         current_module: types::FQName,
-        error_location: ErrorLocation,
+        error_location: ast::SourceSpan,
     ) -> Result<types::Type, TypeCheckError> {
         match type_ {
             ast::TypeDescription::Array(type_description) => {
@@ -78,7 +78,7 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
         &self,
         id: types::Identifier,
         current_module: types::FQName,
-        error_location: ErrorLocation,
+        error_location: ast::SourceSpan,
     ) -> Result<Option<types::Type>, TypeCheckError> {
         self.values
             .get(&id)
@@ -155,7 +155,7 @@ impl<'pre> DefinitionChecker<'pre> {
                             .unwrap(),
                         root_path,
                         // TODO figure out the real location here
-                        ErrorLocation::Indeterminate,
+                        declared_item.position,
                     )?;
 
                     self.functions
@@ -167,6 +167,7 @@ impl<'pre> DefinitionChecker<'pre> {
                         types::Item {
                             kind: types::ItemKind::Function(*function_id),
                             visibility: declared_item.visibility,
+                            position: declared_item.position,
                         },
                     );
                 }
@@ -194,6 +195,7 @@ impl<'pre> DefinitionChecker<'pre> {
                         types::Item {
                             kind: types::ItemKind::Module(submodule_root),
                             visibility: types::Visibility::Export,
+                            position: declared_item.position,
                         },
                     );
                 }
@@ -230,8 +232,7 @@ impl<'pre> DefinitionChecker<'pre> {
                         }
                         types::functions::FunctionId::Extern(_) => todo!(),
                     },
-                    // TODO figure out the correct location to pass for errors
-                    ErrorLocation::Indeterminate,
+                    function.position,
                 )?;
 
                 impls
@@ -274,6 +275,7 @@ impl<'pre> DefinitionChecker<'pre> {
         types::Item {
             kind: types::ItemKind::Struct(struct_id),
             visibility: declared_item.visibility,
+            position: declared_item.position,
         }
     }
 
@@ -302,8 +304,10 @@ impl<'pre> DefinitionChecker<'pre> {
                     types::Item {
                         kind: types::ItemKind::Import(types::Import {
                             imported_item: *imported_item_id,
+                            position: imported_item.position,
                         }),
                         visibility: types::Visibility::Internal, // TODO can imports be reexported?
+                        position: imported_item.position,
                     },
                 );
             }
@@ -318,6 +322,7 @@ impl<'pre> DefinitionChecker<'pre> {
                     types::Item {
                         kind: types::ItemKind::StructImport(*struct_id),
                         visibility: types::Visibility::Internal, // TODO can imports be reexported?
+                        position: imported_item.position,
                     },
                 );
             }
@@ -337,11 +342,10 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         declared_function: &DeclaredFunction,
         module: types::FQName,
-        error_location: ErrorLocation,
+        error_location: ast::SourceSpan,
     ) -> Result<types::functions::Function, TypeCheckError> {
         let root_module = self.root_module_declaration.module.borrow();
         let mut locals = Locals::from_globals(&root_module, module);
-        let function_name = module.with_part(types::Identifier::parse(&declared_function.ast.name));
 
         locals.push_arguments(&declared_function.arguments);
 
@@ -355,7 +359,6 @@ impl<'pre> DefinitionChecker<'pre> {
                         module,
                         error_location,
                         &mut locals,
-                        function_name,
                         statement,
                     )?;
 
@@ -393,9 +396,8 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         declared_function: &DeclaredFunction,
         module: types::FQName,
-        error_location: ErrorLocation,
+        error_location: ast::SourceSpan,
         locals: &mut Locals<'_, 'pre>,
-        function_name: types::FQName,
         statement: &ast::Statement,
     ) -> Result<types::Statement, TypeCheckError> {
         Ok(match statement {
@@ -408,11 +410,7 @@ impl<'pre> DefinitionChecker<'pre> {
                     self.type_check_expression(expression, &*locals, module, error_location)?;
 
                 let type_ = locals
-                    .resolve_type(
-                        type_,
-                        module,
-                        ErrorLocation::Position(function_name, expression.position),
-                    )
+                    .resolve_type(type_, module, expression.position)
                     .unwrap();
 
                 if checked_expression.type_ != type_ {
@@ -454,7 +452,7 @@ impl<'pre> DefinitionChecker<'pre> {
         expression: &ast::Expression,
         locals: &Locals,
         module_path: types::FQName,
-        error_location: ErrorLocation,
+        error_location: ast::SourceSpan,
     ) -> Result<types::Expression, TypeCheckError> {
         let position = expression.position;
 
@@ -463,14 +461,8 @@ impl<'pre> DefinitionChecker<'pre> {
                 target,
                 arguments: passed_arguments,
             } => {
-                let expression_type = self.type_check_call(
-                    target,
-                    passed_arguments,
-                    locals,
-                    module_path,
-                    error_location,
-                    position,
-                )?;
+                let expression_type =
+                    self.type_check_call(target, passed_arguments, locals, module_path, position)?;
 
                 Ok(expression_type)
             }
@@ -565,15 +557,13 @@ impl<'pre> DefinitionChecker<'pre> {
         passed_arguments: &[ast::Expression],
         locals: &Locals,
         module_path: types::FQName,
-        error_location: ErrorLocation,
-        position: ast::SourceRange,
+        position: ast::SourceSpan,
     ) -> Result<types::Expression, TypeCheckError> {
-        let checked_target =
-            self.type_check_expression(target, locals, module_path, error_location)?;
+        let checked_target = self.type_check_expression(target, locals, module_path, position)?;
         let types::TypeKind::Callable(function_id) = checked_target.type_.kind() else {
             return Err(
                 TypeCheckErrorDescription::CallingNotCallableItem(checked_target.type_)
-                    .at(error_location),
+                    .at(position),
             );
         };
         let (mut callable_arguments, return_type) = {
@@ -618,7 +608,7 @@ impl<'pre> DefinitionChecker<'pre> {
             return Err(TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(
                 checked_target.type_.clone(),
             )
-            .at(error_location));
+            .at(position));
         }
         let mut checked_arguments = vec![];
         if let Some(self_argument) = self_argument {
@@ -637,7 +627,7 @@ impl<'pre> DefinitionChecker<'pre> {
                     expected_type,
                     actual_type: self_argument.type_,
                 }
-                .at(error_location));
+                .at(position));
             }
 
             checked_arguments.push(types::Expression {
@@ -650,7 +640,7 @@ impl<'pre> DefinitionChecker<'pre> {
         for (argument, called_function_argument) in passed_arguments.iter().zip(callable_arguments)
         {
             let checked_argument =
-                self.type_check_expression(argument, locals, module_path, error_location)?;
+                self.type_check_expression(argument, locals, module_path, position)?;
 
             let expected_type = &called_function_argument.type_;
 
@@ -661,7 +651,7 @@ impl<'pre> DefinitionChecker<'pre> {
                     expected_type: expected_type.clone(),
                     actual_type: checked_argument.type_,
                 }
-                .at(error_location));
+                .at(position));
             }
 
             checked_arguments.push(checked_argument);

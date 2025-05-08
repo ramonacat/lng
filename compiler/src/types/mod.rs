@@ -384,7 +384,7 @@ pub enum ExpressionKind {
 
 #[derive(Debug, Clone)]
 pub struct Expression {
-    pub position: ast::SourceRange,
+    pub position: ast::SourceSpan,
     pub type_: Type,
     pub kind: ExpressionKind,
 }
@@ -398,6 +398,7 @@ pub struct LetStatement {
 #[derive(Debug, Clone)]
 pub struct Import {
     pub imported_item: FQName,
+    pub position: ast::SourceSpan,
 }
 
 #[derive(Debug, Clone)]
@@ -414,6 +415,7 @@ pub enum ItemKind {
 pub struct Item {
     pub kind: ItemKind,
     pub visibility: Visibility,
+    pub position: ast::SourceSpan,
 }
 
 impl std::fmt::Debug for Item {
@@ -555,6 +557,7 @@ impl Module {
         let Item {
             kind: ItemKind::Module(module),
             visibility: _,
+            position: _,
         } = self.items.get(&first).unwrap()
         else {
             todo!();

@@ -9,7 +9,7 @@ static FILENAMES: LazyLock<RwLock<StringInterner<StringBackend>>> =
     LazyLock::new(|| RwLock::new(StringInterner::default()));
 
 #[derive(Debug, Clone, Copy)]
-pub enum SourceRange {
+pub enum SourceSpan {
     Visible(SourceFileName, usize, usize),
     Internal,
 }
@@ -31,14 +31,14 @@ impl Display for SourceFileName {
     }
 }
 
-impl SourceRange {
+impl SourceSpan {
     #[must_use]
     pub const fn new(filename: SourceFileName, start: usize, end: usize) -> Self {
         Self::Visible(filename, start, end)
     }
 }
 
-impl Display for SourceRange {
+impl Display for SourceSpan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Visible(filename, start, end) => {
@@ -51,7 +51,7 @@ impl Display for SourceRange {
 
 #[derive(Debug, Clone)]
 pub enum Literal {
-    String(String, SourceRange),
+    String(String, SourceSpan),
     UnsignedInteger(u64),
 }
 
@@ -81,7 +81,7 @@ pub enum ExpressionKind {
 
 #[derive(Debug, Clone)]
 pub struct Expression {
-    pub position: SourceRange,
+    pub position: SourceSpan,
     pub kind: ExpressionKind,
 }
 
@@ -110,9 +110,9 @@ impl Display for Expression {
 #[derive(Debug, Clone)]
 pub enum Statement {
     #[allow(unused)]
-    Expression(Expression, SourceRange),
+    Expression(Expression, SourceSpan),
     Let(String, TypeDescription, Expression),
-    Return(Expression, SourceRange),
+    Return(Expression, SourceSpan),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,13 +126,13 @@ pub struct Argument {
     #[allow(unused)] //FIXME actually use it
     pub name: String,
     pub type_: TypeDescription,
-    pub position: SourceRange,
+    pub position: SourceSpan,
 }
 
 #[derive(Debug, Clone)]
 pub enum FunctionBody {
-    Statements(Vec<Statement>, SourceRange),
-    Extern(String, SourceRange),
+    Statements(Vec<Statement>, SourceSpan),
+    Extern(String, SourceSpan),
 }
 
 #[derive(Debug, Clone)]
@@ -142,14 +142,14 @@ pub struct Function {
     pub return_type: TypeDescription,
     pub body: FunctionBody,
     pub visibility: Visibility,
-    pub position: SourceRange,
+    pub position: SourceSpan,
 }
 
 #[derive(Debug, Clone)]
 pub struct StructField {
     pub name: String,
     pub type_: TypeDescription,
-    pub position: SourceRange,
+    pub position: SourceSpan,
 }
 
 #[derive(Debug, Clone)]
@@ -157,6 +157,7 @@ pub struct Struct {
     pub name: String,
     pub fields: Vec<StructField>,
     pub visibility: Visibility,
+    pub position: SourceSpan,
 }
 
 #[derive(Debug, Clone)]
@@ -181,14 +182,14 @@ pub enum Visibility {
 #[derive(Debug, Clone)]
 pub struct Declaration {
     pub kind: DeclarationKind,
-    pub position: SourceRange,
+    pub position: SourceSpan,
 }
 
 #[derive(Debug)]
 pub struct Import {
     pub path: Vec<String>,
     pub alias: Option<String>,
-    pub position: SourceRange,
+    pub position: SourceSpan,
 }
 
 #[derive(Debug)]

@@ -1,11 +1,11 @@
 use std::{error::Error, fmt::Display};
 
-use crate::{errors::ErrorLocation, types};
+use crate::{ast, types};
 
 #[derive(Debug)]
 pub struct TypeCheckError {
     description: TypeCheckErrorDescription,
-    location: ErrorLocation,
+    location: ast::SourceSpan,
 }
 
 impl Error for TypeCheckError {}
@@ -45,7 +45,7 @@ pub enum TypeCheckErrorDescription {
 }
 
 impl TypeCheckErrorDescription {
-    pub(super) const fn at(self, location: ErrorLocation) -> TypeCheckError {
+    pub(super) const fn at(self, location: ast::SourceSpan) -> TypeCheckError {
         TypeCheckError {
             description: self,
             location,

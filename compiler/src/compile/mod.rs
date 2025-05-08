@@ -26,10 +26,9 @@ use scope::{GlobalScope, Scope};
 use value::{FunctionHandle, StructInstance, Value};
 
 use crate::{
-    ast::SourceRange,
-    errors::ErrorLocation,
+    ast,
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types::{self, FQName},
+    types,
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -78,12 +77,11 @@ pub fn compile(
     for module in global_scope.into_modules() {
         println!("{}", module.to_ir());
 
-        let module_path = module.path();
         let finalized = module.finalize();
 
-        root_module.link_in_module(finalized).map_err(|e| {
-            CompileErrorDescription::InternalError(e.to_string()).in_module(module_path)
-        })?;
+        root_module
+            .link_in_module(finalized)
+            .expect("module should be linked");
     }
 
     root_module.verify().unwrap();
@@ -123,7 +121,7 @@ pub(crate) struct Compiler<'ctx> {
 #[derive(Debug)]
 pub struct CompileError {
     description: CompileErrorDescription,
-    position: Box<ErrorLocation>,
+    position: ast::SourceSpan,
 }
 
 #[derive(Debug)]
@@ -143,26 +141,11 @@ pub enum CompileErrorDescription {
 }
 
 impl CompileErrorDescription {
-    // TODO clean up all the unwraps so that this actually will be used :)
-    #[allow(unused)]
-    fn at(self, module_path: types::FQName, position: SourceRange) -> CompileError {
+    #[must_use]
+    const fn at(self, position: ast::SourceSpan) -> CompileError {
         CompileError {
             description: self,
-            position: Box::new(ErrorLocation::Position(module_path, position)),
-        }
-    }
-
-    fn in_module(self, name: types::FQName) -> CompileError {
-        CompileError {
-            description: self,
-            position: Box::new(ErrorLocation::ItemOnly(name)),
-        }
-    }
-
-    fn at_indeterminate(self) -> CompileError {
-        CompileError {
-            description: self,
-            position: Box::new(ErrorLocation::Indeterminate),
+            position,
         }
     }
 }
@@ -214,22 +197,14 @@ impl From<BuilderError> for CompileErrorDescription {
 }
 
 trait IntoCompileError {
-    fn into_compile_error_at(
-        self,
-        module_path: types::FQName,
-        position: SourceRange,
-    ) -> CompileError;
+    fn at(self, position: ast::SourceSpan) -> CompileError;
 }
 
 impl IntoCompileError for BuilderError {
-    fn into_compile_error_at(
-        self,
-        module_path: types::FQName,
-        position: SourceRange,
-    ) -> CompileError {
+    fn at(self, position: ast::SourceSpan) -> CompileError {
         CompileError {
             description: self.into(),
-            position: Box::new(ErrorLocation::Position(module_path, position)),
+            position,
         }
     }
 }
@@ -253,18 +228,7 @@ impl<'ctx> CompiledFunction<'ctx> {
         context
             .builder
             .build_return(return_value)
-            // TODO remove this match, treat the functionid as opaque
-            .map_err(|e| {
-                e.into_compile_error_at(
-                    match self.handle.id {
-                        types::functions::FunctionId::FQName(id) => id,
-                        types::functions::FunctionId::Extern(identifier) => {
-                            types::FQName::parse(&identifier.raw())
-                        }
-                    },
-                    self.handle.position,
-                )
-            })?;
+            .map_err(|e| e.at(self.handle.position))?;
 
         Ok(())
     }
@@ -398,7 +362,7 @@ impl<'ctx> Compiler<'ctx> {
 
                     let Some(module) = self.context.global_scope.get_module_mut(root_path) else {
                         return Err(
-                            CompileErrorDescription::ModuleNotFound(root_path).at_indeterminate()
+                            CompileErrorDescription::ModuleNotFound(root_path).at(import.position)
                         );
                     };
 
@@ -706,7 +670,7 @@ impl<'ctx> Compiler<'ctx> {
         self_: Option<&Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
         module_path: types::FQName,
-        position: SourceRange,
+        position: ast::SourceSpan,
         target: &types::Expression,
         arguments: &[types::Expression],
     ) -> Result<Value<'ctx>, CompileError> {
@@ -776,17 +740,7 @@ impl<'ctx> Compiler<'ctx> {
                 &unique_name(&["call_result"]),
             )
             // TODO treat FunctionId as opaque, remove this match
-            .map_err(|e| {
-                e.into_compile_error_at(
-                    match compiled_function.handle.id {
-                        types::functions::FunctionId::FQName(fqname) => fqname,
-                        types::functions::FunctionId::Extern(identifier) => {
-                            FQName::parse(&identifier.raw())
-                        }
-                    },
-                    position,
-                )
-            })?;
+            .map_err(|e| e.at(position))?;
         let call_result = call_result.as_any_value_enum();
         let value = match function.return_type.kind() {
             types::TypeKind::Unit => Value::Empty,

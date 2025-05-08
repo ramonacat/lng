@@ -12,7 +12,6 @@ use inkwell::{
 };
 
 pub struct CompiledModule<'ctx> {
-    path: types::FQName,
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
     imported_functions: HashMap<types::functions::FunctionId, FunctionHandle>,
@@ -25,9 +24,8 @@ impl std::fmt::Debug for CompiledModule<'_> {
 }
 
 impl<'ctx> CompiledModule<'ctx> {
-    pub fn new(path: types::FQName, scope: Rc<Scope<'ctx>>, llvm_module: Module<'ctx>) -> Self {
+    pub fn new(scope: Rc<Scope<'ctx>>, llvm_module: Module<'ctx>) -> Self {
         Self {
-            path,
             llvm_module,
             scope,
             imported_functions: HashMap::new(),
@@ -145,10 +143,6 @@ impl<'ctx> CompiledModule<'ctx> {
         self.llvm_module.verify().unwrap();
 
         self.llvm_module
-    }
-
-    pub(crate) const fn path(&self) -> types::FQName {
-        self.path
     }
 
     pub(crate) fn has_function(&self, name: &MangledIdentifier) -> bool {

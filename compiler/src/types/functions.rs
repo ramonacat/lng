@@ -39,7 +39,7 @@ pub struct Function {
     pub arguments: Vec<Argument>,
     pub return_type: Type,
     pub body: FunctionBody,
-    pub position: ast::SourceRange,
+    pub position: ast::SourceSpan,
     pub visibility: Visibility,
 }
 
@@ -85,7 +85,7 @@ pub enum FunctionBody {
 pub struct Argument {
     pub name: Identifier,
     pub type_: Type,
-    pub position: ast::SourceRange,
+    pub position: ast::SourceSpan,
 }
 impl Argument {
     pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
