@@ -5,6 +5,8 @@ use std::{
 
 use string_interner::{StringInterner, backend::StringBackend, symbol::SymbolU32};
 
+use crate::identifier::Identifier;
+
 static FILENAMES: LazyLock<RwLock<StringInterner<StringBackend>>> =
     LazyLock::new(|| RwLock::new(StringInterner::default()));
 
@@ -71,11 +73,11 @@ pub enum ExpressionKind {
         arguments: Vec<Expression>,
     },
     Literal(Literal),
-    VariableReference(String),
-    StructConstructor(String),
+    VariableReference(Identifier),
+    StructConstructor(Identifier),
     FieldAccess {
         target: Box<Expression>,
-        field_name: String,
+        field_name: Identifier,
     },
 }
 
@@ -111,20 +113,20 @@ impl Display for Expression {
 pub enum Statement {
     #[allow(unused)]
     Expression(Expression, SourceSpan),
-    Let(String, TypeDescription, Expression),
+    Let(Identifier, TypeDescription, Expression),
     Return(Expression, SourceSpan),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeDescription {
     Array(Box<TypeDescription>),
-    Named(String),
+    Named(Identifier),
 }
 
 #[derive(Debug, Clone)]
 pub struct Argument {
     #[allow(unused)] //FIXME actually use it
-    pub name: String,
+    pub name: Identifier,
     pub type_: TypeDescription,
     pub position: SourceSpan,
 }
@@ -132,12 +134,12 @@ pub struct Argument {
 #[derive(Debug, Clone)]
 pub enum FunctionBody {
     Statements(Vec<Statement>, SourceSpan),
-    Extern(String, SourceSpan),
+    Extern(Identifier, SourceSpan),
 }
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub name: String,
+    pub name: Identifier,
     pub arguments: Vec<Argument>,
     pub return_type: TypeDescription,
     pub body: FunctionBody,
@@ -147,14 +149,14 @@ pub struct Function {
 
 #[derive(Debug, Clone)]
 pub struct StructField {
-    pub name: String,
+    pub name: Identifier,
     pub type_: TypeDescription,
     pub position: SourceSpan,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
-    pub name: String,
+    pub name: Identifier,
     pub fields: Vec<StructField>,
     pub visibility: Visibility,
     pub position: SourceSpan,
@@ -162,7 +164,7 @@ pub struct Struct {
 
 #[derive(Debug, Clone)]
 pub struct Impl {
-    pub struct_name: String,
+    pub struct_name: Identifier,
     pub functions: Vec<Function>,
 }
 
@@ -187,8 +189,8 @@ pub struct Declaration {
 
 #[derive(Debug)]
 pub struct Import {
-    pub path: Vec<String>,
-    pub alias: Option<String>,
+    pub path: Vec<Identifier>,
+    pub alias: Option<Identifier>,
     pub position: SourceSpan,
 }
 

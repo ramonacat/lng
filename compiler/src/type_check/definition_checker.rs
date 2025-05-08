@@ -48,25 +48,24 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
                     )?),
                 }))
             }
-            ast::TypeDescription::Named(name) => {
-                let id = Identifier::parse(name);
-
-                self.values
-                    .get(&id)
-                    .cloned()
-                    .map(Ok)
-                    .or_else(|| {
-                        self.globals
-                            .get_item(self.scope_module_name.with_part(id))
-                            .map(|x| x.type_(self.globals, current_module, error_location))
-                    })
-                    .unwrap_or_else(|| {
-                        Err(
-                            TypeCheckErrorDescription::ItemDoesNotExist(types::FQName::parse(name))
-                                .at(error_location),
-                        )
-                    })
-            }
+            ast::TypeDescription::Named(name) => self
+                .values
+                .get(name)
+                .cloned()
+                .map(Ok)
+                .or_else(|| {
+                    self.globals
+                        .get_item(self.scope_module_name.with_part(*name))
+                        .map(|x| x.type_(self.globals, current_module, error_location))
+                })
+                .unwrap_or_else(|| {
+                    Err(
+                        TypeCheckErrorDescription::ItemDoesNotExist(types::FQName::from_parts(
+                            std::iter::once(*name),
+                        ))
+                        .at(error_location),
+                    )
+                }),
         }
     }
 
@@ -335,7 +334,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 types::functions::FunctionBody::Statements(checked_statements)
             }
             ast::FunctionBody::Extern(foreign_name, _) => {
-                types::functions::FunctionBody::Extern(Identifier::parse(foreign_name))
+                types::functions::FunctionBody::Extern(*foreign_name)
             }
         };
 
@@ -383,17 +382,17 @@ impl<'pre> DefinitionChecker<'pre> {
 
                 if checked_expression.type_ != type_ {
                     return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
-                        target_variable: Identifier::parse(name),
+                        target_variable: *name,
                         variable_type: type_,
                         assigned_type: checked_expression.type_,
                     }
                     .at(expression.position));
                 }
 
-                locals.push_variable(Identifier::parse(name), type_);
+                locals.push_variable(*name, type_);
 
                 types::Statement::Let(types::LetStatement {
-                    binding: Identifier::parse(name),
+                    binding: *name,
                     value: checked_expression,
                 })
             }
@@ -454,27 +453,24 @@ impl<'pre> DefinitionChecker<'pre> {
                 }),
             },
             ast::ExpressionKind::VariableReference(name) => {
-                let id = Identifier::parse(name);
-
                 let value_type = locals
-                    .get(id, module_path, expression.position)?
+                    .get(*name, module_path, expression.position)?
                     .ok_or_else(|| {
-                        TypeCheckErrorDescription::UndeclaredVariable(id).at(expression.position)
+                        TypeCheckErrorDescription::UndeclaredVariable(*name).at(expression.position)
                     })?;
 
                 Ok(types::Expression {
                     position,
                     type_: value_type,
-                    kind: types::ExpressionKind::VariableAccess(id),
+                    kind: types::ExpressionKind::VariableAccess(*name),
                 })
             }
             ast::ExpressionKind::StructConstructor(struct_name) => {
-                let id = Identifier::parse(struct_name);
-
                 let struct_type = locals
-                    .get(id, module_path, expression.position)?
+                    .get(*struct_name, module_path, expression.position)?
                     .ok_or_else(|| {
-                        TypeCheckErrorDescription::UndeclaredVariable(id).at(expression.position)
+                        TypeCheckErrorDescription::UndeclaredVariable(*struct_name)
+                            .at(expression.position)
                     })?;
 
                 let types::TypeKind::Object {
@@ -495,7 +491,6 @@ impl<'pre> DefinitionChecker<'pre> {
             ast::ExpressionKind::FieldAccess { target, field_name } => {
                 let target = self.type_check_expression(target, locals, module_path)?;
 
-                let field_name = Identifier::parse(field_name);
                 let struct_name = target.type_.struct_name();
 
                 let field_type = self
@@ -505,14 +500,14 @@ impl<'pre> DefinitionChecker<'pre> {
                     .get(&struct_name.0)
                     .unwrap()
                     .instantiate(&struct_name.1)
-                    .field_type(field_name);
+                    .field_type(*field_name);
 
                 Ok(types::Expression {
                     position,
                     type_: field_type,
                     kind: types::ExpressionKind::FieldAccess {
                         target: Box::new(target),
-                        field: field_name,
+                        field: *field_name,
                     },
                 })
             }

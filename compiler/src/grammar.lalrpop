@@ -1,11 +1,13 @@
 use crate::ast;
+use crate::identifier;
+
 grammar(filename: ast::SourceFileName);
 
-Identifier: String = {
-    r"\p{ID_Start}\p{ID_Continue}*" => <>.to_string()
+Identifier: identifier::Identifier = {
+    r"\p{ID_Start}\p{ID_Continue}*" => identifier::Identifier::parse(<>)
 }
 
-ImportPath: Vec<String> = {
+ImportPath: Vec<identifier::Identifier> = {
     <mut l:ImportPath> "::" <r:Identifier> => { l.push(r); l },
     <id:Identifier> => vec![id]
 }
@@ -37,7 +39,7 @@ StructDeclaration: ast::Struct = {
 }
 
 Type: ast::TypeDescription = {
-    "(" ")" => ast::TypeDescription::Named("()".to_string()),
+    "(" ")" => ast::TypeDescription::Named(identifier::Identifier::parse("()")),
     <name:Identifier> => ast::TypeDescription::Named(name),
     <inner:Type> "[]" => ast::TypeDescription::Array(Box::new(inner)),
 }

@@ -39,3 +39,9 @@ impl Display for Identifier {
         write!(f, "{}", self.raw())
     }
 }
+
+impl PartialEq<str> for Identifier {
+    fn eq(&self, other: &str) -> bool {
+        *self == Self::parse(other)
+    }
+}

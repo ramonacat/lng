@@ -47,8 +47,8 @@ impl FQName {
         Self(interned)
     }
 
-    pub fn from_parts(path: impl Iterator<Item = impl Into<String>>) -> Self {
-        Self::parse(&path.map(Into::<String>::into).join("."))
+    pub fn from_parts(path: impl Iterator<Item = impl Into<Identifier>>) -> Self {
+        Self::parse(&path.map(Into::<Identifier>::into).join("."))
     }
 
     pub fn with_part(self, new_part: Identifier) -> Self {
@@ -78,16 +78,15 @@ impl FQName {
     pub fn without_last(self) -> Self {
         let parts = self.parts();
         let len = parts.len();
-        let parts = parts.into_iter().map(Identifier::raw);
 
-        Self::from_parts(parts.take(len - 1))
+        Self::from_parts(&mut parts[..len - 1].iter().copied())
     }
 
     pub(crate) fn split_first(self) -> (Identifier, Self) {
         let parts = self.parts();
         let (first, rest) = parts.split_first().unwrap();
 
-        (*first, Self::from_parts(rest.iter().map(|x| x.raw())))
+        (*first, Self::from_parts(rest.iter().copied()))
     }
 
     pub(crate) fn len(self) -> usize {

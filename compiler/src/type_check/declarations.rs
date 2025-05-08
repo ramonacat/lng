@@ -245,13 +245,10 @@ pub(super) fn resolve_type(
         ast::TypeDescription::Named(name) if name == "()" => Ok(types::Type::unit()),
         ast::TypeDescription::Named(name) if name == "u64" => Ok(types::Type::u64()),
         ast::TypeDescription::Named(name) => {
-            let name = Identifier::parse(name);
-            let item = dbg!(root_module)
-                .get_item(dbg!(current_module.with_part(name)))
+            let item = root_module
+                .get_item(current_module.with_part(*name))
                 // TODO should there be a keyword for global scope access instead of this or_else?
-                .or_else(|| {
-                    root_module.get_item(types::FQName::from_parts(std::iter::once(&name.raw())))
-                })
+                .or_else(|| root_module.get_item(types::FQName::from_parts(std::iter::once(*name))))
                 .unwrap();
 
             match item.kind {
