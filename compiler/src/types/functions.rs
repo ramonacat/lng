@@ -53,26 +53,6 @@ impl Function {
             arguments: TypeArguments::new_empty(),
         }
     }
-
-    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
-        let arguments = self
-            .arguments
-            .iter()
-            .map(|x| x.instantiate(type_argument_values))
-            .collect();
-        let return_type = self.return_type.instantiate(type_argument_values);
-
-        Self {
-            id: self.id,
-            visibility: self.visibility,
-            arguments,
-            return_type,
-            // TODO body probably needs to be instantiated as well, as there could be references to
-            // type arguments eg. in let statements
-            body: self.body.clone(),
-            position: self.position,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

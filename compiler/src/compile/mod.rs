@@ -409,7 +409,6 @@ impl<'ctx> Compiler<'ctx> {
                         FunctionHandle {
                             id: *function_id,
                             module_name: root_path,
-                            definition: function.clone(),
                             linkage: if declaration.visibility == types::Visibility::Export
                                 || matches!(
                                     function.body,
@@ -422,6 +421,7 @@ impl<'ctx> Compiler<'ctx> {
                             position: function.position,
                             arguments: function.arguments.clone(),
                             return_type: function.return_type.clone(),
+                            body: function.body.clone(),
                         }
                     };
 
@@ -453,7 +453,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_function(&mut self, handle: &FunctionHandle) -> Result<(), CompileError> {
-        let types::functions::FunctionBody::Statements(statements) = &handle.definition.body else {
+        let types::functions::FunctionBody::Statements(statements) = &handle.body else {
             return Ok(());
         };
 

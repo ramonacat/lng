@@ -92,12 +92,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
         context.builder.position_at_end(entry_block);
 
-        for (argument, argument_value) in handle
-            .definition
-            .arguments
-            .iter()
-            .zip(llvm_function.get_params())
-        {
+        for (argument, argument_value) in handle.arguments.iter().zip(llvm_function.get_params()) {
             let value = match &argument.type_.kind() {
                 types::TypeKind::Unit => todo!(),
                 types::TypeKind::Object { type_name: id } => {

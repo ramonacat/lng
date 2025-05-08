@@ -15,11 +15,10 @@ pub struct FunctionHandle {
     pub id: types::functions::FunctionId,
     pub module_name: types::FQName,
     pub position: SourceSpan,
-    // TODO do we need arguments, if they're defined in the definition already???
     pub arguments: Vec<types::functions::Argument>,
     pub return_type: types::Type,
     pub linkage: Linkage,
-    pub definition: types::functions::Function,
+    pub body: types::functions::FunctionBody,
 }
 
 impl FunctionHandle {
@@ -42,7 +41,9 @@ impl FunctionHandle {
             arguments,
             return_type,
             linkage: self.linkage,
-            definition: self.definition.instantiate(type_argument_values),
+            // TODO we should also instantiate the body! there might be uses of the generic
+            // variable there!
+            body: self.body.clone(),
         }
     }
 }
@@ -192,7 +193,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             .map(|(name, impl_)| {
                 let handle = FunctionHandle {
                     id: impl_.id,
-                    definition: impl_.clone(),
+                    body: impl_.body.clone(),
                     linkage: if impl_.visibility == types::Visibility::Export {
                         Linkage::External
                     } else {
