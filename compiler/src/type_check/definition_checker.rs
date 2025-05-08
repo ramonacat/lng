@@ -295,22 +295,13 @@ impl<'pre> DefinitionChecker<'pre> {
                 );
             }
             DeclaredItemKind::Import(_) => todo!(),
-            DeclaredItemKind::Struct(struct_id)
+            DeclaredItemKind::Struct(_)
             | DeclaredItemKind::Predeclared(types::Item {
-                kind: types::ItemKind::Struct(struct_id),
+                kind: types::ItemKind::Struct(_),
                 ..
-            }) => {
-                root_module.declare_item(
-                    item_path,
-                    types::Item {
-                        kind: types::ItemKind::StructImport(*struct_id),
-                        visibility: types::Visibility::Internal, // TODO can imports be reexported?
-                        position: imported_item.position,
-                    },
-                );
-            }
+            }) => {}
             DeclaredItemKind::Predeclared(types::Item {
-                kind: types::ItemKind::Import(_) | types::ItemKind::StructImport(_),
+                kind: types::ItemKind::Import(_),
                 ..
             }) => todo!(),
             DeclaredItemKind::Module(_) => todo!(),

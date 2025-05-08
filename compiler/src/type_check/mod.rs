@@ -35,7 +35,6 @@ impl types::Item {
                     ),
                 }))
             }
-            types::ItemKind::StructImport(_) => todo!(),
             types::ItemKind::Import(import) => root_module
                 .get_item(import.imported_item)
                 .ok_or_else(|| {

@@ -385,9 +385,7 @@ impl<'ctx> Compiler<'ctx> {
                 types::ItemKind::Module(module) => {
                     self.resolve_imports(module, root_path.with_part(name))?;
                 }
-                types::ItemKind::Function(_)
-                | types::ItemKind::Struct(_)
-                | types::ItemKind::StructImport(_) => {}
+                types::ItemKind::Function(_) | types::ItemKind::Struct(_) => {}
             }
         }
 
@@ -439,9 +437,7 @@ impl<'ctx> Compiler<'ctx> {
                 types::ItemKind::Module(module_declaration) => {
                     self.declare_items(module_declaration, root_path.with_part(path));
                 }
-                types::ItemKind::Import(_)
-                | types::ItemKind::StructImport(_)
-                | types::ItemKind::Struct(_) => {}
+                types::ItemKind::Import(_) | types::ItemKind::Struct(_) => {}
             }
         }
     }

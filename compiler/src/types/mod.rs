@@ -373,6 +373,8 @@ pub enum ExpressionKind {
         arguments: Vec<Expression>,
     },
     Literal(Literal),
+    // TODO we should have separate GlobalVariableAccess and LocalVariableAccess and resolve to
+    // fqname in typechecker wherever possible
     VariableAccess(Identifier),
     StructConstructor(InstantiatedStructId),
     FieldAccess {
@@ -407,8 +409,6 @@ pub enum ItemKind {
     Struct(StructId),
     Import(Import),
     Module(Module),
-    // TODO is this needed at all?
-    StructImport(StructId),
 }
 
 #[derive(Clone)]
@@ -425,7 +425,6 @@ impl std::fmt::Debug for Item {
             ItemKind::Struct(struct_) => write!(f, "Struct({struct_})"),
             ItemKind::Import(import) => write!(f, "Import({})", import.imported_item),
             ItemKind::Module(module) => write!(f, "{module:?}"),
-            ItemKind::StructImport(struct_id) => write!(f, "StructImport({struct_id})"),
         }
     }
 }
