@@ -12,7 +12,6 @@ use errors::{TypeCheckError, TypeCheckErrorDescription};
 
 use crate::{
     ast,
-    identifier::FQName,
     types::{self, structs::InstantiatedStructId},
 };
 
@@ -20,7 +19,7 @@ impl types::Item {
     fn type_(
         &self,
         root_module: &DeclaredModule,
-        current_module: FQName,
+        current_module: types::modules::ModuleId,
         error_location: ast::SourceSpan,
     ) -> Result<types::Type, TypeCheckError> {
         // TODO handle possible generics here
@@ -50,8 +49,8 @@ impl types::Item {
 
 pub fn type_check(
     program: &[ast::SourceFile],
-    std: Option<&types::RootModule>,
-) -> Result<types::RootModule, TypeCheckError> {
+    std: Option<&types::modules::RootModule>,
+) -> Result<types::modules::RootModule, TypeCheckError> {
     let root_module_declaration = std.map_or_else(DeclaredRootModule::new, |std| {
         DeclaredRootModule::from_predeclared(
             std.root_module(),

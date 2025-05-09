@@ -47,7 +47,7 @@ pub(super) struct DefinitionChecker<'pre> {
 }
 
 impl<'pre> DefinitionChecker<'pre> {
-    pub(super) fn check(self) -> Result<types::RootModule, TypeCheckError> {
+    pub(super) fn check(self) -> Result<types::modules::RootModule, TypeCheckError> {
         let root_module =
             self.type_check_definitions(&self.root_module_declaration.module, None)?;
 
@@ -72,7 +72,7 @@ impl<'pre> DefinitionChecker<'pre> {
         }
 
         if let Some(main) = main {
-            return Ok(types::RootModule::new_app(
+            return Ok(types::modules::RootModule::new_app(
                 main,
                 root_module,
                 structs.into_inner(),
@@ -80,7 +80,7 @@ impl<'pre> DefinitionChecker<'pre> {
             ));
         }
 
-        Ok(types::RootModule::new_library(
+        Ok(types::modules::RootModule::new_library(
             root_module,
             structs.into_inner(),
             functions,
@@ -91,8 +91,8 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         declaration_to_check: &DeclaredModule,
         root_path: Option<FQName>,
-    ) -> Result<types::Module, TypeCheckError> {
-        let mut root_module: types::Module = types::Module::new();
+    ) -> Result<types::modules::Module, TypeCheckError> {
+        let mut root_module: types::modules::Module = types::modules::Module::new();
         let root_path = root_path.unwrap_or_else(|| FQName::parse(""));
         let mut impls = self.type_check_associated_function_definitions()?;
 
@@ -216,7 +216,7 @@ impl<'pre> DefinitionChecker<'pre> {
 
     fn type_check_import(
         &self,
-        root_module: &mut types::Module,
+        root_module: &mut types::modules::Module,
         item_path: Identifier,
         imported_item: FQName,
     ) {
@@ -377,7 +377,7 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         expression: &ast::Expression,
         locals: &Locals,
-        module_path: FQName,
+        module_path: types::modules::ModuleId,
     ) -> Result<types::Expression, TypeCheckError> {
         let position = expression.position;
 
@@ -433,7 +433,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 } else if let Some(global) = self
                     .root_module_declaration
                     .module
-                    .get_item(module_path.with_part(*struct_name))
+                    .get_item(FQName::parse(&module_path.child(*struct_name).to_string()))
                 {
                     let DeclaredItemKind::Struct(struct_id) = global.kind else {
                         todo!();
@@ -492,7 +492,7 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         expression: &ast::Expression,
         locals: &Locals,
-        module_path: FQName,
+        module_path: types::modules::ModuleId,
         name: Identifier,
     ) -> Result<types::Expression, TypeCheckError> {
         let value_type = locals.get(name);
@@ -502,10 +502,12 @@ impl<'pre> DefinitionChecker<'pre> {
         } else if let Some(global) = &self
             .root_module_declaration
             .module
-            .get_item(module_path.with_part(name))
+            .get_item(FQName::parse(&module_path.child(name).to_string()))
         {
             (
-                types::ExpressionKind::GlobalVariableAccess(module_path.with_part(name)),
+                types::ExpressionKind::GlobalVariableAccess(FQName::parse(
+                    &module_path.child(name).to_string(),
+                )),
                 global.type_(
                     &self.root_module_declaration.module,
                     module_path,
@@ -528,7 +530,7 @@ impl<'pre> DefinitionChecker<'pre> {
         target: &ast::Expression,
         passed_arguments: &[ast::Expression],
         locals: &Locals,
-        module_path: FQName,
+        module_path: types::modules::ModuleId,
         position: ast::SourceSpan,
     ) -> Result<types::Expression, TypeCheckError> {
         let checked_target = self.type_check_expression(target, locals, module_path)?;

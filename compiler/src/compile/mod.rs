@@ -29,7 +29,7 @@ use crate::{
     ast,
     identifier::{FQName, Identifier},
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types::{self, TypeArgumentValues, functions::InstantiatedFunctionId},
+    types::{self, TypeArgumentValues, functions::InstantiatedFunctionId, modules::ModuleId},
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -50,8 +50,8 @@ fn unique_name(parts: &[&str]) -> String {
 // executable code with a safe interface
 // TODO support also generating binaries instead of only JITting
 pub fn compile(
-    program: &types::RootModule,
-    std_program: &types::RootModule,
+    program: &types::modules::RootModule,
+    std_program: &types::modules::RootModule,
     register_global_mappings: RegisterGlobalMappings,
 ) -> Result<(), CompileError> {
     let context = Context::create();
@@ -126,7 +126,7 @@ pub struct CompileError {
 
 #[derive(Debug)]
 pub enum CompileErrorDescription {
-    ModuleNotFound(FQName),
+    ModuleNotFound(ModuleId),
     FunctionNotFound {
         module_name: FQName,
         function_name: Identifier,
@@ -262,7 +262,7 @@ impl<'ctx> Compiler<'ctx> {
             let mut scope = GlobalScope::new(HashMap::new(), HashMap::new());
 
             let std =
-                scope.get_or_create_module(FQName::parse("std"), || context.create_module("std"));
+                scope.get_or_create_module(ModuleId::parse("std"), || context.create_module("std"));
 
             std.set_variable(
                 Identifier::parse("string"),
@@ -291,7 +291,7 @@ impl<'ctx> Compiler<'ctx> {
 
     pub fn compile(
         mut self,
-        program: &types::RootModule,
+        program: &types::modules::RootModule,
     ) -> Result<CompiledRootModule<'ctx>, CompileError> {
         let main = program.main();
         let root_module = program.root_module();
@@ -314,10 +314,8 @@ impl<'ctx> Compiler<'ctx> {
 
         self.context.global_scope.structs = AllStructs::new(structs, functions);
 
-        self.declare_items(root_module, FQName::parse(""));
-        self.resolve_imports(root_module, FQName::parse(""))?;
-
-        // self.define_items(root_module, FQName::parse(""))?;
+        self.declare_items(root_module, ModuleId::root());
+        self.resolve_imports(root_module, ModuleId::parse(""))?;
 
         if let Some(main) = main {
             let definition = self
@@ -349,8 +347,8 @@ impl<'ctx> Compiler<'ctx> {
 
     fn resolve_imports(
         &mut self,
-        program: &types::Module,
-        root_path: FQName,
+        program: &types::modules::Module,
+        root_path: types::modules::ModuleId,
     ) -> Result<(), CompileError> {
         for (name, item) in program.items() {
             match &item.kind {
@@ -358,7 +356,12 @@ impl<'ctx> Compiler<'ctx> {
                     let value = self
                         .context
                         .global_scope
-                        .get_value(import.imported_item)
+                        // TODO the import should have the pair of module id and item name, instead
+                        // of just an FQName
+                        .get_value(
+                            ModuleId::parse(&import.imported_item.without_last().to_string()),
+                            import.imported_item.last(),
+                        )
                         .unwrap();
 
                     let Some(module) = self.context.global_scope.get_module_mut(root_path) else {
@@ -384,7 +387,7 @@ impl<'ctx> Compiler<'ctx> {
                     }
                 }
                 types::ItemKind::Module(module) => {
-                    self.resolve_imports(module, root_path.with_part(name))?;
+                    self.resolve_imports(module, root_path.child(name))?;
                 }
                 types::ItemKind::Function(_) | types::ItemKind::Struct(_) => {}
             }
@@ -393,7 +396,11 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
-    fn declare_items(&mut self, program: &types::Module, root_path: FQName) {
+    fn declare_items(
+        &mut self,
+        program: &types::modules::Module,
+        root_path: types::modules::ModuleId,
+    ) {
         for (path, declaration) in program.items() {
             self.get_or_create_module(root_path);
 
@@ -404,14 +411,17 @@ impl<'ctx> Compiler<'ctx> {
                         .set_variable(path, Value::Function(*function_id));
                 }
                 types::ItemKind::Module(module_declaration) => {
-                    self.declare_items(module_declaration, root_path.with_part(path));
+                    self.declare_items(module_declaration, root_path.child(path));
                 }
                 types::ItemKind::Import(_) | types::ItemKind::Struct(_) => {}
             }
         }
     }
 
-    fn get_or_create_module(&mut self, module_path: FQName) -> &mut CompiledModule<'ctx> {
+    fn get_or_create_module(
+        &mut self,
+        module_path: types::modules::ModuleId,
+    ) -> &mut CompiledModule<'ctx> {
         self.context
             .global_scope
             .get_or_create_module(module_path, || {
@@ -501,7 +511,7 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_statements(
         &mut self,
         statements: &Vec<types::Statement>,
-        module_path: FQName,
+        module_path: types::modules::ModuleId,
         compiled_function: &mut CompiledFunction<'ctx>,
     ) -> Result<(), CompileError> {
         for statement in statements {
@@ -547,7 +557,7 @@ impl<'ctx> Compiler<'ctx> {
         expression: &types::Expression,
         self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
-        module_path: FQName,
+        module_path: types::modules::ModuleId,
     ) -> Result<(Option<Value<'ctx>>, Value<'ctx>), CompileError> {
         let position = expression.position;
 
@@ -584,9 +594,17 @@ impl<'ctx> Compiler<'ctx> {
             types::ExpressionKind::LocalVariableAccess(name) => {
                 Ok((None, compiled_function.scope.get_value(*name).unwrap()))
             }
-            types::ExpressionKind::GlobalVariableAccess(name) => {
-                Ok((None, self.context.global_scope.get_value(*name).unwrap()))
-            }
+            // TODO the name here should be a pair of (ModuleId, Identifier)
+            types::ExpressionKind::GlobalVariableAccess(name) => Ok((
+                None,
+                self.context
+                    .global_scope
+                    .get_value(
+                        types::modules::ModuleId::parse(&name.without_last().to_string()),
+                        name.last(),
+                    )
+                    .unwrap(),
+            )),
             types::ExpressionKind::StructConstructor(name) => {
                 // TODO ensure the struct is instantiated in the context
                 // TODO get the type argument values from the expression!
@@ -635,7 +653,7 @@ impl<'ctx> Compiler<'ctx> {
         &mut self,
         self_: Option<&Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
-        module_path: FQName,
+        module_path: types::modules::ModuleId,
         position: ast::SourceSpan,
         target: &types::Expression,
         arguments: &[types::Expression],

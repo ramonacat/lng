@@ -6,7 +6,9 @@ use crate::{
     name_mangler::{MangledIdentifier, nomangle_identifier},
 };
 
-use super::{Statement, Type, TypeArgumentValues, TypeArguments, TypeKind, Visibility};
+use super::{
+    Statement, Type, TypeArgumentValues, TypeArguments, TypeKind, Visibility, modules::ModuleId,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionId {
@@ -44,8 +46,7 @@ impl InstantiatedFunctionId {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub id: FunctionId,
-    // TODO create types::modules::ModuleId and use it here
-    pub module_name: FQName,
+    pub module_name: ModuleId,
     pub arguments: Vec<Argument>,
     pub return_type: Type,
     pub body: FunctionBody,

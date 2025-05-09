@@ -45,6 +45,7 @@ impl Display for StructId {
 
 #[derive(Debug, Clone)]
 pub struct Struct {
+    // TODO remove, use StructId instead
     pub name: FQName,
     #[allow(unused)] // TODO this will be needed once we have a syntax for type instantiation
     pub type_arguments: TypeArguments,

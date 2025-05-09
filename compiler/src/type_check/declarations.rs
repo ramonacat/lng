@@ -11,8 +11,7 @@ use super::errors::TypeCheckError;
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
-    // TODO create a type for ModuleId, akin to FunctionId/StructId
-    pub(super) module_name: FQName,
+    pub(super) module_name: types::modules::ModuleId,
     pub(super) arguments: Vec<types::functions::Argument>,
     pub(super) return_type: types::Type,
     pub(super) ast: ast::Function,
@@ -50,7 +49,7 @@ impl<'pre> DeclaredRootModule<'pre> {
     }
 
     pub(crate) fn from_predeclared(
-        original_module: &'pre types::Module,
+        original_module: &'pre types::modules::Module,
         structs: HashMap<types::structs::StructId, types::structs::Struct>,
         functions: HashMap<types::functions::FunctionId, types::functions::Function>,
     ) -> Self {
@@ -84,7 +83,7 @@ impl std::fmt::Debug for DeclaredModule<'_> {
 }
 
 impl<'pre> DeclaredModule<'pre> {
-    pub(super) fn import_predeclared(&mut self, module: &'pre types::Module) {
+    pub(super) fn import_predeclared(&mut self, module: &'pre types::modules::Module) {
         let root_name = FQName::parse("");
 
         for (item_name, item) in module.items() {
@@ -197,7 +196,7 @@ impl DeclaredItem<'_> {
     pub(super) fn type_(
         &self,
         root_module: &DeclaredModule,
-        current_module: FQName,
+        current_module: types::modules::ModuleId,
         error_location: ast::SourceSpan,
     ) -> Result<types::Type, TypeCheckError> {
         // TODO also handle the case of this item being generic
@@ -227,7 +226,7 @@ impl DeclaredItem<'_> {
 
 pub(super) fn resolve_type(
     root_module: &DeclaredModule,
-    current_module: FQName,
+    current_module: types::modules::ModuleId,
     r#type: &ast::TypeDescription,
     error_location: ast::SourceSpan,
 ) -> Result<types::Type, TypeCheckError> {
@@ -247,7 +246,8 @@ pub(super) fn resolve_type(
         ast::TypeDescription::Named(name) if name == "u64" => Ok(types::Type::u64()),
         ast::TypeDescription::Named(name) => {
             let item = root_module
-                .get_item(current_module.with_part(*name))
+                // TODO get_item should take a pair of (ModuleId, Identifier)
+                .get_item(FQName::parse(&current_module.child(*name).to_string()))
                 // TODO should there be a keyword for global scope access instead of this or_else?
                 .or_else(|| root_module.get_item(FQName::from_identifier(*name)))
                 .unwrap();

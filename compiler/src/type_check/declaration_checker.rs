@@ -2,7 +2,12 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{ast, identifier::FQName, std::TYPE_NAME_STRING, types};
+use crate::{
+    ast,
+    identifier::FQName,
+    std::TYPE_NAME_STRING,
+    types::{self, modules::ModuleId},
+};
 
 use super::{
     DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
@@ -70,7 +75,8 @@ impl<'pre> DeclarationChecker<'pre> {
         program: &[ast::SourceFile],
     ) -> Result<(), TypeCheckError> {
         for file in program {
-            let module_path = FQName::parse(&file.name.to_string());
+            let module_path = types::modules::ModuleId::parse(&file.name.to_string());
+
             for declaration in &file.declarations {
                 let position = declaration.position;
 
@@ -78,7 +84,9 @@ impl<'pre> DeclarationChecker<'pre> {
                     ast::DeclarationKind::Function(_) | ast::DeclarationKind::Struct(_) => {}
                     ast::DeclarationKind::Impl(impl_declaration) => {
                         let struct_name = impl_declaration.struct_name;
-                        let struct_path = module_path.with_part(struct_name);
+                        // TODO the struct_path should be a pair of (ModuleId, Identifier)
+                        let struct_path =
+                            FQName::parse(&module_path.to_string()).with_part(struct_name);
 
                         let functions = impl_declaration
                             .functions
@@ -160,7 +168,7 @@ impl<'pre> DeclarationChecker<'pre> {
         program: &[ast::SourceFile],
     ) -> Result<(), TypeCheckError> {
         for file in program {
-            let module_path = FQName::parse(&file.name.to_string());
+            let module_path = ModuleId::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -173,7 +181,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
 
         for file in program {
-            let module_path = FQName::parse(&file.name.to_string());
+            let module_path = ModuleId::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -196,7 +204,8 @@ impl<'pre> DeclarationChecker<'pre> {
                             .insert(function_id, function_declaration.clone());
 
                         self.root_module_declaration.module.declare(
-                            module_path.with_part(function.name),
+                            // TODO the path here should be a pair of (ModuleId, Identifier)
+                            FQName::parse(&module_path.child(function.name).to_string()),
                             DeclaredItem {
                                 visibility: Self::convert_visibility(function.visibility),
                                 kind: DeclaredItemKind::Function(function_id),
@@ -210,7 +219,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
 
         for file in program {
-            let module_path = FQName::parse(&file.name.to_string());
+            let module_path = ModuleId::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -236,7 +245,7 @@ impl<'pre> DeclarationChecker<'pre> {
 
     fn type_check_struct(
         &mut self,
-        module_path: FQName,
+        module_path: types::modules::ModuleId,
         struct_: &ast::Struct,
     ) -> Result<(), TypeCheckError> {
         let mut fields = vec![];
@@ -250,11 +259,14 @@ impl<'pre> DeclarationChecker<'pre> {
                 )?,
 
                 static_: false,
-                struct_id: types::structs::StructId::FQName(module_path.with_part(struct_.name)),
+                // TODO the structId should ba a pair of (ModuleId, Identifier)
+                struct_id: types::structs::StructId::FQName(FQName::parse(
+                    &module_path.child(struct_.name).to_string(),
+                )),
                 name: field.name,
             });
         }
-        let name = module_path.with_part(struct_.name);
+        let name = FQName::parse(&module_path.child(struct_.name).to_string());
         let id = types::structs::StructId::FQName(name);
         self.root_module_declaration.structs.borrow_mut().insert(
             id,
@@ -316,8 +328,8 @@ impl<'pre> DeclarationChecker<'pre> {
     fn type_check_associated_function_declaration(
         &self,
         function: &ast::Function,
-        current_module: FQName,
-        self_type: FQName,
+        current_module: types::modules::ModuleId,
+        self_type: FQName, // TODO this should be StructId
         position: ast::SourceSpan,
     ) -> Result<DeclaredFunction, TypeCheckError> {
         let function_name = function.name;
@@ -358,11 +370,12 @@ impl<'pre> DeclarationChecker<'pre> {
     fn type_check_function_declaration(
         &self,
         function: &ast::Function,
-        module_path: FQName,
+        module_path: types::modules::ModuleId,
         position: ast::SourceSpan,
     ) -> DeclaredFunction {
         let function_name = function.name;
-        let function_path = module_path.with_part(function_name);
+        // TODO the path should be a pair of (ModuleId, Identifier)
+        let function_path = FQName::parse(&module_path.child(function_name).to_string());
 
         let mut arguments = vec![];
 
