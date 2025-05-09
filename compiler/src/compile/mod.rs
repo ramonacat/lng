@@ -29,7 +29,7 @@ use crate::{
     ast,
     identifier::{FQName, Identifier},
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types::{self, TypeArgumentValues, functions::InstantiatedFunctionId, modules::ModuleId},
+    types,
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -126,7 +126,7 @@ pub struct CompileError {
 
 #[derive(Debug)]
 pub enum CompileErrorDescription {
-    ModuleNotFound(ModuleId),
+    ModuleNotFound(types::modules::ModuleId),
     FunctionNotFound {
         module_name: FQName,
         function_name: Identifier,
@@ -261,8 +261,9 @@ impl<'ctx> Compiler<'ctx> {
             // the rest of the compilation can just add methods, etc. to them
             let mut scope = GlobalScope::new(HashMap::new(), HashMap::new());
 
-            let std =
-                scope.get_or_create_module(ModuleId::parse("std"), || context.create_module("std"));
+            let std = scope.get_or_create_module(types::modules::ModuleId::parse("std"), || {
+                context.create_module("std")
+            });
 
             std.set_variable(
                 Identifier::parse("string"),
@@ -311,8 +312,8 @@ impl<'ctx> Compiler<'ctx> {
 
         self.context.global_scope.structs = AllStructs::new(structs, functions);
 
-        self.declare_items(root_module, ModuleId::root());
-        self.resolve_imports(root_module, ModuleId::parse(""))?;
+        self.declare_items(root_module, types::modules::ModuleId::root());
+        self.resolve_imports(root_module, types::modules::ModuleId::parse(""))?;
 
         if let Some(main) = main {
             let definition = self
@@ -320,7 +321,10 @@ impl<'ctx> Compiler<'ctx> {
                 .global_scope
                 .structs
                 .inspect_instantiated_function(
-                    &InstantiatedFunctionId(main, TypeArgumentValues::new_empty()),
+                    &types::functions::InstantiatedFunctionId(
+                        main,
+                        types::TypeArgumentValues::new_empty(),
+                    ),
                     |function| {
                         let function = function.unwrap();
                         // TODO verify in type_check that main has no generic arguments
@@ -350,14 +354,21 @@ impl<'ctx> Compiler<'ctx> {
         for (name, item) in program.items() {
             match &item.kind {
                 types::ItemKind::Import(import) => {
+                    // TODO this is a hack, global_scope.get_value should just take the ItemId as
+                    // an argument
+                    let fqname = match &import.imported_item {
+                        types::ItemId::Struct(struct_id) => struct_id.fqname(),
+                        types::ItemId::Function(function_id) => function_id.fqname(),
+                        types::ItemId::Module(module_id) => module_id.fqname(),
+                    };
                     let value = self
                         .context
                         .global_scope
                         // TODO the import should have the pair of module id and item name, instead
                         // of just an FQName
                         .get_value(
-                            ModuleId::parse(&import.imported_item.without_last().to_string()),
-                            import.imported_item.last(),
+                            types::modules::ModuleId::parse(&fqname.without_last().to_string()),
+                            fqname.last(),
                         )
                         .unwrap();
 
@@ -668,8 +679,10 @@ impl<'ctx> Compiler<'ctx> {
         };
 
         // TODO we should already have an InstantiatedFunctionId here, probably?
-        let instantiated_function_id =
-            InstantiatedFunctionId(*function_id, TypeArgumentValues::new_empty());
+        let instantiated_function_id = types::functions::InstantiatedFunctionId(
+            *function_id,
+            types::TypeArgumentValues::new_empty(),
+        );
         let definition = self
             .context
             .global_scope

@@ -63,7 +63,10 @@ impl<'pre> DeclarationChecker<'pre> {
                     )),
                     DeclaredItem {
                         kind: DeclaredItemKind::Import(DeclaredImport {
-                            imported_item: exporting_module_name.with_part(name),
+                            imported_item: (
+                                types::modules::ModuleId::FQName(exporting_module_name),
+                                name,
+                            ),
                         }),
                         visibility: types::Visibility::Internal,
                         position: import.position,

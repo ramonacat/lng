@@ -349,8 +349,7 @@ impl LetStatement {
 
 #[derive(Debug, Clone)]
 pub struct Import {
-    // TODO this really should be some sorta ID
-    pub imported_item: FQName,
+    pub imported_item: ItemId,
     pub position: ast::SourceSpan,
 }
 

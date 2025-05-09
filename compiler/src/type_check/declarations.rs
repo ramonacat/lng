@@ -27,7 +27,8 @@ pub(super) struct DeclaredStructField {
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredImport {
-    pub(super) imported_item: FQName,
+    // this cannot be ItemId, as we don't yet know the kind of the imported item
+    pub(super) imported_item: (types::modules::ModuleId, Identifier),
 }
 
 // TODO can we kill the RefCells and let the borrowck do the borrowck?
@@ -142,7 +143,13 @@ impl<'pre> DeclaredModule<'pre> {
     }
 
     // TODO can we get rid of the clones here?
-    pub(super) fn get_item(&self, name: FQName) -> Option<DeclaredItem> {
+    pub(super) fn get_item(
+        &self,
+        module_id: types::modules::ModuleId,
+        name: Identifier,
+    ) -> Option<DeclaredItem> {
+        // TODO we shouldn't generate the name here, but instead receive the module by id
+        let name = module_id.fqname().with_part(name);
         if name.len() == 1 {
             return self.items.get(&name.last()).cloned();
         }
@@ -150,7 +157,10 @@ impl<'pre> DeclaredModule<'pre> {
         let (first, rest) = name.split_first();
 
         match &self.items.get(&first).unwrap().kind {
-            DeclaredItemKind::Module(m) => m.get_item(rest),
+            DeclaredItemKind::Module(m) => m.get_item(
+                types::modules::ModuleId::FQName(rest.without_last()),
+                rest.last(),
+            ),
             DeclaredItemKind::Predeclared(types::Item {
                 kind: types::ItemKind::Module(m),
                 visibility,
@@ -195,7 +205,11 @@ impl std::fmt::Debug for DeclaredItem<'_> {
                 write!(f, "Struct({struct_id})")
             }
             DeclaredItemKind::Import(declared_import) => {
-                write!(f, "Import({})", declared_import.imported_item)
+                write!(
+                    f,
+                    "Import({}, {})",
+                    declared_import.imported_item.0, declared_import.imported_item.1
+                )
             }
             DeclaredItemKind::Predeclared(item) => write!(f, "Checked({item:?})"),
             DeclaredItemKind::Module(declared_module) => write!(f, "Module({declared_module:?})"),
@@ -224,7 +238,9 @@ impl DeclaredItem<'_> {
                 }))
             }
             DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => root_module
-                .get_item(*imported_item)
+                // TODO get_item should really just take a pair of (ModuleId, Identifier) and
+                // receive based on that
+                .get_item(imported_item.0, imported_item.1)
                 .unwrap()
                 .type_(root_module, current_module, error_location),
             DeclaredItemKind::Predeclared(item) => {
@@ -258,9 +274,16 @@ pub(super) fn resolve_type(
         ast::TypeDescription::Named(name) => {
             let item = root_module
                 // TODO get_item should take a pair of (ModuleId, Identifier)
-                .get_item(FQName::parse(&current_module.child(*name).to_string()))
+                .get_item(current_module, *name)
                 // TODO should there be a keyword for global scope access instead of this or_else?
-                .or_else(|| root_module.get_item(FQName::from_identifier(*name)))
+                // TODO if this is a global, we should have the (ModuleId, Identifier) pair here!
+                .or_else(|| {
+                    let item_id = FQName::from_identifier(*name);
+                    root_module.get_item(
+                        types::modules::ModuleId::FQName(item_id.without_last()),
+                        item_id.last(),
+                    )
+                })
                 .unwrap();
 
             match item.kind {
@@ -279,7 +302,10 @@ pub(super) fn resolve_type(
                     item.type_(root_module, current_module, error_location)
                 }
                 DeclaredItemKind::Import(declared_import) => {
-                    let imported_item = root_module.get_item(declared_import.imported_item);
+                    let imported_item = root_module.get_item(
+                        declared_import.imported_item.0,
+                        declared_import.imported_item.1,
+                    );
 
                     imported_item
                         .unwrap()

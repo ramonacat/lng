@@ -218,23 +218,24 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         root_module: &mut types::modules::Module,
         item_path: Identifier,
-        imported_item: FQName,
+        imported_item_id: (types::modules::ModuleId, Identifier),
     ) {
         let root_module_declaration = &self.root_module_declaration.module;
-        let imported_item = root_module_declaration.get_item(imported_item).unwrap();
+        let imported_item = root_module_declaration
+            .get_item(imported_item_id.0, imported_item_id.1)
+            .unwrap();
+
         match &imported_item.kind {
-            DeclaredItemKind::Function(imported_item_id)
+            DeclaredItemKind::Function(function_id)
             | DeclaredItemKind::Predeclared(types::Item {
-                kind: types::ItemKind::Function(imported_item_id),
+                kind: types::ItemKind::Function(function_id),
                 ..
             }) => {
-                // TODO the imported item id should not be FQName, but ItemId
-                let imported_item_id = imported_item_id.fqname();
                 root_module.declare_item(
                     item_path,
                     types::Item {
                         kind: types::ItemKind::Import(types::Import {
-                            imported_item: imported_item_id,
+                            imported_item: types::ItemId::Function(*function_id),
                             position: imported_item.position,
                         }),
                         visibility: types::Visibility::Internal, // TODO can imports be reexported?
@@ -429,7 +430,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 } else if let Some(global) = self
                     .root_module_declaration
                     .module
-                    .get_item(FQName::parse(&module_path.child(*struct_name).to_string()))
+                    .get_item(module_path, *struct_name)
                 {
                     let DeclaredItemKind::Struct(struct_id) = global.kind else {
                         todo!();
@@ -498,7 +499,7 @@ impl<'pre> DefinitionChecker<'pre> {
         } else if let Some(global) = &self
             .root_module_declaration
             .module
-            .get_item(FQName::parse(&module_path.child(name).to_string()))
+            .get_item(module_path, name)
         {
             (
                 types::ExpressionKind::GlobalVariableAccess(FQName::parse(

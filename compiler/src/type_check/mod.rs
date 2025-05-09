@@ -35,17 +35,28 @@ impl types::Item {
                     ),
                 }))
             }
-            types::ItemKind::Import(import) => root_module
-                .get_item(import.imported_item)
-                .ok_or_else(|| {
-                    // TODO imported_item should be an ItemId, and then we don't have to hackishly
-                    // create the ItemId::Module
-                    TypeCheckErrorDescription::ItemDoesNotExist(types::ItemId::Module(
-                        types::modules::ModuleId::parse(&import.imported_item.to_string()),
-                    ))
-                    .at(error_location)
-                })?
-                .type_(root_module, current_module, error_location),
+            types::ItemKind::Import(import) => {
+                // TODO this is a hack, we should be able to reveive the item by ItemId as well
+                let fqname = match &import.imported_item {
+                    types::ItemId::Struct(struct_id) => struct_id.fqname(),
+                    types::ItemId::Function(function_id) => function_id.fqname(),
+                    types::ItemId::Module(module_id) => module_id.fqname(),
+                };
+                root_module
+                    .get_item(
+                        types::modules::ModuleId::FQName(fqname.without_last()),
+                        fqname.last(),
+                    )
+                    .ok_or_else(|| {
+                        // TODO imported_item should be an ItemId, and then we don't have to hackishly
+                        // create the ItemId::Module
+                        TypeCheckErrorDescription::ItemDoesNotExist(types::ItemId::Module(
+                            types::modules::ModuleId::parse(&import.imported_item.to_string()),
+                        ))
+                        .at(error_location)
+                    })?
+                    .type_(root_module, current_module, error_location)
+            }
             types::ItemKind::Module(_) => todo!(),
         }
     }
