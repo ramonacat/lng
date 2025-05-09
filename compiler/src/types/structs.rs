@@ -64,23 +64,6 @@ pub struct Struct {
     pub impls: HashMap<FunctionId, Function>,
 }
 
-// TODO the Hash, Eq, PartialEq implementations are questionable, get rid of them (but for that we
-// need to have some globally identifiable id for structs (and FQName isn't it, because that won't
-// handle runtime-defined ones))
-impl std::hash::Hash for Struct {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-
-impl Eq for Struct {}
-
-impl PartialEq for Struct {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
 impl Struct {
     pub(crate) fn instantiate(&self, _type_argument_values: &TypeArgumentValues) -> Self {
         // TODO support actually instantiating the impls and fields, but this can't be done yet, as the
