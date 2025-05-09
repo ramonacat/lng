@@ -35,7 +35,7 @@ pub(super) struct DeclaredImport {
 pub(super) struct DeclaredRootModule<'pre> {
     pub(super) structs: RefCell<HashMap<types::structs::StructId, types::structs::Struct>>,
     pub(super) functions: RefCell<HashMap<types::functions::FunctionId, DeclaredFunction>>,
-    pub(super) module: RefCell<DeclaredModule<'pre>>,
+    pub(super) module: DeclaredModule<'pre>,
     pub(super) predeclared_functions:
         RefCell<HashMap<types::functions::FunctionId, types::functions::Function>>,
 }
@@ -44,7 +44,7 @@ impl<'pre> DeclaredRootModule<'pre> {
         Self {
             structs: RefCell::new(HashMap::new()),
             functions: RefCell::new(HashMap::new()),
-            module: RefCell::new(DeclaredModule::new()),
+            module: DeclaredModule::new(),
             predeclared_functions: RefCell::new(HashMap::new()),
         }
     }
@@ -61,7 +61,7 @@ impl<'pre> DeclaredRootModule<'pre> {
             structs: RefCell::new(structs),
             functions: RefCell::new(HashMap::new()),
             predeclared_functions: RefCell::new(functions),
-            module: RefCell::new(module),
+            module,
         }
     }
 }

@@ -19,7 +19,7 @@ pub(super) struct DeclarationChecker<'pre> {
 }
 
 impl<'pre> DeclarationChecker<'pre> {
-    fn type_check_module_declarations(&self, program: &[ast::SourceFile]) {
+    fn type_check_module_declarations(&mut self, program: &[ast::SourceFile]) {
         // this is equivalent-ish to topo-sort, as fewer parts in the name means it is higher in the
         // hierarchy (i.e. main.test will definitely appear after main)
         let mut modules_to_declare = program
@@ -29,7 +29,7 @@ impl<'pre> DeclarationChecker<'pre> {
         modules_to_declare.sort_by_key(|name| name.len());
 
         for module_path in modules_to_declare {
-            self.root_module_declaration.module.borrow_mut().declare(
+            self.root_module_declaration.module.declare(
                 module_path,
                 DeclaredItem {
                     kind: DeclaredItemKind::Module(DeclaredModule::new()),
@@ -41,7 +41,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
     }
 
-    fn type_check_imports(&self, program: &[ast::SourceFile]) {
+    fn type_check_imports(&mut self, program: &[ast::SourceFile]) {
         for file in program {
             for import in &file.imports {
                 let (name, path) = import.path.split_last().unwrap();
@@ -50,7 +50,7 @@ impl<'pre> DeclarationChecker<'pre> {
                 let importing_module_path = types::FQName::parse(&file.name.to_string());
                 let imported_as = importing_module_path
                     .with_part(import.alias.as_ref().map_or_else(|| *name, |x| *x));
-                self.root_module_declaration.module.borrow_mut().declare(
+                self.root_module_declaration.module.declare(
                     imported_as,
                     DeclaredItem {
                         kind: DeclaredItemKind::Import(DeclaredImport {
@@ -194,7 +194,7 @@ impl<'pre> DeclarationChecker<'pre> {
                             .borrow_mut()
                             .insert(function_id, function_declaration.clone());
 
-                        self.root_module_declaration.module.borrow_mut().declare(
+                        self.root_module_declaration.module.declare(
                             module_path.with_part(function.name),
                             DeclaredItem {
                                 visibility: Self::convert_visibility(function.visibility),
@@ -218,7 +218,7 @@ impl<'pre> DeclarationChecker<'pre> {
                             // this is so that resolve_type returns an error in case the type is
                             // invalid
                             let _ = resolve_type(
-                                &self.root_module_declaration.module.borrow(),
+                                &self.root_module_declaration.module,
                                 module_path,
                                 &field.type_,
                                 field.position,
@@ -234,7 +234,7 @@ impl<'pre> DeclarationChecker<'pre> {
     }
 
     fn type_check_struct(
-        &self,
+        &mut self,
         module_path: types::FQName,
         struct_: &ast::Struct,
     ) -> Result<(), TypeCheckError> {
@@ -242,7 +242,7 @@ impl<'pre> DeclarationChecker<'pre> {
         for field in &struct_.fields {
             fields.push(types::structs::StructField {
                 type_: resolve_type(
-                    &self.root_module_declaration.module.borrow(),
+                    &self.root_module_declaration.module,
                     module_path,
                     &field.type_,
                     field.position,
@@ -264,7 +264,7 @@ impl<'pre> DeclarationChecker<'pre> {
                 type_arguments: types::TypeArguments::new_empty(),
             },
         );
-        self.root_module_declaration.module.borrow_mut().declare(
+        self.root_module_declaration.module.declare(
             name,
             DeclaredItem {
                 kind: DeclaredItemKind::Struct(id),
@@ -327,7 +327,7 @@ impl<'pre> DeclarationChecker<'pre> {
             arguments.push(types::functions::Argument {
                 name: arg.name,
                 type_: resolve_type(
-                    &self.root_module_declaration.module.borrow(),
+                    &self.root_module_declaration.module,
                     current_module,
                     &arg.type_,
                     arg.position,
@@ -342,7 +342,7 @@ impl<'pre> DeclarationChecker<'pre> {
             arguments,
             // TODO figure out the correct error location here
             return_type: resolve_type(
-                &self.root_module_declaration.module.borrow(),
+                &self.root_module_declaration.module,
                 current_module,
                 &function.return_type,
                 position, // TODO this should be the position where the return type is declared,
@@ -369,7 +369,7 @@ impl<'pre> DeclarationChecker<'pre> {
             arguments.push(types::functions::Argument {
                 name: arg.name,
                 type_: resolve_type(
-                    &self.root_module_declaration.module.borrow(),
+                    &self.root_module_declaration.module,
                     module_path,
                     &arg.type_,
                     arg.position,
@@ -391,7 +391,7 @@ impl<'pre> DeclarationChecker<'pre> {
             module_name: module_path,
             arguments,
             return_type: resolve_type(
-                &self.root_module_declaration.module.borrow(),
+                &self.root_module_declaration.module,
                 module_path,
                 &function.return_type,
                 position, // TODO this should be the return type, not the whole function

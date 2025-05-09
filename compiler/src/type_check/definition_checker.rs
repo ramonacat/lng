@@ -47,7 +47,7 @@ pub(super) struct DefinitionChecker<'pre> {
 impl<'pre> DefinitionChecker<'pre> {
     pub(super) fn check(self) -> Result<types::RootModule, TypeCheckError> {
         let root_module =
-            self.type_check_definitions(&self.root_module_declaration.module.borrow(), None)?;
+            self.type_check_definitions(&self.root_module_declaration.module, None)?;
 
         let Self {
             root_module_declaration,
@@ -218,7 +218,7 @@ impl<'pre> DefinitionChecker<'pre> {
         item_path: Identifier,
         imported_item: types::FQName,
     ) {
-        let root_module_declaration = self.root_module_declaration.module.borrow();
+        let root_module_declaration = &self.root_module_declaration.module;
         let imported_item = root_module_declaration.get_item(imported_item).unwrap();
         match &imported_item.kind {
             DeclaredItemKind::Function(imported_item_id)
@@ -328,7 +328,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 )?;
 
                 let type_ = resolve_type(
-                    &self.root_module_declaration.module.borrow(),
+                    &self.root_module_declaration.module,
                     declared_function.module_name,
                     type_,
                     expression.position,
@@ -431,7 +431,6 @@ impl<'pre> DefinitionChecker<'pre> {
                 } else if let Some(global) = self
                     .root_module_declaration
                     .module
-                    .borrow()
                     .get_item(module_path.with_part(*struct_name))
                 {
                     let DeclaredItemKind::Struct(struct_id) = global.kind else {
@@ -439,7 +438,7 @@ impl<'pre> DefinitionChecker<'pre> {
                     };
                     (
                         global.type_(
-                            &self.root_module_declaration.module.borrow(),
+                            &self.root_module_declaration.module,
                             module_path,
                             expression.position,
                         )?,
@@ -501,13 +500,12 @@ impl<'pre> DefinitionChecker<'pre> {
         } else if let Some(global) = &self
             .root_module_declaration
             .module
-            .borrow()
             .get_item(module_path.with_part(name))
         {
             (
                 types::ExpressionKind::GlobalVariableAccess(module_path.with_part(name)),
                 global.type_(
-                    &self.root_module_declaration.module.borrow(),
+                    &self.root_module_declaration.module,
                     module_path,
                     expression.position,
                 )?,
