@@ -87,9 +87,16 @@ pub enum FunctionBody {
     Statements(Vec<Statement>),
 }
 impl FunctionBody {
-    fn instantiate(&self, _type_argument_values: &TypeArgumentValues) -> Self {
-        // TODO actually make sure the generic types are replaced!
-        self.clone()
+    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        match self {
+            Self::Extern(identifier) => Self::Extern(*identifier),
+            Self::Statements(statements) => Self::Statements(
+                statements
+                    .iter()
+                    .map(|x| x.instantiate(type_argument_values))
+                    .collect(),
+            ),
+        }
     }
 }
 

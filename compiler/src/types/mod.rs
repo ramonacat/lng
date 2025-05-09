@@ -243,6 +243,18 @@ pub enum Statement {
     Return(Expression),
 }
 
+impl Statement {
+    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        match self {
+            Self::Expression(expression) => {
+                Self::Expression(expression.instantiate(type_argument_values))
+            }
+            Self::Let(let_statement) => Self::Let(let_statement.instantiate(type_argument_values)),
+            Self::Return(expression) => Self::Return(expression.instantiate(type_argument_values)),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Literal {
     String(String),
@@ -272,11 +284,51 @@ pub struct Expression {
     pub type_: Type,
     pub kind: ExpressionKind,
 }
+impl Expression {
+    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        Self {
+            position: self.position,
+            type_: self.type_.instantiate(type_argument_values),
+            kind: match &self.kind {
+                ExpressionKind::Call { target, arguments } => ExpressionKind::Call {
+                    target: Box::new(target.instantiate(type_argument_values)),
+                    arguments: arguments
+                        .iter()
+                        .map(|x| x.instantiate(type_argument_values))
+                        .collect(),
+                },
+                ExpressionKind::Literal(literal) => ExpressionKind::Literal(literal.clone()),
+                ExpressionKind::LocalVariableAccess(identifier) => {
+                    ExpressionKind::LocalVariableAccess(*identifier)
+                }
+                ExpressionKind::GlobalVariableAccess(fqname) => {
+                    ExpressionKind::GlobalVariableAccess(*fqname)
+                }
+                ExpressionKind::StructConstructor(instantiated_struct_id) => {
+                    ExpressionKind::StructConstructor(instantiated_struct_id.clone())
+                }
+                ExpressionKind::FieldAccess { target, field } => ExpressionKind::FieldAccess {
+                    target: Box::new(target.instantiate(type_argument_values)),
+                    field: *field,
+                },
+                ExpressionKind::SelfAccess => ExpressionKind::SelfAccess,
+            },
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct LetStatement {
     pub binding: Identifier,
     pub value: Expression,
+}
+impl LetStatement {
+    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+        Self {
+            binding: self.binding,
+            value: self.value.instantiate(type_argument_values),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
