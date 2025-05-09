@@ -1,5 +1,7 @@
 use crate::{
-    identifier::Identifier, type_check::declarations::DeclaredRootModule, types::TypeArgumentValues,
+    identifier::{FQName, Identifier},
+    type_check::declarations::DeclaredRootModule,
+    types::TypeArgumentValues,
 };
 use std::{cell::RefCell, collections::HashMap};
 
@@ -88,10 +90,10 @@ impl<'pre> DefinitionChecker<'pre> {
     fn type_check_definitions(
         &self,
         declaration_to_check: &DeclaredModule,
-        root_path: Option<types::FQName>,
+        root_path: Option<FQName>,
     ) -> Result<types::Module, TypeCheckError> {
         let mut root_module: types::Module = types::Module::new();
-        let root_path = root_path.unwrap_or_else(|| types::FQName::parse(""));
+        let root_path = root_path.unwrap_or_else(|| FQName::parse(""));
         let mut impls = self.type_check_associated_function_definitions()?;
 
         for (item_name, declared_item) in declaration_to_check.items() {
@@ -216,7 +218,7 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         root_module: &mut types::Module,
         item_path: Identifier,
-        imported_item: types::FQName,
+        imported_item: FQName,
     ) {
         let root_module_declaration = &self.root_module_declaration.module;
         let imported_item = root_module_declaration.get_item(imported_item).unwrap();
@@ -375,7 +377,7 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         expression: &ast::Expression,
         locals: &Locals,
-        module_path: types::FQName,
+        module_path: FQName,
     ) -> Result<types::Expression, TypeCheckError> {
         let position = expression.position;
 
@@ -490,7 +492,7 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         expression: &ast::Expression,
         locals: &Locals,
-        module_path: types::FQName,
+        module_path: FQName,
         name: Identifier,
     ) -> Result<types::Expression, TypeCheckError> {
         let value_type = locals.get(name);
@@ -526,7 +528,7 @@ impl<'pre> DefinitionChecker<'pre> {
         target: &ast::Expression,
         passed_arguments: &[ast::Expression],
         locals: &Locals,
-        module_path: types::FQName,
+        module_path: FQName,
         position: ast::SourceSpan,
     ) -> Result<types::Expression, TypeCheckError> {
         let checked_target = self.type_check_expression(target, locals, module_path)?;

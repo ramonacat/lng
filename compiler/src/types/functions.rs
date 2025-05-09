@@ -2,12 +2,11 @@ use std::fmt::{Display, Formatter};
 
 use crate::{
     ast,
+    identifier::{FQName, Identifier},
     name_mangler::{MangledIdentifier, nomangle_identifier},
 };
 
-use super::{
-    FQName, Identifier, Statement, Type, TypeArgumentValues, TypeArguments, TypeKind, Visibility,
-};
+use super::{Statement, Type, TypeArgumentValues, TypeArguments, TypeKind, Visibility};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionId {

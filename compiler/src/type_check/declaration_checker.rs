@@ -2,7 +2,7 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{ast, std::TYPE_NAME_STRING, types};
+use crate::{ast, identifier::FQName, std::TYPE_NAME_STRING, types};
 
 use super::{
     DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
@@ -24,7 +24,7 @@ impl<'pre> DeclarationChecker<'pre> {
         // hierarchy (i.e. main.test will definitely appear after main)
         let mut modules_to_declare = program
             .iter()
-            .map(|x| types::FQName::parse(&x.name.to_string()))
+            .map(|x| FQName::parse(&x.name.to_string()))
             .collect::<Vec<_>>();
         modules_to_declare.sort_by_key(|name| name.len());
 
@@ -44,17 +44,18 @@ impl<'pre> DeclarationChecker<'pre> {
     fn type_check_imports(&mut self, program: &[ast::SourceFile]) {
         for file in program {
             for import in &file.imports {
-                let (name, path) = import.path.split_last().unwrap();
-                let exporting_module_name = types::FQName::from_parts(path.iter().copied());
+                let exporting_module_name = import.path.without_last();
+                let name = import.path.last();
 
-                let importing_module_path = types::FQName::parse(&file.name.to_string());
+                let importing_module_path = FQName::parse(&file.name.to_string());
                 let imported_as = importing_module_path
-                    .with_part(import.alias.as_ref().map_or_else(|| *name, |x| *x));
+                    .with_part(import.alias.as_ref().map_or_else(|| name, |x| *x));
+
                 self.root_module_declaration.module.declare(
                     imported_as,
                     DeclaredItem {
                         kind: DeclaredItemKind::Import(DeclaredImport {
-                            imported_item: exporting_module_name.with_part(*name),
+                            imported_item: exporting_module_name.with_part(name),
                         }),
                         visibility: types::Visibility::Internal,
                         position: import.position,
@@ -69,7 +70,7 @@ impl<'pre> DeclarationChecker<'pre> {
         program: &[ast::SourceFile],
     ) -> Result<(), TypeCheckError> {
         for file in program {
-            let module_path = types::FQName::parse(&file.name.to_string());
+            let module_path = FQName::parse(&file.name.to_string());
             for declaration in &file.declarations {
                 let position = declaration.position;
 
@@ -159,7 +160,7 @@ impl<'pre> DeclarationChecker<'pre> {
         program: &[ast::SourceFile],
     ) -> Result<(), TypeCheckError> {
         for file in program {
-            let module_path = types::FQName::parse(&file.name.to_string());
+            let module_path = FQName::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -172,7 +173,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
 
         for file in program {
-            let module_path = types::FQName::parse(&file.name.to_string());
+            let module_path = FQName::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -209,7 +210,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
 
         for file in program {
-            let module_path = types::FQName::parse(&file.name.to_string());
+            let module_path = FQName::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -235,7 +236,7 @@ impl<'pre> DeclarationChecker<'pre> {
 
     fn type_check_struct(
         &mut self,
-        module_path: types::FQName,
+        module_path: FQName,
         struct_: &ast::Struct,
     ) -> Result<(), TypeCheckError> {
         let mut fields = vec![];
@@ -315,8 +316,8 @@ impl<'pre> DeclarationChecker<'pre> {
     fn type_check_associated_function_declaration(
         &self,
         function: &ast::Function,
-        current_module: types::FQName,
-        self_type: types::FQName,
+        current_module: FQName,
+        self_type: FQName,
         position: ast::SourceSpan,
     ) -> Result<DeclaredFunction, TypeCheckError> {
         let function_name = function.name;
@@ -357,7 +358,7 @@ impl<'pre> DeclarationChecker<'pre> {
     fn type_check_function_declaration(
         &self,
         function: &ast::Function,
-        module_path: types::FQName,
+        module_path: FQName,
         position: ast::SourceSpan,
     ) -> DeclaredFunction {
         let function_name = function.name;

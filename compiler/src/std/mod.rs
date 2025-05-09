@@ -7,14 +7,14 @@ use inkwell::context::Context;
 use crate::{
     ast,
     compile::{CompileError, CompiledRootModule, Compiler},
+    identifier::FQName,
     type_check::{errors::TypeCheckError, type_check},
     types,
 };
 
-pub(crate) static TYPE_NAME_U64: LazyLock<types::FQName> =
-    LazyLock::new(|| types::FQName::parse("std.u64"));
-pub(crate) static TYPE_NAME_STRING: LazyLock<types::FQName> =
-    LazyLock::new(|| types::FQName::parse("std.string"));
+pub(crate) static TYPE_NAME_U64: LazyLock<FQName> = LazyLock::new(|| FQName::parse("std.u64"));
+pub(crate) static TYPE_NAME_STRING: LazyLock<FQName> =
+    LazyLock::new(|| FQName::parse("std.string"));
 
 pub fn type_check_std() -> Result<types::RootModule, TypeCheckError> {
     let asts = vec![crate::parser::parse_file(

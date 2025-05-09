@@ -5,14 +5,13 @@ use inkwell::values::BasicValue;
 
 use crate::{
     compile::{context::CompilerContext, unique_name, value::StructInstance},
-    identifier::Identifier,
+    identifier::{FQName, Identifier},
     types,
 };
 
 use super::rc::RcValue;
 
-pub static TYPE_NAME_ARRAY: LazyLock<types::FQName> =
-    LazyLock::new(|| types::FQName::parse("std.array"));
+pub static TYPE_NAME_ARRAY: LazyLock<FQName> = LazyLock::new(|| FQName::parse("std.array"));
 static ITEMS_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("items"));
 static LENGTH_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("length"));
 static CAPACITY_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("capacity"));

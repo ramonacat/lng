@@ -77,7 +77,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
         pub fn describe_structure() -> crate::types::structs::Struct {
             #generics
 
-            let type_name = crate::types::FQName::parse(#name_lit);
+            let type_name = crate::identifier::FQName::parse(#name_lit);
             let struct_id = crate::types::structs::StructId::FQName(type_name);
 
             crate::types::structs::Struct {

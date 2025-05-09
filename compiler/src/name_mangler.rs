@@ -1,13 +1,13 @@
 use itertools::Itertools;
 
 use crate::{
-    identifier::Identifier,
-    types::{self, TypeArgumentValues},
+    identifier::{FQName, Identifier},
+    types,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IdentifierKind {
-    FQName(types::FQName),
+    FQName(FQName),
     Identifier(Identifier),
 }
 
@@ -22,7 +22,7 @@ impl MangledIdentifier {
         self.mangled.as_str()
     }
 
-    pub(crate) fn with_types(self, arg: &TypeArgumentValues) -> Self {
+    pub(crate) fn with_types(self, arg: &types::TypeArgumentValues) -> Self {
         Self {
             mangled: self.mangled
                 + "$$$"
@@ -36,7 +36,7 @@ impl MangledIdentifier {
     }
 }
 
-pub fn mangle_fq_name(fq_name: types::FQName) -> MangledIdentifier {
+pub fn mangle_fq_name(fq_name: FQName) -> MangledIdentifier {
     let mangled_module_path = fq_name
         .parts()
         .iter()

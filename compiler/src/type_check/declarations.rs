@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     ast::{self, SourceSpan},
-    identifier::Identifier,
+    identifier::{FQName, Identifier},
     types,
 };
 
@@ -12,7 +12,7 @@ use super::errors::TypeCheckError;
 pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
     // TODO create a type for ModuleId, akin to FunctionId/StructId
-    pub(super) module_name: types::FQName,
+    pub(super) module_name: FQName,
     pub(super) arguments: Vec<types::functions::Argument>,
     pub(super) return_type: types::Type,
     pub(super) ast: ast::Function,
@@ -28,7 +28,7 @@ pub(super) struct DeclaredStructField {
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredImport {
-    pub(super) imported_item: types::FQName,
+    pub(super) imported_item: FQName,
 }
 
 // TODO can we kill the RefCells and let the borrowck do the borrowck?
@@ -85,7 +85,7 @@ impl std::fmt::Debug for DeclaredModule<'_> {
 
 impl<'pre> DeclaredModule<'pre> {
     pub(super) fn import_predeclared(&mut self, module: &'pre types::Module) {
-        let root_name = types::FQName::parse("");
+        let root_name = FQName::parse("");
 
         for (item_name, item) in module.items() {
             let visibility = item.visibility;
@@ -101,7 +101,7 @@ impl<'pre> DeclaredModule<'pre> {
         }
     }
 
-    pub(super) fn declare(&mut self, name: types::FQName, item: DeclaredItem<'pre>) {
+    pub(super) fn declare(&mut self, name: FQName, item: DeclaredItem<'pre>) {
         if name.len() == 1 {
             let old = self.items.insert(name.last(), item);
             assert!(old.is_none());
@@ -132,7 +132,7 @@ impl<'pre> DeclaredModule<'pre> {
     }
 
     // TODO can we get rid of the clones here?
-    pub(super) fn get_item(&self, name: types::FQName) -> Option<DeclaredItem> {
+    pub(super) fn get_item(&self, name: FQName) -> Option<DeclaredItem> {
         if name.len() == 1 {
             return self.items.get(&name.last()).cloned();
         }
@@ -197,7 +197,7 @@ impl DeclaredItem<'_> {
     pub(super) fn type_(
         &self,
         root_module: &DeclaredModule,
-        current_module: types::FQName,
+        current_module: FQName,
         error_location: ast::SourceSpan,
     ) -> Result<types::Type, TypeCheckError> {
         // TODO also handle the case of this item being generic
@@ -227,7 +227,7 @@ impl DeclaredItem<'_> {
 
 pub(super) fn resolve_type(
     root_module: &DeclaredModule,
-    current_module: types::FQName,
+    current_module: FQName,
     r#type: &ast::TypeDescription,
     error_location: ast::SourceSpan,
 ) -> Result<types::Type, TypeCheckError> {
@@ -249,7 +249,7 @@ pub(super) fn resolve_type(
             let item = root_module
                 .get_item(current_module.with_part(*name))
                 // TODO should there be a keyword for global scope access instead of this or_else?
-                .or_else(|| root_module.get_item(types::FQName::from_parts(std::iter::once(*name))))
+                .or_else(|| root_module.get_item(FQName::from_identifier(*name)))
                 .unwrap();
 
             match item.kind {

@@ -1,6 +1,10 @@
 use std::{error::Error, fmt::Display};
 
-use crate::{ast, identifier::Identifier, types};
+use crate::{
+    ast,
+    identifier::{FQName, Identifier},
+    types,
+};
 
 #[derive(Debug)]
 pub struct TypeCheckError {
@@ -27,11 +31,11 @@ pub enum TypeCheckErrorDescription {
     FunctionArgumentCannotBeVoid {
         argument_name: Identifier,
     },
-    ModuleDoesNotExist(types::FQName),
-    ItemDoesNotExist(types::FQName),
-    ItemNotExported(types::FQName, Identifier),
+    ModuleDoesNotExist(FQName),
+    ItemDoesNotExist(FQName),
+    ItemNotExported(FQName, Identifier),
     UndeclaredVariable(Identifier),
-    ImplNotOnStruct(types::FQName),
+    ImplNotOnStruct(FQName),
     MismatchedAssignmentType {
         target_variable: Identifier,
         variable_type: types::Type,

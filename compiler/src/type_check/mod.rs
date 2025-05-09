@@ -12,6 +12,7 @@ use errors::{TypeCheckError, TypeCheckErrorDescription};
 
 use crate::{
     ast,
+    identifier::FQName,
     types::{self, structs::InstantiatedStructId},
 };
 
@@ -19,7 +20,7 @@ impl types::Item {
     fn type_(
         &self,
         root_module: &DeclaredModule,
-        current_module: types::FQName,
+        current_module: FQName,
         error_location: ast::SourceSpan,
     ) -> Result<types::Type, TypeCheckError> {
         // TODO handle possible generics here

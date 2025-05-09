@@ -27,7 +27,7 @@ use value::{StructInstance, Value};
 
 use crate::{
     ast,
-    identifier::Identifier,
+    identifier::{FQName, Identifier},
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
     types::{self, TypeArgumentValues, functions::InstantiatedFunctionId},
 };
@@ -126,18 +126,18 @@ pub struct CompileError {
 
 #[derive(Debug)]
 pub enum CompileErrorDescription {
-    ModuleNotFound(types::FQName),
+    ModuleNotFound(FQName),
     FunctionNotFound {
-        module_name: types::FQName,
+        module_name: FQName,
         function_name: Identifier,
     },
     InternalError(String),
     StructNotFound {
-        module_name: types::FQName,
+        module_name: FQName,
         struct_name: Identifier,
     },
-    FieldNotFound(types::FQName, Identifier),
-    MissingGenericArguments(types::FQName, types::TypeArguments),
+    FieldNotFound(FQName, Identifier),
+    MissingGenericArguments(FQName, types::TypeArguments),
 }
 
 impl CompileErrorDescription {
@@ -261,8 +261,8 @@ impl<'ctx> Compiler<'ctx> {
             // the rest of the compilation can just add methods, etc. to them
             let mut scope = GlobalScope::new(HashMap::new(), HashMap::new());
 
-            let std = scope
-                .get_or_create_module(types::FQName::parse("std"), || context.create_module("std"));
+            let std =
+                scope.get_or_create_module(FQName::parse("std"), || context.create_module("std"));
 
             std.set_variable(
                 Identifier::parse("string"),
@@ -314,8 +314,8 @@ impl<'ctx> Compiler<'ctx> {
 
         self.context.global_scope.structs = AllStructs::new(structs, functions);
 
-        self.declare_items(root_module, types::FQName::parse(""));
-        self.resolve_imports(root_module, types::FQName::parse(""))?;
+        self.declare_items(root_module, FQName::parse(""));
+        self.resolve_imports(root_module, FQName::parse(""))?;
 
         // self.define_items(root_module, FQName::parse(""))?;
 
@@ -350,7 +350,7 @@ impl<'ctx> Compiler<'ctx> {
     fn resolve_imports(
         &mut self,
         program: &types::Module,
-        root_path: types::FQName,
+        root_path: FQName,
     ) -> Result<(), CompileError> {
         for (name, item) in program.items() {
             match &item.kind {
@@ -393,7 +393,7 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
-    fn declare_items(&mut self, program: &types::Module, root_path: types::FQName) {
+    fn declare_items(&mut self, program: &types::Module, root_path: FQName) {
         for (path, declaration) in program.items() {
             self.get_or_create_module(root_path);
 
@@ -411,7 +411,7 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn get_or_create_module(&mut self, module_path: types::FQName) -> &mut CompiledModule<'ctx> {
+    fn get_or_create_module(&mut self, module_path: FQName) -> &mut CompiledModule<'ctx> {
         self.context
             .global_scope
             .get_or_create_module(module_path, || {
@@ -501,7 +501,7 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_statements(
         &mut self,
         statements: &Vec<types::Statement>,
-        module_path: types::FQName,
+        module_path: FQName,
         compiled_function: &mut CompiledFunction<'ctx>,
     ) -> Result<(), CompileError> {
         for statement in statements {
@@ -547,7 +547,7 @@ impl<'ctx> Compiler<'ctx> {
         expression: &types::Expression,
         self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
-        module_path: types::FQName,
+        module_path: FQName,
     ) -> Result<(Option<Value<'ctx>>, Value<'ctx>), CompileError> {
         let position = expression.position;
 
@@ -635,7 +635,7 @@ impl<'ctx> Compiler<'ctx> {
         &mut self,
         self_: Option<&Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
-        module_path: types::FQName,
+        module_path: FQName,
         position: ast::SourceSpan,
         target: &types::Expression,
         arguments: &[types::Expression],
@@ -667,7 +667,6 @@ impl<'ctx> Compiler<'ctx> {
             .global_scope
             .get_module(definition.module_name)
             .unwrap()
-            // TODO mangle the instantiated FunctionId here!
             .has_function(&instantiated_function_id.into_mangled())
         {
             self.compile_function(&definition).unwrap();
@@ -713,7 +712,6 @@ impl<'ctx> Compiler<'ctx> {
                 &call_arguments,
                 &unique_name(&["call_result"]),
             )
-            // TODO treat FunctionId as opaque, remove this match
             .map_err(|e| e.at(position))?;
         let call_result = call_result.as_any_value_enum();
         let value = match definition.return_type.kind() {

@@ -2,7 +2,10 @@ use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::RwLock};
 
 use inkwell::module::Module;
 
-use crate::{identifier::Identifier, types};
+use crate::{
+    identifier::{FQName, Identifier},
+    types,
+};
 
 use super::{Value, context::AllStructs, module::CompiledModule};
 
@@ -77,7 +80,7 @@ impl<'ctx> Scope<'ctx> {
 }
 
 pub struct GlobalScope<'ctx> {
-    modules: HashMap<types::FQName, CompiledModule<'ctx>>,
+    modules: HashMap<FQName, CompiledModule<'ctx>>,
     scope: Rc<Scope<'ctx>>,
     // TODO should it be made private?
     pub structs: AllStructs<'ctx>,
@@ -122,7 +125,7 @@ impl GlobalScope<'_> {
 impl<'ctx> GlobalScope<'ctx> {
     pub(super) fn get_or_create_module(
         &mut self,
-        path: types::FQName,
+        path: FQName,
         create_llvm_module: impl FnOnce() -> Module<'ctx>,
     ) -> &mut CompiledModule<'ctx> {
         self.modules
@@ -130,18 +133,18 @@ impl<'ctx> GlobalScope<'ctx> {
             .or_insert_with(|| CompiledModule::new(self.scope.child(), create_llvm_module()))
     }
 
-    pub fn get_module(&self, path: types::FQName) -> Option<&CompiledModule<'ctx>> {
+    pub fn get_module(&self, path: FQName) -> Option<&CompiledModule<'ctx>> {
         self.modules.get(&path)
     }
 
     pub(crate) fn get_module_mut(
         &mut self,
-        root_path: types::FQName,
+        root_path: FQName,
     ) -> Option<&mut CompiledModule<'ctx>> {
         self.modules.get_mut(&root_path)
     }
 
-    pub(crate) fn get_value(&self, item_path: types::FQName) -> Option<Value<'ctx>> {
+    pub(crate) fn get_value(&self, item_path: FQName) -> Option<Value<'ctx>> {
         self.modules
             .get(&item_path.without_last())
             .and_then(|x| x.get_variable(item_path.last()))

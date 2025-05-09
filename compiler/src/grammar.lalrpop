@@ -7,9 +7,9 @@ Identifier: identifier::Identifier = {
     r"\p{ID_Start}\p{ID_Continue}*" => identifier::Identifier::parse(<>)
 }
 
-ImportPath: Vec<identifier::Identifier> = {
-    <mut l:ImportPath> "::" <r:Identifier> => { l.push(r); l },
-    <id:Identifier> => vec![id]
+ImportPath: identifier::FQName = {
+    <l:ImportPath> "::" <r:Identifier> => l.with_part(r),
+    <id:Identifier> => identifier::FQName::from_identifier(id)
 }
 
 Import: ast::Import = {

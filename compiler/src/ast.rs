@@ -5,7 +5,7 @@ use std::{
 
 use string_interner::{StringInterner, backend::StringBackend, symbol::SymbolU32};
 
-use crate::identifier::Identifier;
+use crate::identifier::{FQName, Identifier};
 
 static FILENAMES: LazyLock<RwLock<StringInterner<StringBackend>>> =
     LazyLock::new(|| RwLock::new(StringInterner::default()));
@@ -189,7 +189,7 @@ pub struct Declaration {
 
 #[derive(Debug)]
 pub struct Import {
-    pub path: Vec<Identifier>,
+    pub path: FQName,
     pub alias: Option<Identifier>,
     pub position: SourceSpan,
 }
