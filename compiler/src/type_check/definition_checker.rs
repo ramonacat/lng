@@ -1,28 +1,24 @@
-use crate::{identifier::Identifier, type_check::declarations::DeclaredRootModule};
+use crate::{
+    identifier::Identifier, type_check::declarations::DeclaredRootModule, types::TypeArgumentValues,
+};
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{ast, std::TYPE_NAME_STRING, types};
 
 use super::{
     DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
+    declarations::resolve_type,
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
 
-struct Locals<'globals, 'pre> {
+struct Locals {
     values: HashMap<Identifier, types::Type>,
-    globals: &'globals DeclaredModule<'pre>,
-    scope_module_name: types::FQName,
 }
 
-impl<'globals, 'pre> Locals<'globals, 'pre> {
-    fn from_globals(
-        root_module: &'globals DeclaredModule<'pre>,
-        module_name: types::FQName,
-    ) -> Self {
+impl Locals {
+    fn new() -> Self {
         Self {
             values: HashMap::new(),
-            globals: root_module,
-            scope_module_name: module_name,
         }
     }
 
@@ -32,63 +28,12 @@ impl<'globals, 'pre> Locals<'globals, 'pre> {
         }
     }
 
-    fn resolve_type(
-        &self,
-        type_: &ast::TypeDescription,
-        current_module: types::FQName,
-        error_location: ast::SourceSpan,
-    ) -> Result<types::Type, TypeCheckError> {
-        match type_ {
-            ast::TypeDescription::Array(type_description) => {
-                Ok(types::Type::new_not_generic(types::TypeKind::Array {
-                    element_type: Box::new(self.resolve_type(
-                        type_description,
-                        current_module,
-                        error_location,
-                    )?),
-                }))
-            }
-            ast::TypeDescription::Named(name) => self
-                .values
-                .get(name)
-                .cloned()
-                .map(Ok)
-                .or_else(|| {
-                    self.globals
-                        .get_item(self.scope_module_name.with_part(*name))
-                        .map(|x| x.type_(self.globals, current_module, error_location))
-                })
-                .unwrap_or_else(|| {
-                    Err(
-                        TypeCheckErrorDescription::ItemDoesNotExist(types::FQName::from_parts(
-                            std::iter::once(*name),
-                        ))
-                        .at(error_location),
-                    )
-                }),
-        }
-    }
-
     fn push_variable(&mut self, name: Identifier, r#type: types::Type) {
         self.values.insert(name, r#type);
     }
 
-    fn get(
-        &self,
-        id: Identifier,
-        current_module: types::FQName,
-        error_location: ast::SourceSpan,
-    ) -> Result<Option<types::Type>, TypeCheckError> {
-        self.values
-            .get(&id)
-            .cloned()
-            .map(Ok)
-            .or_else(|| {
-                self.globals
-                    .get_item(self.scope_module_name.with_part(id))
-                    .map(|x| x.type_(self.globals, current_module, error_location))
-            })
-            .transpose()
+    fn get(&self, id: Identifier) -> Option<types::Type> {
+        self.values.get(&id).cloned()
     }
 }
 
@@ -190,7 +135,7 @@ impl<'pre> DefinitionChecker<'pre> {
                 DeclaredItemKind::Module(module_declaration) => {
                     let submodule_root = self.type_check_definitions(
                         module_declaration,
-                        Some(root_path.with_part(*item_name)),
+                        Some(dbg!(root_path.with_part(*item_name))),
                     )?;
                     root_module.declare_item(
                         *item_name,
@@ -321,8 +266,7 @@ impl<'pre> DefinitionChecker<'pre> {
         &self,
         declared_function: &DeclaredFunction,
     ) -> Result<types::functions::Function, TypeCheckError> {
-        let root_module = self.root_module_declaration.module.borrow();
-        let mut locals = Locals::from_globals(&root_module, declared_function.module_name);
+        let mut locals = Locals::new();
 
         locals.push_arguments(&declared_function.arguments);
 
@@ -368,7 +312,7 @@ impl<'pre> DefinitionChecker<'pre> {
     fn type_check_statement(
         &self,
         declared_function: &DeclaredFunction,
-        locals: &mut Locals<'_, 'pre>,
+        locals: &mut Locals,
         statement: &ast::Statement,
     ) -> Result<types::Statement, TypeCheckError> {
         Ok(match statement {
@@ -383,9 +327,12 @@ impl<'pre> DefinitionChecker<'pre> {
                     declared_function.module_name,
                 )?;
 
-                let type_ = locals
-                    .resolve_type(type_, declared_function.module_name, expression.position)
-                    .unwrap();
+                let type_ = resolve_type(
+                    &self.root_module_declaration.module.borrow(),
+                    declared_function.module_name,
+                    type_,
+                    expression.position,
+                )?;
 
                 if checked_expression.type_ != type_ {
                     return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
@@ -460,39 +407,58 @@ impl<'pre> DefinitionChecker<'pre> {
                 }),
             },
             ast::ExpressionKind::VariableReference(name) => {
-                let value_type = locals
-                    .get(*name, module_path, expression.position)?
-                    .ok_or_else(|| {
-                        TypeCheckErrorDescription::UndeclaredVariable(*name).at(expression.position)
-                    })?;
-
-                Ok(types::Expression {
-                    position,
-                    type_: value_type,
-                    kind: types::ExpressionKind::VariableAccess(*name),
-                })
+                self.type_check_variable_reference(expression, locals, module_path, *name)
             }
+            // TODO instead of resolving the struct name here, we should make it take an expression
+            // instead of an identifier
             ast::ExpressionKind::StructConstructor(struct_name) => {
-                let struct_type = locals
-                    .get(*struct_name, module_path, expression.position)?
-                    .ok_or_else(|| {
-                        TypeCheckErrorDescription::UndeclaredVariable(*struct_name)
-                            .at(expression.position)
-                    })?;
+                let struct_type = locals.get(*struct_name);
 
-                let types::TypeKind::Object {
-                    type_name: instantiated_struct_id,
-                } = struct_type.kind()
-                else {
-                    todo!();
+                let (type_, kind) = if let Some(struct_type) = struct_type {
+                    let types::TypeKind::Object {
+                        type_name: instantiated_struct_id,
+                    } = struct_type.kind()
+                    else {
+                        todo!();
+                    };
+
+                    (
+                        types::Type::new_not_generic(types::TypeKind::Object {
+                            type_name: instantiated_struct_id.clone(),
+                        }),
+                        types::ExpressionKind::StructConstructor(instantiated_struct_id.clone()),
+                    )
+                } else if let Some(global) = self
+                    .root_module_declaration
+                    .module
+                    .borrow()
+                    .get_item(module_path.with_part(*struct_name))
+                {
+                    let DeclaredItemKind::Struct(struct_id) = global.kind else {
+                        todo!();
+                    };
+                    (
+                        global.type_(
+                            &self.root_module_declaration.module.borrow(),
+                            module_path,
+                            expression.position,
+                        )?,
+                        types::ExpressionKind::StructConstructor(
+                            types::structs::InstantiatedStructId(
+                                struct_id,
+                                TypeArgumentValues::new_empty(),
+                            ),
+                        ),
+                    )
+                } else {
+                    return Err(TypeCheckErrorDescription::UndeclaredVariable(*struct_name)
+                        .at(expression.position));
                 };
 
                 Ok(types::Expression {
                     position,
-                    type_: types::Type::new_not_generic(types::TypeKind::Object {
-                        type_name: instantiated_struct_id.clone(),
-                    }),
-                    kind: types::ExpressionKind::StructConstructor(instantiated_struct_id.clone()),
+                    type_,
+                    kind,
                 })
             }
             ast::ExpressionKind::FieldAccess { target, field_name } => {
@@ -519,6 +485,42 @@ impl<'pre> DefinitionChecker<'pre> {
                 })
             }
         }
+    }
+
+    fn type_check_variable_reference(
+        &self,
+        expression: &ast::Expression,
+        locals: &Locals,
+        module_path: types::FQName,
+        name: Identifier,
+    ) -> Result<types::Expression, TypeCheckError> {
+        let value_type = locals.get(name);
+
+        let (kind, type_) = if let Some(value_type) = value_type {
+            (types::ExpressionKind::LocalVariableAccess(name), value_type)
+        } else if let Some(global) = &self
+            .root_module_declaration
+            .module
+            .borrow()
+            .get_item(module_path.with_part(name))
+        {
+            (
+                types::ExpressionKind::GlobalVariableAccess(module_path.with_part(name)),
+                global.type_(
+                    &self.root_module_declaration.module.borrow(),
+                    module_path,
+                    expression.position,
+                )?,
+            )
+        } else {
+            return Err(TypeCheckErrorDescription::UndeclaredVariable(name).at(expression.position));
+        };
+
+        Ok(types::Expression {
+            position: expression.position,
+            type_,
+            kind,
+        })
     }
 
     fn type_check_call(

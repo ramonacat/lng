@@ -334,9 +334,8 @@ pub enum ExpressionKind {
         arguments: Vec<Expression>,
     },
     Literal(Literal),
-    // TODO we should have separate GlobalVariableAccess and LocalVariableAccess and resolve to
-    // fqname in typechecker wherever possible
-    VariableAccess(Identifier),
+    LocalVariableAccess(Identifier),
+    GlobalVariableAccess(FQName),
     StructConstructor(InstantiatedStructId),
     FieldAccess {
         target: Box<Expression>,

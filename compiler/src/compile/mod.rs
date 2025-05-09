@@ -581,8 +581,11 @@ impl<'ctx> Compiler<'ctx> {
                     ),
                 )),
             },
-            types::ExpressionKind::VariableAccess(name) => {
+            types::ExpressionKind::LocalVariableAccess(name) => {
                 Ok((None, compiled_function.scope.get_value(*name).unwrap()))
+            }
+            types::ExpressionKind::GlobalVariableAccess(name) => {
+                Ok((None, self.context.global_scope.get_value(*name).unwrap()))
             }
             types::ExpressionKind::StructConstructor(name) => {
                 // TODO ensure the struct is instantiated in the context
