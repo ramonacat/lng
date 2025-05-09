@@ -31,6 +31,7 @@ pub(super) struct DeclaredImport {
     pub(super) imported_item: types::FQName,
 }
 
+// TODO can we kill the RefCells and let the borrowck do the borrowck?
 pub(super) struct DeclaredRootModule<'pre> {
     pub(super) structs: RefCell<HashMap<types::structs::StructId, types::structs::Struct>>,
     pub(super) functions: RefCell<HashMap<types::functions::FunctionId, DeclaredFunction>>,
