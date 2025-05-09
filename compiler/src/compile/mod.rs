@@ -11,7 +11,7 @@ use builtins::{
     rc::{self, RcValue},
     string::{self, StringValue},
 };
-use context::{AllStructs, Builtins, CompilerContext};
+use context::{AllItems, Builtins, CompilerContext};
 use inkwell::{
     basic_block::BasicBlock,
     builder::BuilderError,
@@ -296,7 +296,7 @@ impl<'ctx> Compiler<'ctx> {
         // TODO should the array struct be declared in stdlib, like string?
         structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
 
-        self.context.global_scope.structs = AllStructs::new(structs, functions);
+        self.context.global_scope.structs = AllItems::new(structs, functions);
 
         for module in program.modules().keys() {
             self.get_or_create_module(*module);

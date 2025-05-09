@@ -20,8 +20,7 @@ pub struct Builtins {
     pub rc_handle: types::structs::Struct,
 }
 
-// TODO rename -> AllItems or something
-pub struct AllStructs<'ctx> {
+pub struct AllItems<'ctx> {
     structs: HashMap<types::structs::StructId, types::structs::Struct>,
     instantiated_structs:
         RwLock<HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
@@ -30,7 +29,7 @@ pub struct AllStructs<'ctx> {
         RwLock<HashMap<types::functions::InstantiatedFunctionId, InstantiatedFunctionType>>,
 }
 
-impl<'ctx> AllStructs<'ctx> {
+impl<'ctx> AllItems<'ctx> {
     pub(crate) fn new(
         structs: HashMap<types::structs::StructId, types::structs::Struct>,
         functions: HashMap<types::functions::FunctionId, types::functions::Function>,
@@ -89,7 +88,7 @@ impl<'ctx> AllStructs<'ctx> {
     }
 }
 
-impl std::fmt::Debug for AllStructs<'_> {
+impl std::fmt::Debug for AllItems<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "structs: {:?}", self.structs.keys())?;
         writeln!(f, "functions: {:?}", self.functions.keys())

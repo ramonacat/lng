@@ -128,6 +128,7 @@ pub enum TypeKind {
     Pointer(Box<Type>),
 }
 
+// TODO separate GenericType and InstantiatedType
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Type {
     kind: TypeKind,

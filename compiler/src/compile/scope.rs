@@ -7,7 +7,7 @@ use crate::{
     types::{self, modules::ModuleId},
 };
 
-use super::{Value, context::AllStructs, module::CompiledModule};
+use super::{Value, context::AllItems, module::CompiledModule};
 
 pub struct Scope<'ctx> {
     locals: RwLock<HashMap<Identifier, Value<'ctx>>>,
@@ -83,7 +83,7 @@ pub struct GlobalScope<'ctx> {
     modules: HashMap<types::modules::ModuleId, CompiledModule<'ctx>>,
     scope: Rc<Scope<'ctx>>,
     // TODO should it be made private?
-    pub structs: AllStructs<'ctx>,
+    pub structs: AllItems<'ctx>,
 }
 
 impl Debug for GlobalScope<'_> {
@@ -117,7 +117,7 @@ impl GlobalScope<'_> {
         Self {
             modules: HashMap::new(),
             scope: Scope::root(),
-            structs: AllStructs::new(structs, functions),
+            structs: AllItems::new(structs, functions),
         }
     }
 }
