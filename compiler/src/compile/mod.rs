@@ -63,7 +63,7 @@ pub fn compile(
 
     let compiler = Compiler::new(&context, Some(std_scope));
 
-    let compiled_root_module = compiler.compile(program)?;
+    let compiled_root_module = compiler.compile(program);
     let root_module = context.create_module("root");
 
     let CompiledRootModule::App {
@@ -138,16 +138,6 @@ pub enum CompileErrorDescription {
     },
     FieldNotFound(FQName, Identifier),
     MissingGenericArguments(FQName, types::TypeArguments),
-}
-
-impl CompileErrorDescription {
-    #[must_use]
-    const fn at(self, position: ast::SourceSpan) -> CompileError {
-        CompileError {
-            description: self,
-            position,
-        }
-    }
 }
 
 impl Display for CompileErrorDescription {
@@ -290,12 +280,8 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    pub fn compile(
-        mut self,
-        program: &types::modules::RootModule,
-    ) -> Result<CompiledRootModule<'ctx>, CompileError> {
+    pub fn compile(mut self, program: &types::modules::RootModule) -> CompiledRootModule<'ctx> {
         let main = program.main();
-        let root_module = program.root_module();
         let mut structs = program.structs().clone();
         let functions = program.functions().clone();
 
@@ -312,8 +298,9 @@ impl<'ctx> Compiler<'ctx> {
 
         self.context.global_scope.structs = AllStructs::new(structs, functions);
 
-        self.declare_items(root_module, types::modules::ModuleId::root());
-        self.resolve_imports(root_module, types::modules::ModuleId::parse(""))?;
+        for module in program.modules().keys() {
+            self.get_or_create_module(*module);
+        }
 
         if let Some(main) = main {
             let definition = self
@@ -335,93 +322,13 @@ impl<'ctx> Compiler<'ctx> {
 
             self.compile_function(&definition).unwrap();
 
-            Ok(CompiledRootModule::App {
+            CompiledRootModule::App {
                 scope: self.context.global_scope,
                 main,
-            })
-        } else {
-            Ok(CompiledRootModule::Library {
-                scope: self.context.global_scope,
-            })
-        }
-    }
-
-    fn resolve_imports(
-        &mut self,
-        program: &types::modules::Module,
-        root_path: types::modules::ModuleId,
-    ) -> Result<(), CompileError> {
-        for (name, item) in program.items() {
-            match &item.kind {
-                types::ItemKind::Import(import) => {
-                    // TODO this is a hack, global_scope.get_value should just take the ItemId as
-                    // an argument
-                    let fqname = match &import.imported_item {
-                        types::ItemId::Struct(struct_id) => struct_id.fqname(),
-                        types::ItemId::Function(function_id) => function_id.fqname(),
-                        types::ItemId::Module(module_id) => module_id.fqname(),
-                    };
-                    let value = self
-                        .context
-                        .global_scope
-                        // TODO the import should have the pair of module id and item name, instead
-                        // of just an FQName
-                        .get_value(
-                            types::modules::ModuleId::parse(&fqname.without_last().to_string()),
-                            fqname.last(),
-                        )
-                        .unwrap();
-
-                    let Some(module) = self.context.global_scope.get_module_mut(root_path) else {
-                        return Err(
-                            CompileErrorDescription::ModuleNotFound(root_path).at(import.position)
-                        );
-                    };
-
-                    match value {
-                        Value::Primitive(_, _) => todo!(),
-                        Value::Reference(_) => todo!(),
-                        Value::Function(function_id) => {
-                            module.import_function(function_id);
-
-                            let function_value = Value::Function(function_id);
-
-                            module.set_variable(name, function_value);
-                        }
-                        Value::Struct(struct_id) => {
-                            module.set_variable(name, Value::Struct(struct_id));
-                        }
-                        Value::Empty => todo!(),
-                    }
-                }
-                types::ItemKind::Module(module) => {
-                    self.resolve_imports(module, root_path.child(name))?;
-                }
-                types::ItemKind::Function(_) | types::ItemKind::Struct(_) => {}
             }
-        }
-
-        Ok(())
-    }
-
-    fn declare_items(
-        &mut self,
-        program: &types::modules::Module,
-        root_path: types::modules::ModuleId,
-    ) {
-        for (path, declaration) in program.items() {
-            self.get_or_create_module(root_path);
-
-            match &declaration.kind {
-                types::ItemKind::Function(function_id) => {
-                    // TODO remove this match, treat function.id as opaque
-                    self.get_or_create_module(root_path)
-                        .set_variable(path, Value::Function(*function_id));
-                }
-                types::ItemKind::Module(module_declaration) => {
-                    self.declare_items(module_declaration, root_path.child(path));
-                }
-                types::ItemKind::Import(_) | types::ItemKind::Struct(_) => {}
+        } else {
+            CompiledRootModule::Library {
+                scope: self.context.global_scope,
             }
         }
     }
@@ -582,37 +489,53 @@ impl<'ctx> Compiler<'ctx> {
 
                 Ok((None, value))
             }
-            types::ExpressionKind::Literal(literal) => match literal {
-                types::Literal::String(s) => {
-                    let value = StringValue::new_literal(s.clone());
-                    let name = &unique_name(&["literal", "string"]);
-                    let rc = value.build_instance(name, &self.context);
-                    compiled_function.rcs.push(rc.clone());
-
-                    Ok((None, Value::Reference(rc)))
-                }
-                types::Literal::UnsignedInteger(value) => Ok((
-                    None,
-                    Value::Primitive(
-                        CompilerContext::get_std_type("u64"),
-                        self.context.const_u64(*value).as_basic_value_enum(),
-                    ),
-                )),
-            },
+            types::ExpressionKind::Literal(literal) => {
+                Ok(self.compile_literal(compiled_function, literal))
+            }
             types::ExpressionKind::LocalVariableAccess(name) => {
                 Ok((None, compiled_function.scope.get_value(*name).unwrap()))
             }
             // TODO the name here should be a pair of (ModuleId, Identifier)
-            types::ExpressionKind::GlobalVariableAccess(name) => Ok((
-                None,
-                self.context
+            types::ExpressionKind::GlobalVariableAccess(name) => {
+                let value = self
+                    .context
                     .global_scope
                     .get_value(
                         types::modules::ModuleId::parse(&name.without_last().to_string()),
                         name.last(),
                     )
-                    .unwrap(),
-            )),
+                    .or_else(|| {
+                        // TODO this is sorta hacky and doesn't support generics
+                        let (module_id, item_id) = (
+                            types::modules::ModuleId::parse(&name.without_last().to_string()),
+                            name.last(),
+                        );
+                        self.context
+                            .global_scope
+                            .structs
+                            .inspect_instantiated_function(
+                                &types::functions::InstantiatedFunctionId(
+                                    types::functions::FunctionId::InModule(module_id, item_id),
+                                    types::TypeArgumentValues::new_empty(),
+                                ),
+                                |f_| {
+                                    f_.map(|x| {
+                                        self.context
+                                            .global_scope
+                                            .get_module(module_id)
+                                            .unwrap()
+                                            .get_or_create_function(&x.definition, &self.context);
+
+                                        Value::Function(types::functions::FunctionId::InModule(
+                                            module_id,
+                                            name.last(),
+                                        ))
+                                    })
+                                },
+                            )
+                    });
+                Ok((None, value.unwrap()))
+            }
             types::ExpressionKind::StructConstructor(name) => {
                 // TODO ensure the struct is instantiated in the context
                 // TODO get the type argument values from the expression!
@@ -654,6 +577,30 @@ impl<'ctx> Compiler<'ctx> {
                 Ok((Some(target_value), access_result))
             }
             types::ExpressionKind::SelfAccess => Ok((None, self_.unwrap())),
+        }
+    }
+
+    fn compile_literal(
+        &self,
+        compiled_function: &mut CompiledFunction<'ctx>,
+        literal: &types::Literal,
+    ) -> (Option<Value<'ctx>>, Value<'ctx>) {
+        match literal {
+            types::Literal::String(s) => {
+                let value = StringValue::new_literal(s.clone());
+                let name = &unique_name(&["literal", "string"]);
+                let rc = value.build_instance(name, &self.context);
+                compiled_function.rcs.push(rc.clone());
+
+                (None, Value::Reference(rc))
+            }
+            types::Literal::UnsignedInteger(value) => (
+                None,
+                Value::Primitive(
+                    CompilerContext::get_std_type("u64"),
+                    self.context.const_u64(*value).as_basic_value_enum(),
+                ),
+            ),
         }
     }
 

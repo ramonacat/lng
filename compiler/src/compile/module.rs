@@ -5,7 +5,11 @@ use super::{
     context::CompilerContext,
     rc::{self, RcValue},
 };
-use crate::{identifier::Identifier, name_mangler::MangledIdentifier, types};
+use crate::{
+    identifier::Identifier,
+    name_mangler::{MangledIdentifier, nomangle_identifier},
+    types,
+};
 use inkwell::{
     module::{Linkage, Module},
     values::FunctionValue,
@@ -13,13 +17,19 @@ use inkwell::{
 
 impl types::functions::Function {
     const fn linkage(&self) -> Linkage {
-        match self.id {
-            types::functions::FunctionId::InStruct(_, _)
-            | types::functions::FunctionId::InModule(_, _) => match self.visibility {
+        match self.body {
+            types::functions::FunctionBody::Statements(_) => match self.visibility {
                 types::Visibility::Export => Linkage::External,
                 types::Visibility::Internal => Linkage::Internal,
             },
-            types::functions::FunctionId::Extern(_) => Linkage::External,
+            types::functions::FunctionBody::Extern(_) => Linkage::External,
+        }
+    }
+
+    fn mangled_id(&self) -> MangledIdentifier {
+        match self.body {
+            types::functions::FunctionBody::Extern(identifier) => nomangle_identifier(identifier),
+            types::functions::FunctionBody::Statements(_) => self.id.into_mangled(),
         }
     }
 }
@@ -27,7 +37,6 @@ impl types::functions::Function {
 pub struct CompiledModule<'ctx> {
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
-    imported_functions: Vec<types::functions::FunctionId>,
 }
 
 impl std::fmt::Debug for CompiledModule<'_> {
@@ -38,11 +47,7 @@ impl std::fmt::Debug for CompiledModule<'_> {
 
 impl<'ctx> CompiledModule<'ctx> {
     pub const fn new(scope: Rc<Scope<'ctx>>, llvm_module: Module<'ctx>) -> Self {
-        Self {
-            llvm_module,
-            scope,
-            imported_functions: vec![],
-        }
+        Self { llvm_module, scope }
     }
 
     pub fn to_ir(&self) -> String {
@@ -75,10 +80,6 @@ impl<'ctx> CompiledModule<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.declare_function_inner(name, arguments, return_type, linkage, context)
-    }
-
-    pub(crate) fn import_function(&mut self, function: types::functions::FunctionId) {
-        self.imported_functions.push(function);
     }
 
     pub(crate) fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
@@ -163,11 +164,11 @@ impl<'ctx> CompiledModule<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.llvm_module
-            .get_function(handle.id.into_mangled().as_str())
+            .get_function(handle.mangled_id().as_str())
             .unwrap_or_else(|| {
                 self.declare_function(
                     handle.linkage(),
-                    &handle.id.into_mangled(),
+                    &handle.mangled_id(),
                     &handle.arguments,
                     &handle.return_type,
                     context,

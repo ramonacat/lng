@@ -10,20 +10,19 @@ use crate::{
 };
 
 use super::{
-    DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
-    DeclaredStructField,
+    DeclaredFunction, DeclaredStructField,
     declarations::{DeclaredRootModule, resolve_type},
     definition_checker::DefinitionChecker,
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
 
-pub(super) struct DeclarationChecker<'pre> {
-    root_module_declaration: DeclaredRootModule<'pre>,
+pub(super) struct DeclarationChecker {
+    root_module_declaration: DeclaredRootModule,
     declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
     main: Option<types::functions::FunctionId>,
 }
 
-impl<'pre> DeclarationChecker<'pre> {
+impl DeclarationChecker {
     fn type_check_module_declarations(&mut self, program: &[ast::SourceFile]) {
         // this is equivalent-ish to topo-sort, as fewer parts in the name means it is higher in the
         // hierarchy (i.e. main.test will definitely appear after main)
@@ -34,43 +33,30 @@ impl<'pre> DeclarationChecker<'pre> {
         modules_to_declare.sort_by_key(|x| types::modules::ModuleId::len(*x));
 
         for module_path in modules_to_declare {
-            self.root_module_declaration.module.declare(
-                types::ItemId::Module(module_path),
-                DeclaredItem {
-                    kind: DeclaredItemKind::Module(DeclaredModule::new()),
-                    // TODO how do we determine the visibility for modules?
-                    visibility: types::Visibility::Export,
-                    position: ast::SourceSpan::Internal,
-                },
-            );
+            self.root_module_declaration
+                .declare_module(module_path, types::modules::Module::new(module_path));
         }
     }
 
     fn type_check_imports(&mut self, program: &[ast::SourceFile]) {
         for file in program {
             for import in &file.imports {
+                // TODO this ducking around with path is potentially incorrect, we should decide on
+                // parsing/syntax level which part is the module and which is item
                 let exporting_module_name = import.path.without_last();
                 let name = import.path.last();
 
                 let importing_module_path = FQName::parse(&file.name.to_string());
 
-                self.root_module_declaration.module.declare(
-                    // TODO this is a hack, we should probably have a separate ItemId for imports
-                    // or something
-                    types::ItemId::Struct(types::structs::StructId::InModule(
-                        ModuleId::FQName(importing_module_path),
-                        import.alias.map_or_else(|| name, |x| x),
-                    )),
-                    DeclaredItem {
-                        kind: DeclaredItemKind::Import(DeclaredImport {
-                            imported_item: (
-                                types::modules::ModuleId::FQName(exporting_module_name),
-                                name,
-                            ),
-                        }),
-                        visibility: types::Visibility::Internal,
-                        position: import.position,
-                    },
+                self.root_module_declaration.import(
+                    (
+                        types::modules::ModuleId::FQName(importing_module_path),
+                        import.alias.unwrap_or(name),
+                    ),
+                    (
+                        types::modules::ModuleId::FQName(exporting_module_name),
+                        name,
+                    ),
                 );
             }
         }
@@ -203,23 +189,11 @@ impl<'pre> DeclarationChecker<'pre> {
                         );
 
                         let function_id = function_declaration.id;
+
                         self.root_module_declaration
                             .functions
                             .borrow_mut()
                             .insert(function_id, function_declaration.clone());
-
-                        self.root_module_declaration.module.declare(
-                            // TODO the path here should be a pair of (ModuleId, Identifier)
-                            types::ItemId::Function(types::functions::FunctionId::InModule(
-                                module_path,
-                                function.name,
-                            )),
-                            DeclaredItem {
-                                visibility: Self::convert_visibility(function.visibility),
-                                kind: DeclaredItemKind::Function(function_id),
-                                position: function.position,
-                            },
-                        );
                     }
                     ast::DeclarationKind::Struct(_) | ast::DeclarationKind::Impl(_) => {}
                 }
@@ -236,10 +210,9 @@ impl<'pre> DeclarationChecker<'pre> {
                             // this is so that resolve_type returns an error in case the type is
                             // invalid
                             let _ = resolve_type(
-                                &self.root_module_declaration.module,
+                                &self.root_module_declaration,
                                 module_path,
                                 &field.type_,
-                                field.position,
                             )?;
                         }
                     }
@@ -252,19 +225,14 @@ impl<'pre> DeclarationChecker<'pre> {
     }
 
     fn type_check_struct(
-        &mut self,
+        &self,
         module_path: types::modules::ModuleId,
         struct_: &ast::Struct,
     ) -> Result<(), TypeCheckError> {
         let mut fields = vec![];
         for field in &struct_.fields {
             fields.push(types::structs::StructField {
-                type_: resolve_type(
-                    &self.root_module_declaration.module,
-                    module_path,
-                    &field.type_,
-                    field.position,
-                )?,
+                type_: resolve_type(&self.root_module_declaration, module_path, &field.type_)?,
 
                 static_: false,
                 // TODO the structId should ba a pair of (ModuleId, Identifier)
@@ -280,14 +248,6 @@ impl<'pre> DeclarationChecker<'pre> {
                 fields,
                 impls: HashMap::new(),
                 type_arguments: types::TypeArguments::new_empty(),
-            },
-        );
-        self.root_module_declaration.module.declare(
-            types::ItemId::Struct(id),
-            DeclaredItem {
-                kind: DeclaredItemKind::Struct(id),
-                visibility: Self::convert_visibility(struct_.visibility),
-                position: struct_.position,
             },
         );
         Ok(())
@@ -342,12 +302,7 @@ impl<'pre> DeclarationChecker<'pre> {
         for arg in &function.arguments {
             arguments.push(types::functions::Argument {
                 name: arg.name,
-                type_: resolve_type(
-                    &self.root_module_declaration.module,
-                    current_module,
-                    &arg.type_,
-                    arg.position,
-                )?,
+                type_: resolve_type(&self.root_module_declaration, current_module, &arg.type_)?,
                 position: arg.position,
             });
         }
@@ -358,11 +313,9 @@ impl<'pre> DeclarationChecker<'pre> {
             arguments,
             // TODO figure out the correct error location here
             return_type: resolve_type(
-                &self.root_module_declaration.module,
+                &self.root_module_declaration,
                 current_module,
                 &function.return_type,
-                position, // TODO this should be the position where the return type is declared,
-                          // not the whole declaration
             )?,
             ast: function.clone(),
             position,
@@ -381,33 +334,20 @@ impl<'pre> DeclarationChecker<'pre> {
         for arg in &function.arguments {
             arguments.push(types::functions::Argument {
                 name: arg.name,
-                type_: resolve_type(
-                    &self.root_module_declaration.module,
-                    module_path,
-                    &arg.type_,
-                    arg.position,
-                )
-                .unwrap(),
+                type_: resolve_type(&self.root_module_declaration, module_path, &arg.type_)
+                    .unwrap(),
                 position: arg.position,
             });
         }
 
         DeclaredFunction {
-            id: match &function.body {
-                ast::FunctionBody::Statements(_, _) => {
-                    types::functions::FunctionId::InModule(module_path, function.name)
-                }
-                ast::FunctionBody::Extern(extern_, _) => {
-                    types::functions::FunctionId::Extern(*extern_)
-                }
-            },
+            id: types::functions::FunctionId::InModule(module_path, function.name),
             module_name: module_path,
             arguments,
             return_type: resolve_type(
-                &self.root_module_declaration.module,
+                &self.root_module_declaration,
                 module_path,
                 &function.return_type,
-                position, // TODO this should be the return type, not the whole function
             )
             .unwrap(),
             ast: function.clone(),
@@ -416,7 +356,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
     }
 
-    pub(crate) fn new(root_module_declaration: DeclaredRootModule<'pre>) -> Self {
+    pub(crate) fn new(root_module_declaration: DeclaredRootModule) -> Self {
         Self {
             root_module_declaration,
             declared_impls: HashMap::new(),
@@ -426,8 +366,8 @@ impl<'pre> DeclarationChecker<'pre> {
 
     pub(crate) fn check(
         mut self,
-        program: &'pre [ast::SourceFile],
-    ) -> Result<DefinitionChecker<'pre>, TypeCheckError> {
+        program: &[ast::SourceFile],
+    ) -> Result<DefinitionChecker, TypeCheckError> {
         self.type_check_module_declarations(program);
         self.type_check_imports(program);
         self.type_check_declarations(program)?;

@@ -40,5 +40,5 @@ pub fn compile_std<'ctx>(
 ) -> Result<CompiledRootModule<'ctx>, CompileError> {
     let compiler = Compiler::new(context, None);
 
-    compiler.compile(program)
+    Ok(compiler.compile(program))
 }

@@ -9,7 +9,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use super::{Item, ItemKind, functions::Function, structs::StructId};
+use super::{functions::Function, structs::StructId};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ModuleId {
@@ -25,10 +25,6 @@ impl Display for ModuleId {
 }
 
 impl ModuleId {
-    pub(crate) fn root() -> Self {
-        Self::FQName(FQName::parse(""))
-    }
-
     pub(crate) fn child(self, path: Identifier) -> Self {
         match self {
             Self::FQName(fqname) => Self::FQName(fqname.with_part(path)),
@@ -45,13 +41,6 @@ impl ModuleId {
         }
     }
 
-    // TODO this is hacky, remove
-    pub(crate) const fn fqname(self) -> FQName {
-        match self {
-            Self::FQName(fqname) => fqname,
-        }
-    }
-
     // TODO this is problematic, we'll need
     // a proper toposort to be able to get rid of it
     pub(crate) fn len(self) -> usize {
@@ -63,12 +52,12 @@ impl ModuleId {
 
 pub struct AppModule {
     main: FunctionId,
-    module: Module,
+    modules: HashMap<ModuleId, Module>,
     structs: HashMap<StructId, Struct>,
     functions: HashMap<FunctionId, Function>,
 }
 pub struct LibraryModule {
-    module: Module,
+    modules: HashMap<ModuleId, Module>,
     structs: HashMap<StructId, Struct>,
     functions: HashMap<FunctionId, Function>,
 }
@@ -86,13 +75,6 @@ impl RootModule {
         }
     }
 
-    pub(crate) const fn root_module(&self) -> &Module {
-        match self {
-            Self::App(app_module) => &app_module.module,
-            Self::Library(library_module) => &library_module.module,
-        }
-    }
-
     pub(crate) const fn structs(&self) -> &HashMap<StructId, Struct> {
         match self {
             Self::App(app_module) => &app_module.structs,
@@ -107,27 +89,34 @@ impl RootModule {
         }
     }
 
+    pub(crate) const fn modules(&self) -> &HashMap<ModuleId, Module> {
+        match self {
+            Self::App(app_module) => &app_module.modules,
+            Self::Library(library_module) => &library_module.modules,
+        }
+    }
+
     pub(crate) const fn new_app(
         main: FunctionId,
-        root_module: Module,
+        modules: HashMap<ModuleId, Module>,
         structs: HashMap<StructId, Struct>,
         functions: HashMap<FunctionId, Function>,
     ) -> Self {
         Self::App(AppModule {
             main,
-            module: root_module,
+            modules,
             structs,
             functions,
         })
     }
 
     pub(crate) const fn new_library(
-        root_module: Module,
+        modules: HashMap<ModuleId, Module>,
         structs: HashMap<StructId, Struct>,
         functions: HashMap<FunctionId, Function>,
     ) -> Self {
         Self::Library(LibraryModule {
-            module: root_module,
+            modules,
             structs,
             functions,
         })
@@ -136,58 +125,18 @@ impl RootModule {
 
 #[derive(Clone)]
 pub struct Module {
-    items: HashMap<Identifier, Item>,
+    #[allow(unused)]
+    id: ModuleId,
 }
 
 impl std::fmt::Debug for Module {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut struct_ = f.debug_struct("module");
-        for item in &self.items {
-            struct_.field(&item.0.raw(), item.1);
-        }
-        struct_.finish()
-    }
-}
-
-impl Default for Module {
-    fn default() -> Self {
-        Self::new()
+        write!(f, "module")
     }
 }
 
 impl Module {
-    pub fn new() -> Self {
-        Self {
-            items: HashMap::new(),
-        }
-    }
-
-    pub(crate) fn declare_item(&mut self, name: Identifier, item: Item) {
-        self.items.insert(name, item);
-    }
-
-    pub(crate) fn items(&self) -> impl Iterator<Item = (Identifier, &Item)> {
-        self.items.iter().map(|(k, v)| (*k, v))
-    }
-
-    pub(crate) fn get_item(&self, item_name: FQName) -> Option<&Item> {
-        if item_name.len() == 1 {
-            return self.items.get(&item_name.last());
-        }
-
-        let (first, rest) = item_name.split_first();
-
-        // TODO check visibility (but for that we need an argument to tell us whether we should,
-        // and what the accessing module is)
-        let Item {
-            kind: ItemKind::Module(module),
-            visibility: _,
-            position: _,
-        } = self.items.get(&first).unwrap()
-        else {
-            todo!();
-        };
-
-        module.get_item(rest)
+    pub const fn new(id: ModuleId) -> Self {
+        Self { id }
     }
 }

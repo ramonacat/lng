@@ -2,10 +2,8 @@ use std::fmt::{Display, Formatter};
 
 use crate::{
     ast,
-    identifier::{FQName, Identifier},
-    name_mangler::{
-        MangledIdentifier, mangle_item_name, mangle_struct_item_name, nomangle_identifier,
-    },
+    identifier::Identifier,
+    name_mangler::{MangledIdentifier, mangle_item_name, mangle_struct_item_name},
 };
 
 use super::{
@@ -17,10 +15,6 @@ use super::{
 pub enum FunctionId {
     InModule(ModuleId, Identifier),
     InStruct(StructId, Identifier),
-    // TODO we really shouldn't put the extern in the ID, as this is not the right level for the
-    // concern, the function still has Identifier and ModuleId, but the extern identifier is just
-    // needed to find the external function
-    Extern(Identifier),
 }
 
 impl Display for FunctionId {
@@ -32,7 +26,6 @@ impl Display for FunctionId {
             Self::InStruct(struct_id, identifier) => {
                 write!(f, "InStruct({struct_id}, {identifier})")
             }
-            Self::Extern(identifier) => write!(f, "Extern({identifier})"),
         }
     }
 }
@@ -42,24 +35,12 @@ impl FunctionId {
         match self {
             Self::InModule(module_id, fqname) => mangle_item_name(module_id, fqname),
             Self::InStruct(struct_id, identifier) => mangle_struct_item_name(struct_id, identifier),
-            Self::Extern(identifier) => nomangle_identifier(identifier),
         }
     }
 
     pub(crate) const fn local(&self) -> Identifier {
         match self {
-            Self::InModule(_, identifier)
-            | Self::InStruct(_, identifier)
-            | Self::Extern(identifier) => *identifier,
-        }
-    }
-
-    // TODO this is a hack, remove ASAP
-    pub(crate) fn fqname(&self) -> crate::identifier::FQName {
-        match self {
-            Self::InModule(module_id, identifier) => module_id.fqname().with_part(*identifier),
-            Self::InStruct(struct_id, identifier) => struct_id.fqname().with_part(*identifier),
-            Self::Extern(identifier) => FQName::from_identifier(*identifier),
+            Self::InModule(_, identifier) | Self::InStruct(_, identifier) => *identifier,
         }
     }
 }

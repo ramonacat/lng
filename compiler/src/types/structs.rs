@@ -3,10 +3,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use crate::{
-    identifier::FQName,
-    name_mangler::{MangledIdentifier, mangle_item_name},
-};
+use crate::name_mangler::{MangledIdentifier, mangle_item_name};
 
 use super::{
     Function, FunctionId, Identifier, Type, TypeArgumentValues, TypeArguments, modules::ModuleId,
@@ -42,15 +39,6 @@ pub enum StructId {
     // TODO a dynamically generated one can also be used here
 }
 impl StructId {
-    // TODO this method is hacky, remove
-    pub(crate) fn fqname(self) -> FQName {
-        match self {
-            Self::InModule(module_id, identifier) => {
-                FQName::parse(&module_id.to_string()).with_part(identifier)
-            }
-        }
-    }
-
     pub(crate) fn into_mangled(self) -> MangledIdentifier {
         match self {
             Self::InModule(module_id, identifier) => mangle_item_name(module_id, identifier),

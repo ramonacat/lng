@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
-    ast::{self, SourceSpan},
+    ast,
     identifier::{FQName, Identifier},
     types,
 };
@@ -25,237 +25,161 @@ pub(super) struct DeclaredStructField {
     pub(super) static_: bool,
 }
 
-#[derive(Debug, Clone)]
-pub(super) struct DeclaredImport {
-    // this cannot be ItemId, as we don't yet know the kind of the imported item
-    pub(super) imported_item: (types::modules::ModuleId, Identifier),
-}
-
 // TODO can we kill the RefCells and let the borrowck do the borrowck?
-pub(super) struct DeclaredRootModule<'pre> {
+pub(super) struct DeclaredRootModule {
+    // TODO make the fields private
     pub(super) structs: RefCell<HashMap<types::structs::StructId, types::structs::Struct>>,
     pub(super) functions: RefCell<HashMap<types::functions::FunctionId, DeclaredFunction>>,
-    pub(super) module: DeclaredModule<'pre>,
     pub(super) predeclared_functions:
         RefCell<HashMap<types::functions::FunctionId, types::functions::Function>>,
+    pub(super) modules: HashMap<types::modules::ModuleId, types::modules::Module>,
+    pub(super) imports:
+        HashMap<(types::modules::ModuleId, Identifier), (types::modules::ModuleId, Identifier)>,
 }
-impl<'pre> DeclaredRootModule<'pre> {
+
+impl std::fmt::Debug for DeclaredRootModule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "structs")?;
+
+        for struct_ in self.structs.borrow().keys() {
+            writeln!(f, "    {struct_}")?;
+        }
+
+        writeln!(f, "functions")?;
+
+        for function in self.functions.borrow().keys() {
+            writeln!(f, "    {function}")?;
+        }
+
+        writeln!(f, "predeclared_functions")?;
+
+        for function in self.predeclared_functions.borrow().keys() {
+            writeln!(f, "    {function}")?;
+        }
+
+        Ok(())
+    }
+}
+
+// TODO this should take refs instead of clones, but we need to get rid of RefCells in
+// DeclaredRootModule first
+pub enum ItemKind {
+    Struct(types::structs::Struct),
+    Function(DeclaredFunction),
+    PredeclaredFunction(types::functions::Function),
+}
+impl ItemKind {
+    pub(crate) fn type_(&self) -> types::Type {
+        match self {
+            // TODO handle generics
+            Self::Struct(struct_) => types::Type::new_not_generic(types::TypeKind::Object {
+                type_name: types::structs::InstantiatedStructId(
+                    struct_.id,
+                    types::TypeArgumentValues::new_empty(),
+                ),
+            }),
+            Self::Function(declared_function) => {
+                types::Type::new_not_generic(types::TypeKind::Callable(declared_function.id))
+            }
+            Self::PredeclaredFunction(function) => {
+                types::Type::new_not_generic(types::TypeKind::Callable(function.id))
+            }
+        }
+    }
+}
+
+impl DeclaredRootModule {
     pub(crate) fn new() -> Self {
         Self {
             structs: RefCell::new(HashMap::new()),
             functions: RefCell::new(HashMap::new()),
-            module: DeclaredModule::new(),
             predeclared_functions: RefCell::new(HashMap::new()),
+            modules: HashMap::new(),
+            imports: HashMap::new(),
         }
     }
 
     pub(crate) fn from_predeclared(
-        original_module: &'pre types::modules::Module,
+        modules: &HashMap<types::modules::ModuleId, types::modules::Module>,
         structs: HashMap<types::structs::StructId, types::structs::Struct>,
         functions: HashMap<types::functions::FunctionId, types::functions::Function>,
     ) -> Self {
-        let mut module = DeclaredModule::new();
-        module.import_predeclared(original_module);
-
         Self {
             structs: RefCell::new(structs),
             functions: RefCell::new(HashMap::new()),
             predeclared_functions: RefCell::new(functions),
-            module,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub(super) struct DeclaredModule<'pre> {
-    pub(super) items: HashMap<Identifier, DeclaredItem<'pre>>,
-}
-
-impl std::fmt::Debug for DeclaredModule<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut struct_ = f.debug_struct("DeclaredModule");
-
-        for (item_name, item) in &self.items {
-            struct_.field(&item_name.raw(), item);
-        }
-
-        struct_.finish()
-    }
-}
-
-impl<'pre> DeclaredModule<'pre> {
-    pub(super) fn import_predeclared(&mut self, module: &'pre types::modules::Module) {
-        let root_name = types::modules::ModuleId::parse("");
-
-        for (item_name, item) in module.items() {
-            let visibility = item.visibility;
-
-            self.declare(
-                types::ItemId::Module(root_name.child(item_name)),
-                DeclaredItem {
-                    kind: DeclaredItemKind::Predeclared(item),
-                    visibility,
-                    position: item.position,
-                },
-            );
+            modules: modules.clone(),
+            imports: HashMap::new(),
         }
     }
 
-    pub(super) fn declare(&mut self, name: types::ItemId, item: DeclaredItem<'pre>) {
-        // TODO this is a hack, we should get the ModuleId and ItemName from name and use those to
-        // find the right module
-        let name = match name {
-            types::ItemId::Struct(struct_id) => struct_id.fqname(),
-            types::ItemId::Function(function_id) => function_id.fqname(),
-            types::ItemId::Module(module_id) => module_id.fqname(),
-        };
-
-        if name.len() == 1 {
-            let old = self.items.insert(name.last(), item);
-            assert!(old.is_none());
-        } else {
-            let (first, rest) = name.split_first();
-
-            let found_module = self.items.get_mut(&first).unwrap();
-            match &mut found_module.kind {
-                DeclaredItemKind::Module(m) => {
-                    m.declare(
-                        types::ItemId::Module(types::modules::ModuleId::FQName(rest)),
-                        item,
-                    );
-                }
-                DeclaredItemKind::Predeclared(types::Item {
-                    kind: types::ItemKind::Module(_),
-                    visibility: _,
-                    position: ast::SourceSpan::Internal,
-                }) => {
-                    // do nothing, the structure must've been already setup
-                }
-                _ => todo!(),
-            }
-        }
+    pub(crate) fn declare_module(
+        &mut self,
+        module_path: types::modules::ModuleId,
+        module: types::modules::Module,
+    ) {
+        let old = self.modules.insert(module_path, module);
+        assert!(old.is_none());
     }
 
-    pub(super) fn new() -> Self {
-        Self {
-            items: HashMap::new(),
-        }
+    pub(crate) fn import(
+        &mut self,
+        r#as: (types::modules::ModuleId, Identifier),
+        item: (types::modules::ModuleId, Identifier),
+    ) {
+        let old = self.imports.insert(dbg!(r#as), dbg!(item));
+        assert!(old.is_none());
     }
 
-    // TODO can we get rid of the clones here?
-    pub(super) fn get_item(
+    pub fn resolve_import(
         &self,
         module_id: types::modules::ModuleId,
         name: Identifier,
-    ) -> Option<DeclaredItem> {
-        // TODO we shouldn't generate the name here, but instead receive the module by id
-        let name = module_id.fqname().with_part(name);
-        if name.len() == 1 {
-            return self.items.get(&name.last()).cloned();
-        }
-
-        let (first, rest) = name.split_first();
-
-        match &self.items.get(&first).unwrap().kind {
-            DeclaredItemKind::Module(m) => m.get_item(
-                types::modules::ModuleId::FQName(rest.without_last()),
-                rest.last(),
-            ),
-            DeclaredItemKind::Predeclared(types::Item {
-                kind: types::ItemKind::Module(m),
-                visibility,
-                position: ast::SourceSpan::Internal,
-            }) => Some(DeclaredItem {
-                kind: DeclaredItemKind::Predeclared(m.get_item(rest).unwrap()),
-                visibility: *visibility,
-                position: ast::SourceSpan::Internal,
-            }),
-            _ => todo!(),
-        }
+    ) -> (types::modules::ModuleId, Identifier) {
+        self.imports
+            .get(&(module_id, name))
+            .copied()
+            .unwrap_or((module_id, name))
     }
 
-    pub(crate) fn items(&self) -> impl Iterator<Item = (&Identifier, &DeclaredItem)> {
-        self.items.iter()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(super) enum DeclaredItemKind<'pre> {
-    Function(types::functions::FunctionId),
-    Struct(types::structs::StructId),
-    Import(DeclaredImport),
-    Predeclared(&'pre types::Item),
-    Module(DeclaredModule<'pre>),
-}
-
-#[derive(Clone)]
-pub(super) struct DeclaredItem<'pre> {
-    pub(super) kind: DeclaredItemKind<'pre>,
-    pub(super) visibility: types::Visibility,
-    pub(super) position: SourceSpan,
-}
-
-impl std::fmt::Debug for DeclaredItem<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            DeclaredItemKind::Function(function_id) => {
-                write!(f, "Function({function_id})")
-            }
-            DeclaredItemKind::Struct(struct_id) => {
-                write!(f, "Struct({struct_id})")
-            }
-            DeclaredItemKind::Import(declared_import) => {
-                write!(
-                    f,
-                    "Import({}, {})",
-                    declared_import.imported_item.0, declared_import.imported_item.1
-                )
-            }
-            DeclaredItemKind::Predeclared(item) => write!(f, "Checked({item:?})"),
-            DeclaredItemKind::Module(declared_module) => write!(f, "Module({declared_module:?})"),
-        }
-    }
-}
-
-impl DeclaredItem<'_> {
-    pub(super) fn type_(
+    pub fn get_item(
         &self,
-        root_module: &DeclaredModule,
-        current_module: types::modules::ModuleId,
-        error_location: ast::SourceSpan,
-    ) -> Result<types::Type, TypeCheckError> {
-        // TODO also handle the case of this item being generic
-        match &self.kind {
-            DeclaredItemKind::Function(function_id) => Ok(types::Type::new_not_generic(
-                types::TypeKind::Callable(*function_id),
-            )),
-            DeclaredItemKind::Struct(struct_id) => {
-                Ok(types::Type::new_not_generic(types::TypeKind::Object {
-                    type_name: types::structs::InstantiatedStructId(
-                        *struct_id,
-                        types::TypeArgumentValues::new_empty(),
-                    ),
-                }))
-            }
-            DeclaredItemKind::Import(DeclaredImport { imported_item, .. }) => root_module
-                // TODO get_item should really just take a pair of (ModuleId, Identifier) and
-                // receive based on that
-                .get_item(imported_item.0, imported_item.1)
-                .unwrap()
-                .type_(root_module, current_module, error_location),
-            DeclaredItemKind::Predeclared(item) => {
-                item.type_(root_module, current_module, error_location)
-            }
-            DeclaredItemKind::Module(_) => todo!(),
-        }
+        module_id: types::modules::ModuleId,
+        name: Identifier,
+    ) -> Option<ItemKind> {
+        self.functions
+            .borrow()
+            .get(&types::functions::FunctionId::InModule(module_id, name))
+            .map(|function| ItemKind::Function(function.clone()))
+            .or_else(|| {
+                self.predeclared_functions
+                    .borrow()
+                    .get(&types::functions::FunctionId::InModule(module_id, name))
+                    .map(|predeclared_function| {
+                        ItemKind::PredeclaredFunction(predeclared_function.clone())
+                    })
+                    .or_else(|| {
+                        self.structs
+                            .borrow()
+                            .get(&types::structs::StructId::InModule(module_id, name))
+                            .map(|struct_| ItemKind::Struct(struct_.clone()))
+                    })
+            })
+    }
+
+    // TODO this should return a reference, once self.structs is not a RefCell
+    pub(crate) fn get_struct(
+        &self,
+        struct_name: types::structs::StructId,
+    ) -> Option<types::structs::Struct> {
+        self.structs.borrow().get(&struct_name).cloned()
     }
 }
 
 pub(super) fn resolve_type(
-    root_module: &DeclaredModule,
+    root_module: &DeclaredRootModule,
     current_module: types::modules::ModuleId,
     r#type: &ast::TypeDescription,
-    error_location: ast::SourceSpan,
 ) -> Result<types::Type, TypeCheckError> {
     // TODO handle generics here
     match r#type {
@@ -265,20 +189,21 @@ pub(super) fn resolve_type(
                     root_module,
                     current_module,
                     type_description,
-                    error_location,
                 )?),
             }))
         }
         ast::TypeDescription::Named(name) if name == "()" => Ok(types::Type::unit()),
         ast::TypeDescription::Named(name) if name == "u64" => Ok(types::Type::u64()),
         ast::TypeDescription::Named(name) => {
+            let (current_module, name) = root_module.resolve_import(current_module, *name);
+
             let item = root_module
                 // TODO get_item should take a pair of (ModuleId, Identifier)
-                .get_item(current_module, *name)
+                .get_item(current_module, name)
                 // TODO should there be a keyword for global scope access instead of this or_else?
                 // TODO if this is a global, we should have the (ModuleId, Identifier) pair here!
                 .or_else(|| {
-                    let item_id = FQName::from_identifier(*name);
+                    let item_id = FQName::from_identifier(name);
                     root_module.get_item(
                         types::modules::ModuleId::FQName(item_id.without_last()),
                         item_id.last(),
@@ -286,33 +211,7 @@ pub(super) fn resolve_type(
                 })
                 .unwrap();
 
-            match item.kind {
-                DeclaredItemKind::Function(function_id) => Ok(types::Type::new_not_generic(
-                    types::TypeKind::Callable(function_id),
-                )),
-                DeclaredItemKind::Struct(declared_struct) => {
-                    Ok(types::Type::new_not_generic(types::TypeKind::Object {
-                        type_name: types::structs::InstantiatedStructId(
-                            declared_struct,
-                            types::TypeArgumentValues::new_empty(),
-                        ),
-                    }))
-                }
-                DeclaredItemKind::Predeclared(item) => {
-                    item.type_(root_module, current_module, error_location)
-                }
-                DeclaredItemKind::Import(declared_import) => {
-                    let imported_item = root_module.get_item(
-                        declared_import.imported_item.0,
-                        declared_import.imported_item.1,
-                    );
-
-                    imported_item
-                        .unwrap()
-                        .type_(root_module, current_module, error_location)
-                }
-                DeclaredItemKind::Module(_) => todo!(),
-            }
+            Ok(item.type_())
         }
     }
 }

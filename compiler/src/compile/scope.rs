@@ -63,7 +63,7 @@ impl<'ctx> Scope<'ctx> {
 
     pub(crate) fn set_value(&self, name: Identifier, value: Value<'ctx>) {
         let old = self.locals.write().unwrap().insert(name, value);
-        assert!(old.is_none());
+        assert!(old.is_none(), "{name}: {old:?}");
     }
 
     pub(crate) fn get_value(&self, name: Identifier) -> Option<Value<'ctx>> {
@@ -135,13 +135,6 @@ impl<'ctx> GlobalScope<'ctx> {
 
     pub fn get_module(&self, path: types::modules::ModuleId) -> Option<&CompiledModule<'ctx>> {
         self.modules.get(&path)
-    }
-
-    pub(crate) fn get_module_mut(
-        &mut self,
-        root_path: types::modules::ModuleId,
-    ) -> Option<&mut CompiledModule<'ctx>> {
-        self.modules.get_mut(&root_path)
     }
 
     // TODO this should really just return things by ID

@@ -9,7 +9,7 @@ use std::{
 
 use functions::{Function, FunctionId};
 use itertools::Itertools;
-use modules::{Module, ModuleId};
+use modules::ModuleId;
 use structs::{InstantiatedStructId, Struct, StructId};
 
 use crate::{
@@ -343,38 +343,6 @@ impl LetStatement {
         Self {
             binding: self.binding,
             value: self.value.instantiate(type_argument_values),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Import {
-    pub imported_item: ItemId,
-    pub position: ast::SourceSpan,
-}
-
-#[derive(Debug, Clone)]
-pub enum ItemKind {
-    Function(FunctionId),
-    Struct(StructId),
-    Import(Import),
-    Module(Module),
-}
-
-#[derive(Clone)]
-pub struct Item {
-    pub kind: ItemKind,
-    pub visibility: Visibility,
-    pub position: ast::SourceSpan,
-}
-
-impl std::fmt::Debug for Item {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            ItemKind::Function(function) => write!(f, "Function({function})"),
-            ItemKind::Struct(struct_) => write!(f, "Struct({struct_})"),
-            ItemKind::Import(import) => write!(f, "Import({})", import.imported_item),
-            ItemKind::Module(module) => write!(f, "{module:?}"),
         }
     }
 }

@@ -4,63 +4,10 @@ mod definition_checker;
 pub mod errors;
 
 use declaration_checker::DeclarationChecker;
-use declarations::{
-    DeclaredFunction, DeclaredImport, DeclaredItem, DeclaredItemKind, DeclaredModule,
-    DeclaredRootModule, DeclaredStructField,
-};
-use errors::{TypeCheckError, TypeCheckErrorDescription};
+use declarations::{DeclaredFunction, DeclaredRootModule, DeclaredStructField};
+use errors::TypeCheckError;
 
-use crate::{
-    ast,
-    types::{self, structs::InstantiatedStructId},
-};
-
-impl types::Item {
-    fn type_(
-        &self,
-        root_module: &DeclaredModule,
-        current_module: types::modules::ModuleId,
-        error_location: ast::SourceSpan,
-    ) -> Result<types::Type, TypeCheckError> {
-        // TODO handle possible generics here
-        match &self.kind {
-            types::ItemKind::Function(function_id) => Ok(types::Type::new_not_generic(
-                types::TypeKind::Callable(*function_id),
-            )),
-            types::ItemKind::Struct(struct_) => {
-                Ok(types::Type::new_not_generic(types::TypeKind::Object {
-                    type_name: InstantiatedStructId(
-                        *struct_,
-                        types::TypeArgumentValues::new_empty(),
-                    ),
-                }))
-            }
-            types::ItemKind::Import(import) => {
-                // TODO this is a hack, we should be able to reveive the item by ItemId as well
-                let fqname = match &import.imported_item {
-                    types::ItemId::Struct(struct_id) => struct_id.fqname(),
-                    types::ItemId::Function(function_id) => function_id.fqname(),
-                    types::ItemId::Module(module_id) => module_id.fqname(),
-                };
-                root_module
-                    .get_item(
-                        types::modules::ModuleId::FQName(fqname.without_last()),
-                        fqname.last(),
-                    )
-                    .ok_or_else(|| {
-                        // TODO imported_item should be an ItemId, and then we don't have to hackishly
-                        // create the ItemId::Module
-                        TypeCheckErrorDescription::ItemDoesNotExist(types::ItemId::Module(
-                            types::modules::ModuleId::parse(&import.imported_item.to_string()),
-                        ))
-                        .at(error_location)
-                    })?
-                    .type_(root_module, current_module, error_location)
-            }
-            types::ItemKind::Module(_) => todo!(),
-        }
-    }
-}
+use crate::{ast, types};
 
 pub fn type_check(
     program: &[ast::SourceFile],
@@ -68,7 +15,7 @@ pub fn type_check(
 ) -> Result<types::modules::RootModule, TypeCheckError> {
     let root_module_declaration = std.map_or_else(DeclaredRootModule::new, |std| {
         DeclaredRootModule::from_predeclared(
-            std.root_module(),
+            std.modules(),
             std.structs().clone(),
             std.functions().clone(),
         )

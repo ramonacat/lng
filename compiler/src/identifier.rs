@@ -117,13 +117,6 @@ impl FQName {
         Self::from_parts(&mut parts[..len - 1].iter().copied())
     }
 
-    pub(crate) fn split_first(self) -> (Identifier, Self) {
-        let parts = self.parts();
-        let (first, rest) = parts.split_first().unwrap();
-
-        (*first, Self::from_parts(rest.iter().copied()))
-    }
-
     pub(crate) fn len(self) -> usize {
         self.parts().len()
     }
