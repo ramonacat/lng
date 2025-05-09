@@ -6,7 +6,7 @@ use crate::{
     ast,
     identifier::FQName,
     std::TYPE_NAME_STRING,
-    types::{self, modules::ModuleId},
+    types::{self, TypeArguments, modules::ModuleId},
 };
 
 use super::{
@@ -111,9 +111,10 @@ impl DeclarationChecker {
                                 DeclaredStructField {
                                     // TODO we should here handle the case of the type actually
                                     // being generic
-                                    type_: types::Type::new_not_generic(types::TypeKind::Callable(
-                                        function.id,
-                                    )),
+                                    type_: types::GenericType::new(
+                                        types::GenericTypeKind::Callable(function.id),
+                                        TypeArguments::new_empty(),
+                                    ),
                                     static_: true,
                                 },
                             );
@@ -230,24 +231,28 @@ impl DeclarationChecker {
         struct_: &ast::Struct,
     ) -> Result<(), TypeCheckError> {
         let mut fields = vec![];
+        let struct_id = types::structs::StructId::InModule(module_path, struct_.name);
+        let struct_type = types::GenericType::new(
+            types::GenericTypeKind::Struct(struct_id),
+            types::TypeArguments::new_empty(),
+        );
+
         for field in &struct_.fields {
             fields.push(types::structs::StructField {
                 type_: resolve_type(&self.root_module_declaration, module_path, &field.type_)?,
 
                 static_: false,
-                // TODO the structId should ba a pair of (ModuleId, Identifier)
-                struct_id: types::structs::StructId::InModule(module_path, struct_.name),
+                struct_id,
                 name: field.name,
             });
         }
-        let id = types::structs::StructId::InModule(module_path, struct_.name);
         self.root_module_declaration.structs.borrow_mut().insert(
-            id,
+            struct_id,
             types::structs::Struct {
-                id,
+                id: struct_id,
                 fields,
                 impls: HashMap::new(),
-                type_arguments: types::TypeArguments::new_empty(),
+                type_: struct_type,
             },
         );
         Ok(())
@@ -262,12 +267,14 @@ impl DeclarationChecker {
         if function_declaration.ast.name == *"main" && visibility == ast::Visibility::Export {
             if function_declaration.arguments.len() == 1 {
                 if let Some(argument) = function_declaration.arguments.first() {
-                    if let types::TypeKind::Array {
+                    if let types::GenericTypeKind::Array {
                         element_type: array_item_type,
                     } = argument.type_.kind()
                     {
-                        if let types::TypeKind::Object { type_name: id } = array_item_type.kind() {
-                            if id.0 == *TYPE_NAME_STRING {
+                        if let types::GenericTypeKind::Object { type_name: id } =
+                            array_item_type.kind()
+                        {
+                            if *id == *TYPE_NAME_STRING {
                                 if self.main.is_some() {
                                     todo!("show a nice error here, main is already defined");
                                 }

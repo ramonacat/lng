@@ -29,7 +29,7 @@ pub struct BuiltinRc<TPointee> {
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
-    value_type: types::structs::InstantiatedStructId,
+    value_type: types::InstantiatedType,
 }
 
 static REFCOUNT_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("refcount"));
@@ -52,12 +52,23 @@ impl<'ctx> RcValue<'ctx> {
             struct_instance.value().as_basic_value_enum(),
         );
 
-        let rc = InstantiatedStructType::new(context.builtins.rc_handle.clone(), HashMap::new())
-            .build_heap_instance(context, name, field_values);
+        let mut tav = HashMap::new();
+        tav.insert(
+            types::TypeArgument::new(Identifier::parse("TPointee")),
+            struct_instance.type_(),
+        );
+        let rc = InstantiatedStructType::new(
+            context
+                .builtins
+                .rc_handle
+                .instantiate(&types::TypeArgumentValues::new(tav)),
+            HashMap::new(),
+        )
+        .build_heap_instance(context, name, field_values);
 
         Self {
             pointer: rc,
-            value_type: struct_instance.id(),
+            value_type: struct_instance.type_(),
         }
     }
 
@@ -69,7 +80,7 @@ impl<'ctx> RcValue<'ctx> {
     #[must_use]
     pub const fn from_pointer(
         pointer: PointerValue<'ctx>,
-        value_type: types::structs::InstantiatedStructId,
+        value_type: types::InstantiatedType,
     ) -> Self {
         RcValue {
             pointer,
@@ -78,7 +89,7 @@ impl<'ctx> RcValue<'ctx> {
     }
 
     #[must_use]
-    pub(crate) fn type_(&self) -> types::structs::InstantiatedStructId {
+    pub(crate) fn type_(&self) -> types::InstantiatedType {
         self.value_type.clone()
     }
 }
@@ -101,8 +112,19 @@ pub fn build_cleanup<'ctx>(
         }
         context.builder.position_at_end(before);
 
-        let rc_handle =
-            InstantiatedStructType::new(context.builtins.rc_handle.clone(), HashMap::new());
+        let mut tav = HashMap::new();
+        tav.insert(
+            types::TypeArgument::new(Identifier::parse("TPointee")),
+            rc.type_(),
+        );
+
+        let rc_handle = InstantiatedStructType::new(
+            context
+                .builtins
+                .rc_handle
+                .instantiate(&types::TypeArgumentValues::new(tav)),
+            HashMap::new(),
+        );
         let old_refcount = rc_handle
             .build_field_load(
                 *REFCOUNT_FIELD,
@@ -192,9 +214,19 @@ pub fn build_cleanup<'ctx>(
 pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
+        let mut tav = HashMap::new();
+        tav.insert(
+            types::TypeArgument::new(Identifier::parse("TPointee")),
+            rc.type_(),
+        );
 
-        let rc_handle =
-            InstantiatedStructType::new(context.builtins.rc_handle.clone(), HashMap::new());
+        let rc_handle = InstantiatedStructType::new(
+            context
+                .builtins
+                .rc_handle
+                .instantiate(&types::TypeArgumentValues(tav)),
+            HashMap::new(),
+        );
 
         let init_refcount = rc_handle.build_field_load(
             *REFCOUNT_FIELD,

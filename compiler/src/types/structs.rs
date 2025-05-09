@@ -6,31 +6,37 @@ use std::{
 use crate::name_mangler::{MangledIdentifier, mangle_item_name};
 
 use super::{
-    Function, FunctionId, Identifier, Type, TypeArgumentValues, TypeArguments, modules::ModuleId,
+    AnyType, Function, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues,
+    modules::ModuleId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct StructDescriptorType {
+pub struct StructDescriptorType<T: AnyType> {
     pub id: StructId,
     // the fields are a Vec<_>, so that the order is well defined
-    pub fields: Vec<StructField>,
+    pub fields: Vec<StructField<T>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InstantiatedStructId(pub StructId, pub TypeArgumentValues);
-
-impl Display for InstantiatedStructId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct StructField {
+pub struct StructField<T: AnyType> {
     pub struct_id: StructId,
     pub name: Identifier,
-    pub type_: Type,
+    pub type_: T,
     pub static_: bool,
+}
+
+impl StructField<GenericType> {
+    pub(crate) fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues,
+    ) -> StructField<InstantiatedType> {
+        StructField {
+            struct_id: self.struct_id,
+            name: self.name,
+            type_: self.type_.instantiate(type_argument_values),
+            static_: self.static_,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -38,6 +44,7 @@ pub enum StructId {
     InModule(ModuleId, Identifier),
     // TODO a dynamically generated one can also be used here
 }
+
 impl StructId {
     pub(crate) fn into_mangled(self) -> MangledIdentifier {
         match self {
@@ -55,36 +62,43 @@ impl Display for StructId {
 }
 
 #[derive(Debug, Clone)]
-pub struct Struct {
+pub struct Struct<T: AnyType> {
     pub id: StructId,
-    #[allow(unused)] // TODO this will be needed once we have a syntax for type instantiation
-    pub type_arguments: TypeArguments,
-    pub fields: Vec<StructField>,
+    pub fields: Vec<StructField<T>>,
     // TODO eventually change to just a vec of FunctionIds
-    pub impls: HashMap<FunctionId, Function>,
+    pub impls: HashMap<FunctionId, Function<T>>,
+    pub type_: T,
 }
 
-impl Struct {
-    pub(crate) fn instantiate(&self, _type_argument_values: &TypeArgumentValues) -> Self {
-        // TODO support actually instantiating the impls and fields, but this can't be done yet, as the
-        // self argument will lead to infinite recursion the way things are handled rn
-        let fields = self.fields.clone();
-        let impls = self.impls.clone();
-
-        Self {
-            id: self.id,
-            type_arguments: TypeArguments::new_empty(),
-            fields,
-            impls,
-        }
-    }
-
-    pub(crate) fn field_type(&self, field_name: Identifier) -> Type {
+impl<T: AnyType> Struct<T> {
+    pub(crate) fn field_type(&self, field_name: Identifier) -> T {
         self.fields
             .iter()
             .find(|x| x.name == field_name)
             .unwrap()
             .type_
             .clone()
+    }
+}
+
+impl Struct<GenericType> {
+    pub(crate) fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues,
+    ) -> Struct<InstantiatedType> {
+        Struct {
+            id: self.id,
+            fields: self
+                .fields
+                .iter()
+                .map(|x| x.instantiate(type_argument_values))
+                .collect(),
+            impls: self
+                .impls
+                .iter()
+                .map(|(id, impl_)| (*id, impl_.instantiate(type_argument_values)))
+                .collect::<HashMap<FunctionId, Function<InstantiatedType>>>(),
+            type_: self.type_.instantiate(type_argument_values),
+        }
     }
 }

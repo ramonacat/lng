@@ -37,7 +37,7 @@ pub struct ArrayValue {}
 
 impl ArrayValue {
     pub fn build_instance<'ctx>(
-        item_type: &types::Type,
+        item_type: &types::InstantiatedType,
         context: &CompilerContext<'ctx>,
     ) -> RcValue<'ctx> {
         let items_type = context.make_object_type(item_type);
@@ -61,17 +61,22 @@ impl ArrayValue {
             types::TypeArgument::new(Identifier::parse("TItem")),
             item_type.clone(),
         );
-        let tav = types::TypeArgumentValues::new(tav);
-        let id = types::structs::InstantiatedStructId(*TYPE_NAME_ARRAY, tav);
+        let id = *TYPE_NAME_ARRAY;
 
-        let array_value = context.global_scope.structs.inspect_instantiated(&id, |a| {
-            a.unwrap()
-                .build_heap_instance(context, &unique_name(&["string"]), field_values)
-        });
+        let array_value = context.global_scope.structs.inspect_instantiated(
+            &(id, types::TypeArgumentValues::new(tav.clone())),
+            |a| {
+                a.unwrap()
+                    .build_heap_instance(context, &unique_name(&["string"]), field_values)
+            },
+        );
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),
-            &StructInstance::new(array_value, id),
+            &StructInstance::new(
+                array_value,
+                types::InstantiatedType::new(types::InstantiatedTypeKind::Struct(id)),
+            ),
             context,
         )
     }

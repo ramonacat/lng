@@ -3,7 +3,7 @@ use itertools::Itertools;
 use crate::{
     identifier::{FQName, Identifier},
     type_check::declarations::DeclaredRootModule,
-    types::TypeArgumentValues,
+    types::{GenericType, TypeArguments},
 };
 use std::{cell::RefCell, collections::HashMap};
 
@@ -16,7 +16,7 @@ use super::{
 };
 
 struct Locals {
-    values: HashMap<Identifier, types::Type>,
+    values: HashMap<Identifier, types::GenericType>,
 }
 
 impl Locals {
@@ -26,17 +26,17 @@ impl Locals {
         }
     }
 
-    fn push_arguments(&mut self, arguments: &[types::functions::Argument]) {
+    fn push_arguments(&mut self, arguments: &[types::functions::Argument<types::GenericType>]) {
         for argument in arguments {
             self.values.insert(argument.name, argument.type_.clone());
         }
     }
 
-    fn push_variable(&mut self, name: Identifier, r#type: types::Type) {
+    fn push_variable(&mut self, name: Identifier, r#type: types::GenericType) {
         self.values.insert(name, r#type);
     }
 
-    fn get(&self, id: Identifier) -> Option<types::Type> {
+    fn get(&self, id: Identifier) -> Option<types::GenericType> {
         self.values.get(&id).cloned()
     }
 }
@@ -44,7 +44,8 @@ impl Locals {
 pub(super) struct DefinitionChecker {
     root_module_declaration: DeclaredRootModule,
     declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
-    functions: RefCell<HashMap<types::functions::FunctionId, types::functions::Function>>,
+    functions:
+        RefCell<HashMap<types::functions::FunctionId, types::functions::Function<GenericType>>>,
     main: Option<types::functions::FunctionId>,
 }
 
@@ -118,13 +119,13 @@ impl DefinitionChecker {
     ) -> Result<
         HashMap<
             types::structs::StructId,
-            HashMap<types::functions::FunctionId, types::functions::Function>,
+            HashMap<types::functions::FunctionId, types::functions::Function<GenericType>>,
         >,
         TypeCheckError,
     > {
         let mut impls: HashMap<
             types::structs::StructId,
-            HashMap<types::functions::FunctionId, types::functions::Function>,
+            HashMap<types::functions::FunctionId, types::functions::Function<GenericType>>,
         > = HashMap::new();
         for (struct_id, declared_impls) in &self.declared_impls {
             for function_id in declared_impls {
@@ -147,7 +148,7 @@ impl DefinitionChecker {
 
     fn type_check_struct(
         &self,
-        impls: HashMap<types::functions::FunctionId, types::functions::Function>,
+        impls: HashMap<types::functions::FunctionId, types::functions::Function<GenericType>>,
         struct_id: types::structs::StructId,
     ) {
         let all_structs = &mut self.root_module_declaration.structs.borrow_mut();
@@ -167,7 +168,7 @@ impl DefinitionChecker {
     fn type_check_function(
         &self,
         declared_function: &DeclaredFunction,
-    ) -> Result<types::functions::Function, TypeCheckError> {
+    ) -> Result<types::functions::Function<GenericType>, TypeCheckError> {
         let mut locals = Locals::new();
 
         locals.push_arguments(&declared_function.arguments);
@@ -192,6 +193,10 @@ impl DefinitionChecker {
 
         Ok(types::functions::Function {
             id: declared_function.id,
+            type_: types::GenericType::new(
+                types::GenericTypeKind::Function(declared_function.id),
+                TypeArguments::new_empty(),
+            ),
             module_name: declared_function.module_name,
             visibility: declared_function.visibility,
             arguments: declared_function
@@ -216,7 +221,7 @@ impl DefinitionChecker {
         declared_function: &DeclaredFunction,
         locals: &mut Locals,
         statement: &ast::Statement,
-    ) -> Result<types::Statement, TypeCheckError> {
+    ) -> Result<types::Statement<GenericType>, TypeCheckError> {
         Ok(match statement {
             ast::Statement::Expression(expression, _) => types::Statement::Expression(
                 self.type_check_expression(expression, &*locals, declared_function.module_name)?,
@@ -277,7 +282,7 @@ impl DefinitionChecker {
         expression: &ast::Expression,
         locals: &Locals,
         module_path: types::modules::ModuleId,
-    ) -> Result<types::Expression, TypeCheckError> {
+    ) -> Result<types::Expression<GenericType>, TypeCheckError> {
         let position = expression.position;
 
         match &expression.kind {
@@ -293,17 +298,17 @@ impl DefinitionChecker {
             ast::ExpressionKind::Literal(literal) => match literal {
                 ast::Literal::String(value, _) => Ok(types::Expression {
                     position,
-                    type_: types::Type::new_not_generic(types::TypeKind::Object {
-                        type_name: types::structs::InstantiatedStructId(
-                            *TYPE_NAME_STRING,
-                            types::TypeArgumentValues::new_empty(),
-                        ),
-                    }),
+                    type_: types::GenericType::new(
+                        types::GenericTypeKind::Object {
+                            type_name: *TYPE_NAME_STRING,
+                        },
+                        TypeArguments::new_empty(),
+                    ),
                     kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
                 }),
                 ast::Literal::UnsignedInteger(value) => Ok(types::Expression {
                     position,
-                    type_: types::Type::u64(),
+                    type_: types::GenericType::u64(),
                     kind: types::ExpressionKind::Literal(types::Literal::UnsignedInteger(*value)),
                 }),
             },
@@ -316,7 +321,7 @@ impl DefinitionChecker {
                 let struct_type = locals.get(*struct_name);
 
                 let (type_, kind) = if let Some(struct_type) = struct_type {
-                    let types::TypeKind::Object {
+                    let types::GenericTypeKind::Object {
                         type_name: instantiated_struct_id,
                     } = struct_type.kind()
                     else {
@@ -324,10 +329,13 @@ impl DefinitionChecker {
                     };
 
                     (
-                        types::Type::new_not_generic(types::TypeKind::Object {
-                            type_name: instantiated_struct_id.clone(),
-                        }),
-                        types::ExpressionKind::StructConstructor(instantiated_struct_id.clone()),
+                        types::GenericType::new(
+                            types::GenericTypeKind::Object {
+                                type_name: *instantiated_struct_id,
+                            },
+                            types::TypeArguments::new_empty(),
+                        ),
+                        types::ExpressionKind::StructConstructor(*instantiated_struct_id),
                     )
                 } else if self
                     .root_module_declaration
@@ -340,18 +348,13 @@ impl DefinitionChecker {
                     let struct_id = types::structs::StructId::InModule(module_path, *struct_name);
                     (
                         // TODO handle generics here!
-                        types::Type::new_not_generic(types::TypeKind::Object {
-                            type_name: types::structs::InstantiatedStructId(
-                                struct_id,
-                                types::TypeArgumentValues::new_empty(),
-                            ),
-                        }),
-                        types::ExpressionKind::StructConstructor(
-                            types::structs::InstantiatedStructId(
-                                struct_id,
-                                TypeArgumentValues::new_empty(),
-                            ),
+                        types::GenericType::new(
+                            types::GenericTypeKind::Object {
+                                type_name: struct_id,
+                            },
+                            types::TypeArguments::new_empty(),
                         ),
+                        types::ExpressionKind::StructConstructor(struct_id),
                     )
                 } else {
                     return Err(TypeCheckErrorDescription::UndeclaredVariable(*struct_name)
@@ -373,9 +376,8 @@ impl DefinitionChecker {
                     .root_module_declaration
                     .structs
                     .borrow()
-                    .get(&struct_name.0)
+                    .get(&struct_name)
                     .unwrap()
-                    .instantiate(&struct_name.1)
                     .field_type(*field_name);
 
                 Ok(types::Expression {
@@ -396,7 +398,7 @@ impl DefinitionChecker {
         locals: &Locals,
         module_path: types::modules::ModuleId,
         name: Identifier,
-    ) -> Result<types::Expression, TypeCheckError> {
+    ) -> Result<types::Expression<GenericType>, TypeCheckError> {
         let value_type = locals.get(name);
 
         let (kind, type_) = if let Some(value_type) = value_type {
@@ -433,10 +435,10 @@ impl DefinitionChecker {
         locals: &Locals,
         module_path: types::modules::ModuleId,
         position: ast::SourceSpan,
-    ) -> Result<types::Expression, TypeCheckError> {
+    ) -> Result<types::Expression<GenericType>, TypeCheckError> {
         let checked_target = self.type_check_expression(target, locals, module_path)?;
 
-        let types::TypeKind::Callable(function_id) = checked_target.type_.kind() else {
+        let types::GenericTypeKind::Callable(function_id) = checked_target.type_.kind() else {
             return Err(
                 TypeCheckErrorDescription::CallingNotCallableItem(checked_target.type_)
                     .at(position),
@@ -460,6 +462,7 @@ impl DefinitionChecker {
                 position: _,
                 visibility: _,
                 module_name: _,
+                type_: _,
             }) = self
                 .root_module_declaration
                 .predeclared_functions

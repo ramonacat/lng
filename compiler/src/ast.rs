@@ -10,13 +10,13 @@ use crate::identifier::{FQName, Identifier};
 static FILENAMES: LazyLock<RwLock<StringInterner<StringBackend>>> =
     LazyLock::new(|| RwLock::new(StringInterner::default()));
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SourceSpan {
     Visible(SourceFileName, usize, usize),
     Internal,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct SourceFileName(SymbolU32);
 
 impl SourceFileName {

@@ -4,19 +4,24 @@ pub mod structs;
 
 use std::{
     collections::HashMap,
-    fmt::{Display, Formatter},
+    fmt::{Debug, Display, Formatter},
+    hash::Hash,
 };
 
 use functions::{Function, FunctionId};
 use itertools::Itertools;
 use modules::ModuleId;
-use structs::{InstantiatedStructId, Struct, StructId};
+use structs::{Struct, StructId};
 
 use crate::{
     ast,
     identifier::{FQName, Identifier},
     std::TYPE_NAME_U64,
 };
+
+pub trait AnyType: Display + Clone + Debug + Hash + Eq + PartialEq {}
+impl AnyType for GenericType {}
+impl AnyType for InstantiatedType {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ItemId {
@@ -73,7 +78,7 @@ impl std::fmt::Display for TypeArgument {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeArgumentValues(pub(crate) HashMap<TypeArgument, Type>);
+pub struct TypeArgumentValues(pub(crate) HashMap<TypeArgument, InstantiatedType>);
 
 impl std::hash::Hash for TypeArgumentValues {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -86,11 +91,11 @@ impl TypeArgumentValues {
         Self(HashMap::new())
     }
 
-    fn get(&self, type_argument: TypeArgument) -> Option<&Type> {
+    fn get(&self, type_argument: TypeArgument) -> Option<&InstantiatedType> {
         self.0.get(&type_argument)
     }
 
-    pub(crate) const fn new(tav: HashMap<TypeArgument, Type>) -> Self {
+    pub(crate) const fn new(tav: HashMap<TypeArgument, InstantiatedType>) -> Self {
         Self(tav)
     }
 }
@@ -113,11 +118,15 @@ impl std::fmt::Display for TypeArgumentValues {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeKind {
-    Generic(TypeArgument),
+pub enum InstantiatedTypeKind {
     Unit,
-    Object { type_name: InstantiatedStructId },
-    Array { element_type: Box<Type> },
+    Object {
+        type_name: StructId,
+        type_argument_values: TypeArgumentValues,
+    },
+    Array {
+        element_type: Box<InstantiatedType>,
+    },
     // TODO this should be an object with special properties
     Callable(FunctionId),
     // TODO add u128,u32,u16,u8 and signed counterparts
@@ -125,149 +134,187 @@ pub enum TypeKind {
     // TODO add float
     U64,
     U8,
-    Pointer(Box<Type>),
+    Pointer(Box<InstantiatedType>),
+    Struct(StructId),
+    Function(FunctionId),
 }
 
 // TODO separate GenericType and InstantiatedType
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Type {
-    kind: TypeKind,
-    arguments: TypeArguments,
-    argument_values: TypeArgumentValues,
+pub struct InstantiatedType {
+    kind: InstantiatedTypeKind,
 }
-
-impl Type {
-    pub(crate) fn debug_name(&self) -> String {
-        let Self {
-            kind,
-            arguments: _,
-            argument_values: type_argument_values,
-        } = self;
-        match kind {
-            TypeKind::Unit => "void".to_string(),
-            TypeKind::Object {
-                type_name: item_path,
-            } => format!("{item_path}{type_argument_values}"),
-            TypeKind::Array {
-                element_type: inner,
-            } => format!("{}[]", inner.debug_name()),
-            TypeKind::Callable(function_id) => format!("Callable({function_id})",),
-            TypeKind::U64 => "u64".to_string(),
-            TypeKind::U8 => "u8".to_string(),
-            TypeKind::Pointer(inner) => format!("*{}", inner.debug_name()),
-            TypeKind::Generic(type_argument) => format!("Generic({type_argument})"),
-        }
-    }
-
-    pub(crate) fn new_not_generic(kind: TypeKind) -> Self {
-        Self {
-            kind,
-            argument_values: TypeArgumentValues::new_empty(),
-            arguments: TypeArguments::new_empty(),
-        }
-    }
-
-    pub(crate) fn new_generic(kind: TypeKind, type_arguments: Vec<TypeArgument>) -> Self {
-        Self {
-            kind,
-            arguments: TypeArguments::new(type_arguments),
-            argument_values: TypeArgumentValues::new_empty(),
-        }
-    }
-
-    pub(crate) fn u64() -> Self {
-        Self::new_not_generic(TypeKind::U64)
-    }
-
-    pub(crate) fn unit() -> Self {
-        Self::new_not_generic(TypeKind::Unit)
-    }
-
-    pub(crate) const fn kind(&self) -> &TypeKind {
+impl InstantiatedType {
+    pub(crate) const fn kind(&self) -> &InstantiatedTypeKind {
         &self.kind
     }
 
-    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
-        let kind = match &self.kind {
-            // TODO assert that the type_argument is fully instantiated
-            TypeKind::Generic(type_argument) => type_argument_values
-                .get(*type_argument)
-                .unwrap()
-                .kind()
-                .clone(),
-            TypeKind::Unit => TypeKind::Unit,
-            TypeKind::Object { type_name } => TypeKind::Object {
-                type_name: type_name.clone(),
-            },
-            TypeKind::Array { element_type } => TypeKind::Array {
-                element_type: Box::new(element_type.instantiate(type_argument_values)),
-            },
-            TypeKind::Callable(function_id) => {
-                // TODO we should actually go to the function table and instantiate it there
-                TypeKind::Callable(*function_id)
-            }
-            TypeKind::U64 => TypeKind::U64,
-            TypeKind::U8 => TypeKind::U8,
-            TypeKind::Pointer(target) => {
-                TypeKind::Pointer(Box::new(target.instantiate(type_argument_values)))
-            }
-        };
-
-        Self {
-            kind,
-            arguments: TypeArguments::new_empty(),
-            argument_values: TypeArgumentValues::new_empty(),
-        }
+    pub(crate) const fn new(kind: InstantiatedTypeKind) -> Self {
+        Self { kind }
     }
+}
 
-    pub(crate) fn struct_name(&self) -> InstantiatedStructId {
+impl Display for InstantiatedType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            TypeKind::Generic(_) => todo!(),
-            TypeKind::Unit => todo!(),
-            TypeKind::Object { type_name } => type_name.clone(),
-            TypeKind::Array { .. } => todo!(),
-            TypeKind::Callable { .. } => todo!(),
-            TypeKind::U64 => InstantiatedStructId(*TYPE_NAME_U64, TypeArgumentValues::new_empty()),
-            TypeKind::U8 => todo!(),
-            TypeKind::Pointer(_) => todo!(),
+            InstantiatedTypeKind::Unit => write!(f, "()"),
+            InstantiatedTypeKind::Object {
+                type_name,
+                type_argument_values,
+            } => write!(f, "{type_name}<{type_argument_values}>"),
+            InstantiatedTypeKind::Array { element_type } => write!(f, "{element_type}[]"),
+            InstantiatedTypeKind::Callable(function_id) => write!(f, "callable<{function_id}>"),
+            InstantiatedTypeKind::U64 => write!(f, "u64"),
+            InstantiatedTypeKind::U8 => write!(f, "u8"),
+            InstantiatedTypeKind::Pointer(instantiated_type) => write!(f, "{instantiated_type}*"),
+            InstantiatedTypeKind::Struct(struct_id) => write!(f, "{struct_id}"),
+            InstantiatedTypeKind::Function(function_id) => write!(f, "{function_id}"),
         }
     }
 }
 
-impl Display for Type {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GenericTypeKind {
+    Generic(TypeArgument),
+    Unit,
+    Object { type_name: StructId },
+    Array { element_type: Box<GenericType> },
+    // TODO this should be an object with special properties
+    Callable(FunctionId),
+    // TODO add u128,u32,u16,u8 and signed counterparts
+    // TODO add bool
+    // TODO add float
+    U64,
+    U8,
+    Pointer(Box<GenericType>),
+    Struct(StructId),
+    Function(FunctionId),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GenericType {
+    kind: GenericTypeKind,
+    type_arguments: TypeArguments,
+}
+
+impl Display for GenericType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            TypeKind::Unit => write!(f, "void"),
-            TypeKind::Object {
-                type_name: identifier,
-            } => write!(f, "{identifier}{}", self.argument_values),
-            TypeKind::Array {
-                element_type: inner,
-            } => write!(f, "{inner}[]"),
-            TypeKind::Callable(function_id) => write!(f, "Callable({function_id})"),
-            TypeKind::U8 => write!(f, "u8"),
-            TypeKind::U64 => write!(f, "u64"),
-            TypeKind::Pointer(to) => write!(f, "*{to}"),
-            TypeKind::Generic(name) => write!(f, "{name}"),
+        let generic_type_kind = &self.kind;
+        match generic_type_kind {
+            GenericTypeKind::Generic(type_argument) => write!(f, "{type_argument}"),
+            GenericTypeKind::Unit => write!(f, "()"),
+            GenericTypeKind::Object { type_name } => write!(f, "{type_name}"),
+            GenericTypeKind::Array { element_type } => write!(f, "{element_type}[]"),
+            GenericTypeKind::Callable(function_id) => write!(f, "callable<{function_id}>"),
+            GenericTypeKind::U64 => write!(f, "u64"),
+            GenericTypeKind::U8 => write!(f, "u8"),
+            GenericTypeKind::Pointer(generic_type) => write!(f, "{generic_type}*"),
+            GenericTypeKind::Struct(struct_id) => write!(f, "{struct_id}"),
+            GenericTypeKind::Function(function_id) => write!(f, "{function_id}"),
+        }
+    }
+}
+
+impl GenericType {
+    pub(crate) const fn new(kind: GenericTypeKind, type_arguments: TypeArguments) -> Self {
+        Self {
+            kind,
+            type_arguments,
+        }
+    }
+
+    pub(crate) const fn u64() -> Self {
+        Self::new(GenericTypeKind::U64, TypeArguments::new_empty())
+    }
+
+    pub(crate) const fn u8() -> Self {
+        Self::new(GenericTypeKind::U8, TypeArguments::new_empty())
+    }
+
+    pub(crate) const fn unit() -> Self {
+        Self::new(GenericTypeKind::Unit, TypeArguments::new_empty())
+    }
+
+    pub(crate) const fn kind(&self) -> &GenericTypeKind {
+        &self.kind
+    }
+
+    // TODO this potentially can return an error!
+    pub(crate) fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues,
+    ) -> InstantiatedType {
+        let kind: InstantiatedTypeKind = match &self.kind {
+            GenericTypeKind::Generic(type_argument) => {
+                type_argument_values
+                    .get(*type_argument)
+                    .unwrap()
+                    .clone()
+                    .kind
+            }
+            GenericTypeKind::Unit => InstantiatedTypeKind::Unit,
+            GenericTypeKind::Object { type_name } => InstantiatedTypeKind::Object {
+                type_name: *type_name,
+                type_argument_values: type_argument_values.clone(),
+            },
+            GenericTypeKind::Array { element_type } => InstantiatedTypeKind::Array {
+                element_type: Box::new(element_type.instantiate(type_argument_values)),
+            },
+            GenericTypeKind::Callable(function_id) => InstantiatedTypeKind::Callable(*function_id),
+            GenericTypeKind::U64 => InstantiatedTypeKind::U64,
+            GenericTypeKind::U8 => InstantiatedTypeKind::U8,
+            GenericTypeKind::Pointer(pointee) => {
+                InstantiatedTypeKind::Pointer(Box::new(pointee.instantiate(type_argument_values)))
+            }
+            GenericTypeKind::Struct(struct_id) => InstantiatedTypeKind::Struct(*struct_id),
+            GenericTypeKind::Function(function_id) => InstantiatedTypeKind::Function(*function_id),
+        };
+
+        InstantiatedType { kind }
+    }
+
+    pub(crate) const fn arguments(&self) -> &TypeArguments {
+        &self.type_arguments
+    }
+
+    pub(crate) fn struct_name(&self) -> StructId {
+        match self.kind() {
+            GenericTypeKind::Generic(_) => todo!(),
+            GenericTypeKind::Unit => todo!(),
+            GenericTypeKind::Object { type_name } => *type_name,
+            GenericTypeKind::Array { .. } => todo!(),
+            GenericTypeKind::Callable(_) => todo!(),
+            GenericTypeKind::U64 => *TYPE_NAME_U64,
+            GenericTypeKind::U8 => todo!(),
+            GenericTypeKind::Pointer(_) => todo!(),
+            GenericTypeKind::Struct(_) => todo!(),
+            GenericTypeKind::Function(_) => todo!(),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement {
-    Expression(Expression),
-    Let(LetStatement),
-    Return(Expression),
+pub enum Statement<T: AnyType> {
+    Expression(Expression<T>),
+    Let(LetStatement<T>),
+    Return(Expression<T>),
 }
 
-impl Statement {
-    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+impl Statement<GenericType> {
+    fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues,
+    ) -> Statement<InstantiatedType> {
         match self {
             Self::Expression(expression) => {
-                Self::Expression(expression.instantiate(type_argument_values))
+                Statement::Expression(expression.instantiate(type_argument_values))
             }
-            Self::Let(let_statement) => Self::Let(let_statement.instantiate(type_argument_values)),
-            Self::Return(expression) => Self::Return(expression.instantiate(type_argument_values)),
+            Self::Let(let_statement) => {
+                Statement::Let(let_statement.instantiate(type_argument_values))
+            }
+            Self::Return(expression) => {
+                Statement::Return(expression.instantiate(type_argument_values))
+            }
         }
     }
 }
@@ -279,31 +326,34 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExpressionKind {
+pub enum ExpressionKind<T: AnyType> {
     Call {
-        target: Box<Expression>,
-        arguments: Vec<Expression>,
+        target: Box<Expression<T>>,
+        arguments: Vec<Expression<T>>,
     },
     Literal(Literal),
     LocalVariableAccess(Identifier),
     GlobalVariableAccess(FQName),
-    StructConstructor(InstantiatedStructId),
+    StructConstructor(StructId),
     FieldAccess {
-        target: Box<Expression>,
+        target: Box<Expression<T>>,
         field: Identifier,
     },
     SelfAccess,
 }
 
 #[derive(Debug, Clone)]
-pub struct Expression {
+pub struct Expression<T: AnyType> {
     pub position: ast::SourceSpan,
-    pub type_: Type,
-    pub kind: ExpressionKind,
+    pub type_: T,
+    pub kind: ExpressionKind<T>,
 }
-impl Expression {
-    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
-        Self {
+impl Expression<GenericType> {
+    fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues,
+    ) -> Expression<InstantiatedType> {
+        Expression {
             position: self.position,
             type_: self.type_.instantiate(type_argument_values),
             kind: match &self.kind {
@@ -322,7 +372,7 @@ impl Expression {
                     ExpressionKind::GlobalVariableAccess(*fqname)
                 }
                 ExpressionKind::StructConstructor(instantiated_struct_id) => {
-                    ExpressionKind::StructConstructor(instantiated_struct_id.clone())
+                    ExpressionKind::StructConstructor(*instantiated_struct_id)
                 }
                 ExpressionKind::FieldAccess { target, field } => ExpressionKind::FieldAccess {
                     target: Box::new(target.instantiate(type_argument_values)),
@@ -335,13 +385,16 @@ impl Expression {
 }
 
 #[derive(Debug, Clone)]
-pub struct LetStatement {
+pub struct LetStatement<T: AnyType> {
     pub binding: Identifier,
-    pub value: Expression,
+    pub value: Expression<T>,
 }
-impl LetStatement {
-    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
-        Self {
+impl LetStatement<GenericType> {
+    fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues,
+    ) -> LetStatement<InstantiatedType> {
+        LetStatement {
             binding: self.binding,
             value: self.value.instantiate(type_argument_values),
         }

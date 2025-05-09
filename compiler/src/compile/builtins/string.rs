@@ -7,7 +7,7 @@ use crate::{
     compile::{context::CompilerContext, value::StructInstance},
     identifier::Identifier,
     std::TYPE_NAME_STRING,
-    types,
+    types::{self, TypeArgumentValues},
 };
 
 use super::rc::RcValue;
@@ -55,23 +55,26 @@ impl StringValue {
                 .as_basic_value_enum(),
         );
 
-        let id = types::structs::InstantiatedStructId(
-            *TYPE_NAME_STRING,
-            types::TypeArgumentValues::new_empty(),
+        let id = *TYPE_NAME_STRING;
+
+        let literal_value = context.global_scope.structs.inspect_instantiated(
+            &(id, TypeArgumentValues::new_empty()),
+            |string_handle| {
+                string_handle.unwrap().build_heap_instance(
+                    context,
+                    &(name.to_string() + "_value"),
+                    field_values,
+                )
+            },
         );
 
-        let literal_value =
-            context
-                .global_scope
-                .structs
-                .inspect_instantiated(&id, |string_handle| {
-                    string_handle.unwrap().build_heap_instance(
-                        context,
-                        &(name.to_string() + "_value"),
-                        field_values,
-                    )
-                });
-
-        RcValue::build_init(name, &StructInstance::new(literal_value, id), context)
+        RcValue::build_init(
+            name,
+            &StructInstance::new(
+                literal_value,
+                types::InstantiatedType::new(types::InstantiatedTypeKind::Struct(id)),
+            ),
+            context,
+        )
     }
 }

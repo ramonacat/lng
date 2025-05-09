@@ -4,7 +4,7 @@ use inkwell::module::Module;
 
 use crate::{
     identifier::Identifier,
-    types::{self, modules::ModuleId},
+    types::{self, GenericType, modules::ModuleId},
 };
 
 use super::{Value, context::AllItems, module::CompiledModule};
@@ -111,8 +111,8 @@ impl Debug for GlobalScope<'_> {
 
 impl GlobalScope<'_> {
     pub(crate) fn new(
-        structs: HashMap<types::structs::StructId, types::structs::Struct>,
-        functions: HashMap<types::functions::FunctionId, types::functions::Function>,
+        structs: HashMap<types::structs::StructId, types::structs::Struct<GenericType>>,
+        functions: HashMap<types::functions::FunctionId, types::functions::Function<GenericType>>,
     ) -> Self {
         Self {
             modules: HashMap::new(),

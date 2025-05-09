@@ -3,40 +3,31 @@ use std::{collections::HashMap, fmt::Debug};
 use inkwell::values::{BasicValue as _, BasicValueEnum, PointerValue};
 use itertools::Itertools;
 
-use crate::{identifier::Identifier, types};
+use crate::{
+    identifier::Identifier,
+    types::{self, InstantiatedType},
+};
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
 
 pub struct InstantiatedStructType<'ctx> {
-    definition: types::structs::Struct,
+    pub(crate) definition: types::structs::Struct<InstantiatedType>,
     static_field_values: HashMap<Identifier, Value<'ctx>>,
 }
 
-pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::structs::InstantiatedStructId);
-
-pub struct InstantiatedFunctionType {
-    pub(crate) definition: types::functions::Function,
-}
-impl InstantiatedFunctionType {
-    pub(crate) const fn new(definition: types::functions::Function) -> Self {
-        Self { definition }
-    }
-}
+pub struct StructInstance<'ctx>(PointerValue<'ctx>, InstantiatedType);
 
 impl<'ctx> StructInstance<'ctx> {
     pub(crate) const fn value(&self) -> PointerValue<'ctx> {
         self.0
     }
 
-    pub(crate) fn id(&self) -> types::structs::InstantiatedStructId {
-        self.1.clone()
+    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: InstantiatedType) -> Self {
+        Self(pointer, type_)
     }
 
-    pub(crate) const fn new(
-        pointer: PointerValue<'ctx>,
-        type_: types::structs::InstantiatedStructId,
-    ) -> Self {
-        Self(pointer, type_)
+    pub(crate) fn type_(&self) -> InstantiatedType {
+        self.1.clone()
     }
 }
 
@@ -46,7 +37,7 @@ impl Debug for InstantiatedStructType<'_> {
             .definition
             .fields
             .iter()
-            .map(|f| format!("{}:{}", f.name, f.type_.debug_name()))
+            .map(|f| format!("{}:{}", f.name, f.type_))
             .join(", ");
 
         write!(f, "Struct({}){{{}}}>", self.definition.id, fields)
@@ -133,7 +124,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     // TODO we should take the generic arguments here, this handle should be one per the set of
     // types
     pub(crate) fn new(
-        description: types::structs::Struct,
+        description: types::structs::Struct<InstantiatedType>,
         mut static_fields: HashMap<Identifier, Value<'ctx>>,
     ) -> Self {
         let default_static_fields: Vec<_> = description
@@ -158,19 +149,22 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 #[derive(Clone)]
 pub enum Value<'ctx> {
     Empty,
-    Primitive(types::structs::InstantiatedStructId, BasicValueEnum<'ctx>),
+    Primitive(
+        types::structs::StructId,
+        types::TypeArgumentValues,
+        BasicValueEnum<'ctx>,
+    ),
     Reference(RcValue<'ctx>),
-    // TODO functions should be refered to by id
     Function(types::functions::FunctionId),
     // TODO this should be StructId
-    Struct(types::structs::Struct),
+    Struct(types::structs::Struct<types::GenericType>),
 }
 
 impl Debug for Value<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Primitive(struct_handle, basic_value_enum) => {
-                write!(f, "{struct_handle:?}({basic_value_enum})")
+            Value::Primitive(struct_id, tav, basic_value_enum) => {
+                write!(f, "{struct_id}{tav}({basic_value_enum})")
             }
             Value::Reference(rc_value) => {
                 write!(f, "Rc<{:?}>({})", rc_value.type_(), rc_value.as_ptr())
@@ -185,7 +179,7 @@ impl Debug for Value<'_> {
 impl<'ctx> Value<'ctx> {
     pub fn as_basic_value(&self) -> BasicValueEnum<'ctx> {
         match self {
-            Value::Primitive(_, value) => *value,
+            Value::Primitive(_, _, value) => *value,
             Value::Reference(value) => value.as_ptr().as_basic_value_enum(),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
@@ -199,18 +193,35 @@ impl<'ctx> Value<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> Option<Self> {
         match self {
-            Value::Primitive(handle, _) => context
+            Value::Primitive(struct_id, tav, _) => context
                 .global_scope
                 .structs
-                .inspect_instantiated(handle, |struct_| {
+                .inspect_instantiated(&(*struct_id, tav.clone()), |struct_| {
                     struct_.unwrap().read_field_value(self.clone(), field_path)
                 }),
-            Value::Reference(ref_) => context
-                .global_scope
-                .structs
-                .inspect_instantiated(&ref_.type_(), |struct_| {
-                    struct_.unwrap().read_field_value(self.clone(), field_path)
-                }),
+            Value::Reference(ref_) => {
+                let ref_type = ref_.type_();
+                let (struct_id, type_argument_values) = match ref_type.kind() {
+                    types::InstantiatedTypeKind::Unit => todo!(),
+                    types::InstantiatedTypeKind::Object {
+                        type_name,
+                        type_argument_values,
+                    } => (*type_name, type_argument_values),
+                    types::InstantiatedTypeKind::Array { .. } => todo!(),
+                    types::InstantiatedTypeKind::Callable(_) => todo!(),
+                    types::InstantiatedTypeKind::U64 => todo!(),
+                    types::InstantiatedTypeKind::U8 => todo!(),
+                    types::InstantiatedTypeKind::Pointer(_) => todo!(),
+                    types::InstantiatedTypeKind::Struct(_) => todo!(),
+                    types::InstantiatedTypeKind::Function(_) => todo!(),
+                };
+                context
+                    .global_scope
+                    .structs
+                    .inspect_instantiated(&(struct_id, type_argument_values.clone()), |struct_| {
+                        struct_.unwrap().read_field_value(self.clone(), field_path)
+                    })
+            }
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::Empty => todo!(),

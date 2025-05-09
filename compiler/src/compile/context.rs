@@ -8,31 +8,43 @@ use inkwell::{
     values::{IntValue, PointerValue},
 };
 
-use crate::{identifier::Identifier, types};
-
-use super::{
-    scope::GlobalScope,
-    unique_name,
-    value::{InstantiatedFunctionType, InstantiatedStructType},
+use crate::{
+    identifier::Identifier,
+    types::{self, InstantiatedType},
 };
 
+use super::{scope::GlobalScope, unique_name, value::InstantiatedStructType};
+
 pub struct Builtins {
-    pub rc_handle: types::structs::Struct,
+    pub rc_handle: types::structs::Struct<types::GenericType>,
 }
 
 pub struct AllItems<'ctx> {
-    structs: HashMap<types::structs::StructId, types::structs::Struct>,
-    instantiated_structs:
-        RwLock<HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
-    functions: HashMap<types::functions::FunctionId, types::functions::Function>,
-    instantiated_functions:
-        RwLock<HashMap<types::functions::InstantiatedFunctionId, InstantiatedFunctionType>>,
+    structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
+    instantiated_structs: RwLock<
+        HashMap<
+            (types::structs::StructId, types::TypeArgumentValues),
+            InstantiatedStructType<'ctx>,
+        >,
+    >,
+
+    functions:
+        HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
+    instantiated_functions: RwLock<
+        HashMap<
+            (types::functions::FunctionId, types::TypeArgumentValues),
+            types::functions::Function<types::InstantiatedType>,
+        >,
+    >,
 }
 
 impl<'ctx> AllItems<'ctx> {
     pub(crate) fn new(
-        structs: HashMap<types::structs::StructId, types::structs::Struct>,
-        functions: HashMap<types::functions::FunctionId, types::functions::Function>,
+        structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
+        functions: HashMap<
+            types::functions::FunctionId,
+            types::functions::Function<types::GenericType>,
+        >,
     ) -> Self {
         Self {
             structs,
@@ -44,7 +56,7 @@ impl<'ctx> AllItems<'ctx> {
 
     pub(crate) fn inspect_instantiated<T>(
         &self,
-        handle: &types::structs::InstantiatedStructId,
+        handle: &(types::structs::StructId, types::TypeArgumentValues),
         inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
     ) -> T {
         self.instantiate(handle);
@@ -53,7 +65,7 @@ impl<'ctx> AllItems<'ctx> {
     }
 
     // TODO deal with setting the static fields here
-    fn instantiate(&self, id: &types::structs::InstantiatedStructId) {
+    fn instantiate(&self, id: &(types::structs::StructId, types::TypeArgumentValues)) {
         self.instantiated_structs
             .write()
             .unwrap()
@@ -67,15 +79,15 @@ impl<'ctx> AllItems<'ctx> {
 
     pub(crate) fn inspect_instantiated_function<T>(
         &self,
-        id: &types::functions::InstantiatedFunctionId,
-        inspect: impl FnOnce(Option<&InstantiatedFunctionType>) -> T,
+        id: &(types::functions::FunctionId, types::TypeArgumentValues),
+        inspect: impl FnOnce(Option<&types::functions::Function<types::InstantiatedType>>) -> T,
     ) -> T {
         self.instantiate_function(id);
 
         inspect(self.instantiated_functions.read().unwrap().get(id))
     }
 
-    fn instantiate_function(&self, id: &types::functions::InstantiatedFunctionId) {
+    fn instantiate_function(&self, id: &(types::functions::FunctionId, types::TypeArgumentValues)) {
         self.instantiated_functions
             .write()
             .unwrap()
@@ -83,7 +95,7 @@ impl<'ctx> AllItems<'ctx> {
             .or_insert_with(|| {
                 let instantiated = self.functions.get(&id.0).unwrap().instantiate(&id.1);
 
-                InstantiatedFunctionType::new(instantiated)
+                instantiated
             });
     }
 }
@@ -113,35 +125,35 @@ impl<'ctx> CompilerContext<'ctx> {
             .const_int(u64::from(value), false)
     }
 
-    pub fn get_std_type(name: &str) -> types::structs::InstantiatedStructId {
+    pub fn get_std_type(name: &str) -> types::structs::StructId {
         // TODO what about std types that have type arguments?
-        types::structs::InstantiatedStructId(
-            types::structs::StructId::InModule(
-                types::modules::ModuleId::parse("std"),
-                Identifier::parse(name),
-            ),
-            types::TypeArgumentValues::new_empty(),
+        types::structs::StructId::InModule(
+            types::modules::ModuleId::parse("std"),
+            Identifier::parse(name),
         )
     }
 
-    fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
+    fn type_to_llvm(&self, type_: &types::InstantiatedType) -> Box<dyn BasicType<'ctx> + 'ctx> {
         match &type_.kind() {
-            types::TypeKind::Unit | types::TypeKind::U8 => Box::new(self.llvm_context.i8_type()),
-            types::TypeKind::U64 => Box::new(self.llvm_context.i64_type()),
-            types::TypeKind::Callable { .. }
-            | types::TypeKind::Pointer(_)
-            | types::TypeKind::Array { .. }
-            | types::TypeKind::Object { .. } => {
+            types::InstantiatedTypeKind::Unit | types::InstantiatedTypeKind::U8 => {
+                Box::new(self.llvm_context.i8_type())
+            }
+            types::InstantiatedTypeKind::U64 => Box::new(self.llvm_context.i64_type()),
+            types::InstantiatedTypeKind::Callable { .. }
+            | types::InstantiatedTypeKind::Pointer(_)
+            | types::InstantiatedTypeKind::Array { .. }
+            | types::InstantiatedTypeKind::Object { .. } => {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
-            types::TypeKind::Generic(_) => todo!(),
+            types::InstantiatedTypeKind::Struct(_) => todo!(),
+            types::InstantiatedTypeKind::Function(_) => todo!(),
         }
     }
 
     pub fn make_function_type(
         &self,
-        arguments: &[types::functions::Argument],
-        return_type: &types::Type,
+        arguments: &[types::functions::Argument<InstantiatedType>],
+        return_type: &types::InstantiatedType,
     ) -> FunctionType<'ctx> {
         let arguments = arguments
             .iter()
@@ -149,18 +161,23 @@ impl<'ctx> CompilerContext<'ctx> {
             .collect::<Vec<_>>();
 
         match return_type.kind() {
-            types::TypeKind::Unit => self.llvm_context.void_type().fn_type(&arguments[..], false),
+            types::InstantiatedTypeKind::Unit => {
+                self.llvm_context.void_type().fn_type(&arguments[..], false)
+            }
             _ => self
                 .type_to_llvm(return_type)
                 .fn_type(&arguments[..], false),
         }
     }
 
-    pub fn make_struct_type(&self, fields: &[types::structs::StructField]) -> CompiledStruct<'ctx> {
+    pub fn make_struct_type(
+        &self,
+        fields: &[types::structs::StructField<InstantiatedType>],
+    ) -> CompiledStruct<'ctx> {
         let mut field_types = vec![];
         let mut field_indices = HashMap::new();
 
-        for (index, field) in fields.iter().enumerate() {
+        for (index, field) in fields.iter().filter(|f| !f.static_).enumerate() {
             field_types.push(self.type_to_llvm(&field.type_).as_basic_type_enum());
             field_indices.insert(field.name, u32::try_from(index).unwrap());
         }
@@ -171,7 +188,10 @@ impl<'ctx> CompilerContext<'ctx> {
         }
     }
 
-    pub(crate) fn make_object_type(&self, item_type: &types::Type) -> BasicTypeEnum<'ctx> {
+    pub(crate) fn make_object_type(
+        &self,
+        item_type: &types::InstantiatedType,
+    ) -> BasicTypeEnum<'ctx> {
         self.type_to_llvm(item_type).as_basic_type_enum()
     }
 }

@@ -8,14 +8,14 @@ use super::{
 use crate::{
     identifier::Identifier,
     name_mangler::{MangledIdentifier, nomangle_identifier},
-    types,
+    types::{self, InstantiatedType},
 };
 use inkwell::{
     module::{Linkage, Module},
     values::FunctionValue,
 };
 
-impl types::functions::Function {
+impl types::functions::Function<InstantiatedType> {
     const fn linkage(&self) -> Linkage {
         match self.body {
             types::functions::FunctionBody::Statements(_) => match self.visibility {
@@ -26,7 +26,7 @@ impl types::functions::Function {
         }
     }
 
-    fn mangled_id(&self) -> MangledIdentifier {
+    pub(super) fn mangled_id(&self) -> MangledIdentifier {
         match self.body {
             types::functions::FunctionBody::Extern(identifier) => nomangle_identifier(identifier),
             types::functions::FunctionBody::Statements(_) => self.id.into_mangled(),
@@ -60,8 +60,8 @@ impl<'ctx> CompiledModule<'ctx> {
     fn declare_function_inner(
         &self,
         name: &MangledIdentifier,
-        arguments: &[types::functions::Argument],
-        return_type: &types::Type,
+        arguments: &[types::functions::Argument<InstantiatedType>],
+        return_type: &types::InstantiatedType,
         linkage: Linkage,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
@@ -75,8 +75,8 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         linkage: Linkage,
         name: &MangledIdentifier,
-        arguments: &[types::functions::Argument],
-        return_type: &types::Type,
+        arguments: &[types::functions::Argument<InstantiatedType>],
+        return_type: &types::InstantiatedType,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.declare_function_inner(name, arguments, return_type, linkage, context)
@@ -92,7 +92,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn begin_compile_function(
         &self,
-        handle: &types::functions::Function,
+        handle: &types::functions::Function<InstantiatedType>,
         context: &CompilerContext<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
         let mut rcs = vec![];
@@ -108,23 +108,37 @@ impl<'ctx> CompiledModule<'ctx> {
 
         for (argument, argument_value) in handle.arguments.iter().zip(llvm_function.get_params()) {
             let value = match &argument.type_.kind() {
-                types::TypeKind::Unit => todo!(),
-                types::TypeKind::Object { type_name: id } => {
-                    let rc = RcValue::from_pointer(argument_value.into_pointer_value(), id.clone());
+                types::InstantiatedTypeKind::Unit => todo!(),
+                types::InstantiatedTypeKind::Object {
+                    type_name: id,
+                    type_argument_values,
+                } => {
+                    let rc = RcValue::from_pointer(
+                        argument_value.into_pointer_value(),
+                        context
+                            .global_scope
+                            .structs
+                            .inspect_instantiated(&(*id, type_argument_values.clone()), |x| {
+                                x.unwrap().definition.type_.clone()
+                            }),
+                    );
                     rcs.push(rc.clone());
 
                     Value::Reference(rc)
                 }
-                types::TypeKind::Array { element_type: a } => Value::Reference(
+                types::InstantiatedTypeKind::Array { element_type: a } => Value::Reference(
                     builtins::array::ArrayValue::build_instance(a.as_ref(), context),
                 ),
-                types::TypeKind::Callable { .. } => todo!(),
-                types::TypeKind::U64 => {
-                    Value::Primitive(CompilerContext::get_std_type("u64"), argument_value)
-                }
-                types::TypeKind::Pointer(_) => todo!(),
-                types::TypeKind::U8 => todo!(),
-                types::TypeKind::Generic(_) => todo!(),
+                types::InstantiatedTypeKind::Callable { .. } => todo!(),
+                types::InstantiatedTypeKind::U64 => Value::Primitive(
+                    CompilerContext::get_std_type("u64"),
+                    types::TypeArgumentValues::new_empty(),
+                    argument_value,
+                ),
+                types::InstantiatedTypeKind::Pointer(_) => todo!(),
+                types::InstantiatedTypeKind::U8 => todo!(),
+                types::InstantiatedTypeKind::Struct(_) => todo!(),
+                types::InstantiatedTypeKind::Function(_) => todo!(),
             };
 
             scope.set_value(argument.name, value);
@@ -155,12 +169,14 @@ impl<'ctx> CompiledModule<'ctx> {
     }
 
     pub(crate) fn has_function(&self, name: &MangledIdentifier) -> bool {
-        self.llvm_module.get_function(name.as_str()).is_some()
+        self.llvm_module
+            .get_function(name.as_str())
+            .is_some_and(|x| x.count_basic_blocks() > 0)
     }
 
     pub(crate) fn get_or_create_function(
         &self,
-        handle: &types::functions::Function,
+        handle: &types::functions::Function<InstantiatedType>,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.llvm_module

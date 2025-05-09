@@ -29,7 +29,7 @@ use crate::{
     ast,
     identifier::{FQName, Identifier},
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types,
+    types::{self, InstantiatedType},
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -201,7 +201,7 @@ impl IntoCompileError for BuilderError {
 
 pub(crate) struct CompiledFunction<'ctx> {
     // TODO can this just be FunctionId?
-    handle: types::functions::Function,
+    handle: types::functions::Function<InstantiatedType>,
 
     entry: BasicBlock<'ctx>,
     end: BasicBlock<'ctx>,
@@ -308,15 +308,12 @@ impl<'ctx> Compiler<'ctx> {
                 .global_scope
                 .structs
                 .inspect_instantiated_function(
-                    &types::functions::InstantiatedFunctionId(
-                        main,
-                        types::TypeArgumentValues::new_empty(),
-                    ),
+                    &(main, types::TypeArgumentValues::new_empty()),
                     |function| {
                         let function = function.unwrap();
                         // TODO verify in type_check that main has no generic arguments
                         // TODO can we avoid this clone?
-                        function.definition.clone()
+                        function.clone()
                     },
                 );
 
@@ -348,7 +345,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_function(
         &mut self,
-        handle: &types::functions::Function,
+        handle: &types::functions::Function<InstantiatedType>,
     ) -> Result<(), CompileError> {
         let types::functions::FunctionBody::Statements(statements) = &handle.body else {
             return Ok(());
@@ -376,7 +373,7 @@ impl<'ctx> Compiler<'ctx> {
 
                     match return_ {
                         Value::Reference(rc_value) => rc_value.as_ptr() != x.as_ptr(),
-                        Value::Primitive(_, _)
+                        Value::Primitive(_, _, _)
                         | Value::Function(_)
                         | Value::Struct(_)
                         | Value::Empty => true,
@@ -425,7 +422,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_statements(
         &mut self,
-        statements: &Vec<types::Statement>,
+        statements: &Vec<types::Statement<InstantiatedType>>,
         module_path: types::modules::ModuleId,
         compiled_function: &mut CompiledFunction<'ctx>,
     ) -> Result<(), CompileError> {
@@ -469,7 +466,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_expression(
         &mut self,
-        expression: &types::Expression,
+        expression: &types::Expression<InstantiatedType>,
         self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
         module_path: types::modules::ModuleId,
@@ -514,7 +511,7 @@ impl<'ctx> Compiler<'ctx> {
                             .global_scope
                             .structs
                             .inspect_instantiated_function(
-                                &types::functions::InstantiatedFunctionId(
+                                &(
                                     types::functions::FunctionId::InModule(module_id, item_id),
                                     types::TypeArgumentValues::new_empty(),
                                 ),
@@ -524,7 +521,7 @@ impl<'ctx> Compiler<'ctx> {
                                             .global_scope
                                             .get_module(module_id)
                                             .unwrap()
-                                            .get_or_create_function(&x.definition, &self.context);
+                                            .get_or_create_function(x, &self.context);
 
                                         Value::Function(types::functions::FunctionId::InModule(
                                             module_id,
@@ -534,6 +531,7 @@ impl<'ctx> Compiler<'ctx> {
                                 },
                             )
                     });
+
                 Ok((None, value.unwrap()))
             }
             types::ExpressionKind::StructConstructor(name) => {
@@ -542,21 +540,26 @@ impl<'ctx> Compiler<'ctx> {
                 let field_values = HashMap::new();
                 // TODO actually set the field values!
 
-                let value = self
-                    .context
-                    .global_scope
-                    .structs
-                    .inspect_instantiated(name, |s| {
+                let value = self.context.global_scope.structs.inspect_instantiated(
+                    &(*name, types::TypeArgumentValues::new_empty()),
+                    |s| {
                         s.unwrap().build_heap_instance(
                             &self.context,
                             &unique_name(&[&name.to_string()]),
                             field_values,
                         )
-                    });
+                    },
+                );
 
                 let rc = RcValue::build_init(
                     &unique_name(&[&name.to_string(), "rc"]),
-                    &StructInstance::new(value, name.clone()),
+                    &StructInstance::new(
+                        value,
+                        types::InstantiatedType::new(types::InstantiatedTypeKind::Object {
+                            type_name: *name,
+                            type_argument_values: types::TypeArgumentValues::new_empty(),
+                        }),
+                    ),
                     &self.context,
                 );
                 compiled_function.rcs.push(rc.clone());
@@ -598,6 +601,7 @@ impl<'ctx> Compiler<'ctx> {
                 None,
                 Value::Primitive(
                     CompilerContext::get_std_type("u64"),
+                    types::TypeArgumentValues::new_empty(),
                     self.context.const_u64(*value).as_basic_value_enum(),
                 ),
             ),
@@ -610,8 +614,8 @@ impl<'ctx> Compiler<'ctx> {
         compiled_function: &mut CompiledFunction<'ctx>,
         module_path: types::modules::ModuleId,
         position: ast::SourceSpan,
-        target: &types::Expression,
-        arguments: &[types::Expression],
+        target: &types::Expression<types::InstantiatedType>,
+        arguments: &[types::Expression<types::InstantiatedType>],
     ) -> Result<Value<'ctx>, CompileError> {
         let compiled_target =
             self.compile_expression(target, self_.cloned(), compiled_function, module_path)?;
@@ -620,29 +624,29 @@ impl<'ctx> Compiler<'ctx> {
         let function_id = match &compiled_target.1 {
             Value::Function(function_id) => function_id,
             Value::Empty => todo!(),
-            Value::Primitive(_, _) => todo!(),
+            Value::Primitive(_, _, _) => todo!(),
             Value::Reference(_) => todo!(),
             Value::Struct(_) => todo!(),
         };
 
         // TODO we should already have an InstantiatedFunctionId here, probably?
-        let instantiated_function_id = types::functions::InstantiatedFunctionId(
-            *function_id,
-            types::TypeArgumentValues::new_empty(),
-        );
+        let instantiated_function_id = (*function_id, types::TypeArgumentValues::new_empty());
         let definition = self
             .context
             .global_scope
             .structs
             .inspect_instantiated_function(&instantiated_function_id, |function| {
-                function.unwrap().definition.clone()
+                function.unwrap().clone()
             });
+
+        dbg!(function_id, definition.id, definition.module_name);
         if !self
             .context
             .global_scope
             .get_module(definition.module_name)
             .unwrap()
-            .has_function(&instantiated_function_id.into_mangled())
+            // TODO mangle the type arguments as well!
+            .has_function(&definition.mangled_id())
         {
             self.compile_function(&definition).unwrap();
         }
@@ -669,7 +673,7 @@ impl<'ctx> Compiler<'ctx> {
         let call_arguments = compiled_arguments_iter
             .iter_mut()
             .map(|a| match a {
-                Value::Primitive(_, v) => v.as_basic_value_enum().into(),
+                Value::Primitive(_, _, v) => v.as_basic_value_enum().into(),
                 Value::Reference(rc_value) => rc_value.as_ptr().as_basic_value_enum().into(),
                 Value::Function(_) => todo!("implement passing callables as arguments"),
                 Value::Struct(_) => {
@@ -690,17 +694,26 @@ impl<'ctx> Compiler<'ctx> {
             .map_err(|e| e.at(position))?;
         let call_result = call_result.as_any_value_enum();
         let value = match definition.return_type.kind() {
-            types::TypeKind::Unit => Value::Empty,
-            types::TypeKind::Object { type_name: id } => Value::Reference(RcValue::from_pointer(
+            types::InstantiatedTypeKind::Unit => Value::Empty,
+            types::InstantiatedTypeKind::Object {
+                type_name: id,
+                type_argument_values,
+            } => Value::Reference(RcValue::from_pointer(
                 call_result.into_pointer_value(),
-                id.clone(),
+                self.context
+                    .global_scope
+                    .structs
+                    .inspect_instantiated(&(*id, type_argument_values.clone()), |x| {
+                        x.unwrap().definition.type_.clone()
+                    }),
             )),
-            types::TypeKind::Array { .. } => todo!(),
-            types::TypeKind::Callable { .. } => todo!(),
-            types::TypeKind::U64 => todo!(),
-            types::TypeKind::U8 => todo!(),
-            types::TypeKind::Pointer(_) => todo!(),
-            types::TypeKind::Generic(_) => todo!(),
+            types::InstantiatedTypeKind::Array { .. } => todo!(),
+            types::InstantiatedTypeKind::Callable { .. } => todo!(),
+            types::InstantiatedTypeKind::U64 => todo!(),
+            types::InstantiatedTypeKind::U8 => todo!(),
+            types::InstantiatedTypeKind::Pointer(_) => todo!(),
+            types::InstantiatedTypeKind::Struct(_) => todo!(),
+            types::InstantiatedTypeKind::Function(_) => todo!(),
         };
         Ok(value)
     }

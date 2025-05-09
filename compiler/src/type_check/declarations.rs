@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap};
 use crate::{
     ast,
     identifier::{FQName, Identifier},
-    types,
+    types::{self, GenericType},
 };
 
 use super::errors::TypeCheckError;
@@ -12,8 +12,8 @@ use super::errors::TypeCheckError;
 pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
     pub(super) module_name: types::modules::ModuleId,
-    pub(super) arguments: Vec<types::functions::Argument>,
-    pub(super) return_type: types::Type,
+    pub(super) arguments: Vec<types::functions::Argument<GenericType>>,
+    pub(super) return_type: types::GenericType,
     pub(super) ast: ast::Function,
     pub(super) position: ast::SourceSpan,
     pub(super) visibility: types::Visibility,
@@ -21,17 +21,19 @@ pub(super) struct DeclaredFunction {
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredStructField {
-    pub(super) type_: types::Type,
+    pub(super) type_: types::GenericType,
     pub(super) static_: bool,
 }
 
 // TODO can we kill the RefCells and let the borrowck do the borrowck?
 pub(super) struct DeclaredRootModule {
     // TODO make the fields private
-    pub(super) structs: RefCell<HashMap<types::structs::StructId, types::structs::Struct>>,
+    pub(super) structs:
+        RefCell<HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>>,
     pub(super) functions: RefCell<HashMap<types::functions::FunctionId, DeclaredFunction>>,
-    pub(super) predeclared_functions:
-        RefCell<HashMap<types::functions::FunctionId, types::functions::Function>>,
+    pub(super) predeclared_functions: RefCell<
+        HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
+    >,
     pub(super) modules: HashMap<types::modules::ModuleId, types::modules::Module>,
     pub(super) imports:
         HashMap<(types::modules::ModuleId, Identifier), (types::modules::ModuleId, Identifier)>,
@@ -64,26 +66,28 @@ impl std::fmt::Debug for DeclaredRootModule {
 // TODO this should take refs instead of clones, but we need to get rid of RefCells in
 // DeclaredRootModule first
 pub enum ItemKind {
-    Struct(types::structs::Struct),
+    Struct(types::structs::Struct<GenericType>),
     Function(DeclaredFunction),
-    PredeclaredFunction(types::functions::Function),
+    PredeclaredFunction(types::functions::Function<GenericType>),
 }
 impl ItemKind {
-    pub(crate) fn type_(&self) -> types::Type {
+    pub(crate) fn type_(&self) -> types::GenericType {
         match self {
             // TODO handle generics
-            Self::Struct(struct_) => types::Type::new_not_generic(types::TypeKind::Object {
-                type_name: types::structs::InstantiatedStructId(
-                    struct_.id,
-                    types::TypeArgumentValues::new_empty(),
-                ),
-            }),
-            Self::Function(declared_function) => {
-                types::Type::new_not_generic(types::TypeKind::Callable(declared_function.id))
-            }
-            Self::PredeclaredFunction(function) => {
-                types::Type::new_not_generic(types::TypeKind::Callable(function.id))
-            }
+            Self::Struct(struct_) => types::GenericType::new(
+                types::GenericTypeKind::Object {
+                    type_name: struct_.id,
+                },
+                struct_.type_.arguments().clone(),
+            ),
+            Self::Function(declared_function) => types::GenericType::new(
+                types::GenericTypeKind::Callable(declared_function.id),
+                types::TypeArguments::new_empty(),
+            ),
+            Self::PredeclaredFunction(function) => types::GenericType::new(
+                types::GenericTypeKind::Callable(function.id),
+                function.type_.arguments().clone(),
+            ),
         }
     }
 }
@@ -101,8 +105,11 @@ impl DeclaredRootModule {
 
     pub(crate) fn from_predeclared(
         modules: &HashMap<types::modules::ModuleId, types::modules::Module>,
-        structs: HashMap<types::structs::StructId, types::structs::Struct>,
-        functions: HashMap<types::functions::FunctionId, types::functions::Function>,
+        structs: HashMap<types::structs::StructId, types::structs::Struct<GenericType>>,
+        functions: HashMap<
+            types::functions::FunctionId,
+            types::functions::Function<types::GenericType>,
+        >,
     ) -> Self {
         Self {
             structs: RefCell::new(structs),
@@ -127,7 +134,7 @@ impl DeclaredRootModule {
         r#as: (types::modules::ModuleId, Identifier),
         item: (types::modules::ModuleId, Identifier),
     ) {
-        let old = self.imports.insert(dbg!(r#as), dbg!(item));
+        let old = self.imports.insert(r#as, item);
         assert!(old.is_none());
     }
 
@@ -142,6 +149,7 @@ impl DeclaredRootModule {
             .unwrap_or((module_id, name))
     }
 
+    // TODO we should probably take the TypeArguments as an argument here or something?
     pub fn get_item(
         &self,
         module_id: types::modules::ModuleId,
@@ -171,7 +179,7 @@ impl DeclaredRootModule {
     pub(crate) fn get_struct(
         &self,
         struct_name: types::structs::StructId,
-    ) -> Option<types::structs::Struct> {
+    ) -> Option<types::structs::Struct<GenericType>> {
         self.structs.borrow().get(&struct_name).cloned()
     }
 }
@@ -180,20 +188,21 @@ pub(super) fn resolve_type(
     root_module: &DeclaredRootModule,
     current_module: types::modules::ModuleId,
     r#type: &ast::TypeDescription,
-) -> Result<types::Type, TypeCheckError> {
+) -> Result<types::GenericType, TypeCheckError> {
     // TODO handle generics here
     match r#type {
-        ast::TypeDescription::Array(type_description) => {
-            Ok(types::Type::new_not_generic(types::TypeKind::Array {
+        ast::TypeDescription::Array(type_description) => Ok(types::GenericType::new(
+            types::GenericTypeKind::Array {
                 element_type: Box::new(resolve_type(
                     root_module,
                     current_module,
                     type_description,
                 )?),
-            }))
-        }
-        ast::TypeDescription::Named(name) if name == "()" => Ok(types::Type::unit()),
-        ast::TypeDescription::Named(name) if name == "u64" => Ok(types::Type::u64()),
+            },
+            types::TypeArguments::new_empty(),
+        )),
+        ast::TypeDescription::Named(name) if name == "()" => Ok(types::GenericType::unit()),
+        ast::TypeDescription::Named(name) if name == "u64" => Ok(types::GenericType::u64()),
         ast::TypeDescription::Named(name) => {
             let (current_module, name) = root_module.resolve_import(current_module, *name);
 

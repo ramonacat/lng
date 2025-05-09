@@ -7,8 +7,8 @@ use crate::{
 };
 
 use super::{
-    Statement, Type, TypeArgumentValues, TypeArguments, TypeKind, Visibility, modules::ModuleId,
-    structs::StructId,
+    AnyType, GenericType, InstantiatedType, Statement, TypeArgumentValues, Visibility,
+    modules::ModuleId, structs::StructId,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -33,6 +33,7 @@ impl Display for FunctionId {
 impl FunctionId {
     pub(crate) fn into_mangled(self) -> MangledIdentifier {
         match self {
+            // TODO the type_ should be used for mangling!
             Self::InModule(module_id, fqname) => mangle_item_name(module_id, fqname),
             Self::InStruct(struct_id, identifier) => mangle_struct_item_name(struct_id, identifier),
         }
@@ -45,39 +46,30 @@ impl FunctionId {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct InstantiatedFunctionId(pub FunctionId, pub TypeArgumentValues);
-
-impl InstantiatedFunctionId {
-    pub(crate) fn into_mangled(self) -> MangledIdentifier {
-        self.0.into_mangled().with_types(&self.1)
-    }
-}
-
 #[derive(Debug, Clone)]
-pub struct Function {
+pub struct Function<T: AnyType> {
     pub id: FunctionId,
     pub module_name: ModuleId,
-    pub arguments: Vec<Argument>,
-    pub return_type: Type,
-    pub body: FunctionBody,
+    pub arguments: Vec<Argument<T>>,
+    pub return_type: T,
+    pub body: FunctionBody<T>,
     pub position: ast::SourceSpan,
     pub visibility: Visibility,
+    pub type_: T,
 }
 
-impl Function {
-    pub(crate) fn type_(&self) -> Type {
-        // TODO the function may actually have type arguments, so we need to consider that case
-        // here
-        Type {
-            kind: TypeKind::Callable(self.id),
-            argument_values: TypeArgumentValues::new_empty(),
-            arguments: TypeArguments::new_empty(),
-        }
+impl<T: AnyType> Function<T> {
+    pub(crate) fn type_(&self) -> T {
+        self.type_.clone()
     }
+}
 
-    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
-        Self {
+impl Function<GenericType> {
+    pub(crate) fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues,
+    ) -> Function<InstantiatedType> {
+        Function {
             id: self.id,
             module_name: self.module_name,
             arguments: self
@@ -89,20 +81,25 @@ impl Function {
             body: self.body.instantiate(type_argument_values),
             position: self.position,
             visibility: self.visibility,
+            type_: self.type_.instantiate(type_argument_values),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum FunctionBody {
+pub enum FunctionBody<T: AnyType> {
     Extern(Identifier),
-    Statements(Vec<Statement>),
+    Statements(Vec<Statement<T>>),
 }
-impl FunctionBody {
-    fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
+
+impl FunctionBody<GenericType> {
+    fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues,
+    ) -> FunctionBody<InstantiatedType> {
         match self {
-            Self::Extern(identifier) => Self::Extern(*identifier),
-            Self::Statements(statements) => Self::Statements(
+            Self::Extern(identifier) => FunctionBody::Extern(*identifier),
+            Self::Statements(statements) => FunctionBody::Statements(
                 statements
                     .iter()
                     .map(|x| x.instantiate(type_argument_values))
@@ -112,15 +109,19 @@ impl FunctionBody {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Argument {
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Argument<T: AnyType> {
     pub name: Identifier,
-    pub type_: Type,
+    pub type_: T,
     pub position: ast::SourceSpan,
 }
-impl Argument {
-    pub(crate) fn instantiate(&self, type_argument_values: &TypeArgumentValues) -> Self {
-        Self {
+
+impl Argument<GenericType> {
+    pub(crate) fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues,
+    ) -> Argument<InstantiatedType> {
+        Argument {
             name: self.name,
             type_: self.type_.instantiate(type_argument_values),
             position: self.position,
@@ -128,20 +129,7 @@ impl Argument {
     }
 }
 
-impl std::hash::Hash for Argument {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        (self.name, &self.type_).hash(state);
-    }
-}
-
-impl Eq for Argument {}
-impl PartialEq for Argument {
-    fn eq(&self, other: &Self) -> bool {
-        (&self.name, &self.type_) == (&other.name, &other.type_)
-    }
-}
-
-impl Display for Argument {
+impl<T: AnyType> Display for Argument<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.name, self.type_)
     }
