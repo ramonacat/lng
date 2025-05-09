@@ -161,7 +161,7 @@ impl DefinitionChecker {
                 type_: impl_.type_(),
                 static_: true,
             });
-            struct_.impls.insert(name, impl_);
+            struct_.impls.push(name);
         }
     }
 

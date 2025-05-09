@@ -1,12 +1,9 @@
-use std::{
-    collections::HashMap,
-    fmt::{Display, Formatter},
-};
+use std::fmt::{Display, Formatter};
 
 use crate::name_mangler::{MangledIdentifier, mangle_item_name};
 
 use super::{
-    AnyType, Function, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues,
+    AnyType, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues,
     modules::ModuleId,
 };
 
@@ -65,8 +62,7 @@ impl Display for StructId {
 pub struct Struct<T: AnyType> {
     pub id: StructId,
     pub fields: Vec<StructField<T>>,
-    // TODO eventually change to just a vec of FunctionIds
-    pub impls: HashMap<FunctionId, Function<T>>,
+    pub impls: Vec<FunctionId>,
     pub type_: T,
 }
 
@@ -93,11 +89,7 @@ impl Struct<GenericType> {
                 .iter()
                 .map(|x| x.instantiate(type_argument_values))
                 .collect(),
-            impls: self
-                .impls
-                .iter()
-                .map(|(id, impl_)| (*id, impl_.instantiate(type_argument_values)))
-                .collect::<HashMap<FunctionId, Function<InstantiatedType>>>(),
+            impls: self.impls.clone(),
             type_: self.type_.instantiate(type_argument_values),
         }
     }

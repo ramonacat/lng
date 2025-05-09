@@ -130,7 +130,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         let default_static_fields: Vec<_> = description
             .impls
             .iter()
-            .map(|(name, impl_)| (name.local(), Value::Function(impl_.id)))
+            .map(|id| (id.local(), Value::Function(*id)))
             .collect();
 
         for (name, value) in default_static_fields {

@@ -8,7 +8,7 @@ use std::{
     hash::Hash,
 };
 
-use functions::{Function, FunctionId};
+use functions::FunctionId;
 use itertools::Itertools;
 use modules::ModuleId;
 use structs::{Struct, StructId};
@@ -139,7 +139,6 @@ pub enum InstantiatedTypeKind {
     Function(FunctionId),
 }
 
-// TODO separate GenericType and InstantiatedType
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InstantiatedType {
     kind: InstantiatedTypeKind,

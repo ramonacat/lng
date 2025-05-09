@@ -251,7 +251,7 @@ impl DeclarationChecker {
             types::structs::Struct {
                 id: struct_id,
                 fields,
-                impls: HashMap::new(),
+                impls: vec![],
                 type_: struct_type,
             },
         );
