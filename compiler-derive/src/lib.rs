@@ -3,17 +3,23 @@ use proc_macro2::Literal;
 use quote::ToTokens;
 use syn::{Data, DeriveInput, Fields, Ident, LitStr, parse_macro_input};
 
-#[proc_macro_derive(BuiltinStruct, attributes(fqname, generic, array))]
+#[proc_macro_derive(BuiltinStruct, attributes(module_id, struct_name, generic, array))]
 pub fn builtin_struct(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
 
-    let mut name = String::new();
+    let mut module_id = String::new();
+    let mut struct_name = String::new();
     let mut generic_type = None;
+
     for attribute in &input.attrs {
-        if attribute.path().is_ident("fqname") {
+        if attribute.path().is_ident("module_id") {
             let args: LitStr = attribute.parse_args().unwrap();
 
-            name = args.value();
+            module_id = args.value();
+        } else if attribute.path().is_ident("struct_name") {
+            let args: LitStr = attribute.parse_args().unwrap();
+
+            struct_name = args.value();
         } else if attribute.path().is_ident("generic") {
             let type_: Ident = attribute.parse_args().unwrap();
             generic_type = Some(type_.to_string());
@@ -71,17 +77,19 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
         }
     };
 
-    let name_lit = Literal::string(&name);
+    let module_id_lit = Literal::string(&module_id);
+    let struct_name_lit = Literal::string(&struct_name);
 
     quote::quote! {
         pub fn describe_structure() -> crate::types::structs::Struct {
             #generics
 
-            let type_name = crate::identifier::FQName::parse(#name_lit);
-            let struct_id = crate::types::structs::StructId::FQName(type_name);
+            let module_id = crate::types::modules::ModuleId::parse(#module_id_lit);
+            let struct_name = crate::identifier::Identifier::parse(#struct_name_lit);
+            let struct_id = crate::types::structs::StructId::InModule(module_id, struct_name);
 
             crate::types::structs::Struct {
-                name: type_name,
+                id: struct_id,
                 type_arguments: crate::types::TypeArguments::new(type_argument_names),
                 fields: vec![#(#fields_gen),*],
                 impls: std::collections::HashMap::new()

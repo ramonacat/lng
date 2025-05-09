@@ -9,7 +9,7 @@ use std::{
 
 use functions::{Function, FunctionId};
 use itertools::Itertools;
-use modules::Module;
+use modules::{Module, ModuleId};
 use structs::{InstantiatedStructId, Struct, StructId};
 
 use crate::{
@@ -17,6 +17,23 @@ use crate::{
     identifier::{FQName, Identifier},
     std::TYPE_NAME_U64,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ItemId {
+    Struct(StructId),
+    Function(FunctionId),
+    Module(ModuleId),
+}
+
+impl Display for ItemId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Struct(struct_id) => write!(f, "{struct_id}"),
+            Self::Function(function_id) => write!(f, "{function_id}"),
+            Self::Module(module_id) => write!(f, "{module_id}"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeArguments(Vec<TypeArgument>);
@@ -209,10 +226,7 @@ impl Type {
             TypeKind::Object { type_name } => type_name.clone(),
             TypeKind::Array { .. } => todo!(),
             TypeKind::Callable { .. } => todo!(),
-            TypeKind::U64 => InstantiatedStructId(
-                StructId::FQName(*TYPE_NAME_U64),
-                TypeArgumentValues::new_empty(),
-            ),
+            TypeKind::U64 => InstantiatedStructId(*TYPE_NAME_U64, TypeArgumentValues::new_empty()),
             TypeKind::U8 => todo!(),
             TypeKind::Pointer(_) => todo!(),
         }

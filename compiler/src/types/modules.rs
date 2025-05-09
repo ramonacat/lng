@@ -44,6 +44,21 @@ impl ModuleId {
             Self::FQName(fqname) => fqname.into_mangled(),
         }
     }
+
+    // TODO this is hacky, remove
+    pub(crate) const fn fqname(self) -> FQName {
+        match self {
+            Self::FQName(fqname) => fqname,
+        }
+    }
+
+    // TODO this is problematic, we'll need
+    // a proper toposort to be able to get rid of it
+    pub(crate) fn len(self) -> usize {
+        match self {
+            Self::FQName(fqname) => fqname.len(),
+        }
+    }
 }
 
 pub struct AppModule {

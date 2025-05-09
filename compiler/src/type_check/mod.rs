@@ -38,8 +38,12 @@ impl types::Item {
             types::ItemKind::Import(import) => root_module
                 .get_item(import.imported_item)
                 .ok_or_else(|| {
-                    TypeCheckErrorDescription::ItemDoesNotExist(import.imported_item)
-                        .at(error_location)
+                    // TODO imported_item should be an ItemId, and then we don't have to hackishly
+                    // create the ItemId::Module
+                    TypeCheckErrorDescription::ItemDoesNotExist(types::ItemId::Module(
+                        types::modules::ModuleId::parse(&import.imported_item.to_string()),
+                    ))
+                    .at(error_location)
                 })?
                 .type_(root_module, current_module, error_location),
             types::ItemKind::Module(_) => todo!(),

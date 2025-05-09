@@ -84,13 +84,13 @@ impl std::fmt::Debug for DeclaredModule<'_> {
 
 impl<'pre> DeclaredModule<'pre> {
     pub(super) fn import_predeclared(&mut self, module: &'pre types::modules::Module) {
-        let root_name = FQName::parse("");
+        let root_name = types::modules::ModuleId::parse("");
 
         for (item_name, item) in module.items() {
             let visibility = item.visibility;
 
             self.declare(
-                root_name.with_part(item_name),
+                types::ItemId::Module(root_name.child(item_name)),
                 DeclaredItem {
                     kind: DeclaredItemKind::Predeclared(item),
                     visibility,
@@ -100,7 +100,15 @@ impl<'pre> DeclaredModule<'pre> {
         }
     }
 
-    pub(super) fn declare(&mut self, name: FQName, item: DeclaredItem<'pre>) {
+    pub(super) fn declare(&mut self, name: types::ItemId, item: DeclaredItem<'pre>) {
+        // TODO this is a hack, we should get the ModuleId and ItemName from name and use those to
+        // find the right module
+        let name = match name {
+            types::ItemId::Struct(struct_id) => struct_id.fqname(),
+            types::ItemId::Function(function_id) => function_id.fqname(),
+            types::ItemId::Module(module_id) => module_id.fqname(),
+        };
+
         if name.len() == 1 {
             let old = self.items.insert(name.last(), item);
             assert!(old.is_none());
@@ -110,7 +118,10 @@ impl<'pre> DeclaredModule<'pre> {
             let found_module = self.items.get_mut(&first).unwrap();
             match &mut found_module.kind {
                 DeclaredItemKind::Module(m) => {
-                    m.declare(rest, item);
+                    m.declare(
+                        types::ItemId::Module(types::modules::ModuleId::FQName(rest)),
+                        item,
+                    );
                 }
                 DeclaredItemKind::Predeclared(types::Item {
                     kind: types::ItemKind::Module(_),

@@ -3,7 +3,14 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use super::{FQName, Function, FunctionId, Identifier, Type, TypeArgumentValues, TypeArguments};
+use crate::{
+    identifier::FQName,
+    name_mangler::{MangledIdentifier, mangle_item_name},
+};
+
+use super::{
+    Function, FunctionId, Identifier, Type, TypeArgumentValues, TypeArguments, modules::ModuleId,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructDescriptorType {
@@ -31,22 +38,37 @@ pub struct StructField {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StructId {
-    FQName(FQName),
+    InModule(ModuleId, Identifier),
     // TODO a dynamically generated one can also be used here
+}
+impl StructId {
+    // TODO this method is hacky, remove
+    pub(crate) fn fqname(self) -> FQName {
+        match self {
+            Self::InModule(module_id, identifier) => {
+                FQName::parse(&module_id.to_string()).with_part(identifier)
+            }
+        }
+    }
+
+    pub(crate) fn into_mangled(self) -> MangledIdentifier {
+        match self {
+            Self::InModule(module_id, identifier) => mangle_item_name(module_id, identifier),
+        }
+    }
 }
 
 impl Display for StructId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::FQName(fqname) => write!(f, "struct({fqname})"),
+            Self::InModule(module_id, fqname) => write!(f, "struct({module_id}, {fqname})"),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
-    // TODO remove, use StructId instead
-    pub name: FQName,
+    pub id: StructId,
     #[allow(unused)] // TODO this will be needed once we have a syntax for type instantiation
     pub type_arguments: TypeArguments,
     pub fields: Vec<StructField>,
@@ -59,7 +81,7 @@ pub struct Struct {
 // handle runtime-defined ones))
 impl std::hash::Hash for Struct {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
+        self.id.hash(state);
     }
 }
 
@@ -67,7 +89,7 @@ impl Eq for Struct {}
 
 impl PartialEq for Struct {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        self.id == other.id
     }
 }
 
@@ -76,13 +98,10 @@ impl Struct {
         // TODO support actually instantiating the impls and fields, but this can't be done yet, as the
         // self argument will lead to infinite recursion the way things are handled rn
         let fields = self.fields.clone();
-        // .map(|f| f.instantiate(type_argument_values, object_lookup))
-
         let impls = self.impls.clone();
-        //.map(|(id, impl_)| (*id, impl_.instantiate(type_argument_values, object_lookup)))
 
         Self {
-            name: self.name,
+            id: self.id,
             type_arguments: TypeArguments::new_empty(),
             fields,
             impls,

@@ -49,7 +49,7 @@ impl Debug for InstantiatedStructType<'_> {
             .map(|f| format!("{}:{}", f.name, f.type_.debug_name()))
             .join(", ");
 
-        write!(f, "Struct({}){{{}}}>", self.definition.name, fields)
+        write!(f, "Struct({}){{{}}}>", self.definition.id, fields)
     }
 }
 
@@ -139,18 +139,11 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         let default_static_fields: Vec<_> = description
             .impls
             .iter()
-            .map(|(name, impl_)| (*name, Value::Function(impl_.id)))
+            .map(|(name, impl_)| (name.local(), Value::Function(impl_.id)))
             .collect();
 
         for (name, value) in default_static_fields {
-            // TODO remove this match, treat function_id as opaque
-            static_fields.insert(
-                match name {
-                    types::functions::FunctionId::FQName(fqname) => fqname.last(),
-                    types::functions::FunctionId::Extern(identifier) => identifier,
-                },
-                value,
-            );
+            static_fields.insert(name, value);
         }
 
         Self {

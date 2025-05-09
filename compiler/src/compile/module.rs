@@ -14,7 +14,8 @@ use inkwell::{
 impl types::functions::Function {
     const fn linkage(&self) -> Linkage {
         match self.id {
-            types::functions::FunctionId::FQName(_) => match self.visibility {
+            types::functions::FunctionId::InStruct(_, _)
+            | types::functions::FunctionId::InModule(_, _) => match self.visibility {
                 types::Visibility::Export => Linkage::External,
                 types::Visibility::Internal => Linkage::Internal,
             },

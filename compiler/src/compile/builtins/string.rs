@@ -13,7 +13,8 @@ use crate::{
 use super::rc::RcValue;
 
 #[derive(Debug, BuiltinStruct)]
-#[fqname("std.string")]
+#[module_id("std")]
+#[struct_name("string")]
 #[repr(C)]
 pub struct BuiltinString {
     #[array]
@@ -55,7 +56,7 @@ impl StringValue {
         );
 
         let id = types::structs::InstantiatedStructId(
-            types::structs::StructId::FQName(*TYPE_NAME_STRING),
+            *TYPE_NAME_STRING,
             types::TypeArgumentValues::new_empty(),
         );
 

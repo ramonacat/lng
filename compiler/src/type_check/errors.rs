@@ -32,7 +32,7 @@ pub enum TypeCheckErrorDescription {
         argument_name: Identifier,
     },
     ModuleDoesNotExist(FQName),
-    ItemDoesNotExist(FQName),
+    ItemDoesNotExist(types::ItemId),
     ItemNotExported(FQName, Identifier),
     UndeclaredVariable(Identifier),
     ImplNotOnStruct(FQName),

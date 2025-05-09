@@ -29,13 +29,13 @@ impl<'pre> DeclarationChecker<'pre> {
         // hierarchy (i.e. main.test will definitely appear after main)
         let mut modules_to_declare = program
             .iter()
-            .map(|x| FQName::parse(&x.name.to_string()))
+            .map(|x| types::modules::ModuleId::parse(&x.name.to_string()))
             .collect::<Vec<_>>();
-        modules_to_declare.sort_by_key(|name| name.len());
+        modules_to_declare.sort_by_key(|x| types::modules::ModuleId::len(*x));
 
         for module_path in modules_to_declare {
             self.root_module_declaration.module.declare(
-                module_path,
+                types::ItemId::Module(module_path),
                 DeclaredItem {
                     kind: DeclaredItemKind::Module(DeclaredModule::new()),
                     // TODO how do we determine the visibility for modules?
@@ -53,11 +53,14 @@ impl<'pre> DeclarationChecker<'pre> {
                 let name = import.path.last();
 
                 let importing_module_path = FQName::parse(&file.name.to_string());
-                let imported_as = importing_module_path
-                    .with_part(import.alias.as_ref().map_or_else(|| name, |x| *x));
 
                 self.root_module_declaration.module.declare(
-                    imported_as,
+                    // TODO this is a hack, we should probably have a separate ItemId for imports
+                    // or something
+                    types::ItemId::Struct(types::structs::StructId::InModule(
+                        ModuleId::FQName(importing_module_path),
+                        import.alias.map_or_else(|| name, |x| x),
+                    )),
                     DeclaredItem {
                         kind: DeclaredItemKind::Import(DeclaredImport {
                             imported_item: exporting_module_name.with_part(name),
@@ -84,9 +87,8 @@ impl<'pre> DeclarationChecker<'pre> {
                     ast::DeclarationKind::Function(_) | ast::DeclarationKind::Struct(_) => {}
                     ast::DeclarationKind::Impl(impl_declaration) => {
                         let struct_name = impl_declaration.struct_name;
-                        // TODO the struct_path should be a pair of (ModuleId, Identifier)
                         let struct_path =
-                            FQName::parse(&module_path.to_string()).with_part(struct_name);
+                            types::structs::StructId::InModule(module_path, struct_name);
 
                         let functions = impl_declaration
                             .functions
@@ -128,7 +130,7 @@ impl<'pre> DeclarationChecker<'pre> {
                             );
 
                             self.declared_impls
-                                .entry(types::structs::StructId::FQName(struct_path))
+                                .entry(struct_path)
                                 .or_default()
                                 .push(function.id);
 
@@ -140,16 +142,16 @@ impl<'pre> DeclarationChecker<'pre> {
 
                         let mut structs = self.root_module_declaration.structs.borrow_mut();
 
-                        let Some(struct_to_modify) =
-                            structs.get_mut(&types::structs::StructId::FQName(struct_path))
-                        else {
-                            return Err(TypeCheckErrorDescription::ItemDoesNotExist(struct_path)
-                                .at(position));
+                        let Some(struct_to_modify) = structs.get_mut(&struct_path) else {
+                            return Err(TypeCheckErrorDescription::ItemDoesNotExist(
+                                types::ItemId::Struct(struct_path),
+                            )
+                            .at(position));
                         };
 
                         for (field_name, field) in fields_to_add {
                             struct_to_modify.fields.push(types::structs::StructField {
-                                struct_id: types::structs::StructId::FQName(struct_path),
+                                struct_id: struct_path,
                                 name: field_name,
                                 type_: field.type_,
                                 static_: field.static_,
@@ -205,7 +207,10 @@ impl<'pre> DeclarationChecker<'pre> {
 
                         self.root_module_declaration.module.declare(
                             // TODO the path here should be a pair of (ModuleId, Identifier)
-                            FQName::parse(&module_path.child(function.name).to_string()),
+                            types::ItemId::Function(types::functions::FunctionId::InModule(
+                                module_path,
+                                function.name,
+                            )),
                             DeclaredItem {
                                 visibility: Self::convert_visibility(function.visibility),
                                 kind: DeclaredItemKind::Function(function_id),
@@ -260,25 +265,22 @@ impl<'pre> DeclarationChecker<'pre> {
 
                 static_: false,
                 // TODO the structId should ba a pair of (ModuleId, Identifier)
-                struct_id: types::structs::StructId::FQName(FQName::parse(
-                    &module_path.child(struct_.name).to_string(),
-                )),
+                struct_id: types::structs::StructId::InModule(module_path, struct_.name),
                 name: field.name,
             });
         }
-        let name = FQName::parse(&module_path.child(struct_.name).to_string());
-        let id = types::structs::StructId::FQName(name);
+        let id = types::structs::StructId::InModule(module_path, struct_.name);
         self.root_module_declaration.structs.borrow_mut().insert(
             id,
             types::structs::Struct {
-                name,
+                id,
                 fields,
                 impls: HashMap::new(),
                 type_arguments: types::TypeArguments::new_empty(),
             },
         );
         self.root_module_declaration.module.declare(
-            name,
+            types::ItemId::Struct(id),
             DeclaredItem {
                 kind: DeclaredItemKind::Struct(id),
                 visibility: Self::convert_visibility(struct_.visibility),
@@ -302,7 +304,7 @@ impl<'pre> DeclarationChecker<'pre> {
                     } = argument.type_.kind()
                     {
                         if let types::TypeKind::Object { type_name: id } = array_item_type.kind() {
-                            if id.0 == types::structs::StructId::FQName(*TYPE_NAME_STRING) {
+                            if id.0 == *TYPE_NAME_STRING {
                                 if self.main.is_some() {
                                     todo!("show a nice error here, main is already defined");
                                 }
@@ -329,11 +331,9 @@ impl<'pre> DeclarationChecker<'pre> {
         &self,
         function: &ast::Function,
         current_module: types::modules::ModuleId,
-        self_type: FQName, // TODO this should be StructId
+        self_type: types::structs::StructId,
         position: ast::SourceSpan,
     ) -> Result<DeclaredFunction, TypeCheckError> {
-        let function_name = function.name;
-        let function_path = self_type.with_part(function_name);
         let mut arguments = vec![];
 
         for arg in &function.arguments {
@@ -350,7 +350,7 @@ impl<'pre> DeclarationChecker<'pre> {
         }
 
         Ok(DeclaredFunction {
-            id: types::functions::FunctionId::FQName(function_path),
+            id: types::functions::FunctionId::InStruct(self_type, function.name),
             module_name: current_module,
             arguments,
             // TODO figure out the correct error location here
@@ -373,10 +373,6 @@ impl<'pre> DeclarationChecker<'pre> {
         module_path: types::modules::ModuleId,
         position: ast::SourceSpan,
     ) -> DeclaredFunction {
-        let function_name = function.name;
-        // TODO the path should be a pair of (ModuleId, Identifier)
-        let function_path = FQName::parse(&module_path.child(function_name).to_string());
-
         let mut arguments = vec![];
 
         for arg in &function.arguments {
@@ -396,7 +392,7 @@ impl<'pre> DeclarationChecker<'pre> {
         DeclaredFunction {
             id: match &function.body {
                 ast::FunctionBody::Statements(_, _) => {
-                    types::functions::FunctionId::FQName(function_path)
+                    types::functions::FunctionId::InModule(module_path, function.name)
                 }
                 ast::FunctionBody::Extern(extern_, _) => {
                     types::functions::FunctionId::Extern(*extern_)

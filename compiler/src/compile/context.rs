@@ -8,10 +8,7 @@ use inkwell::{
     values::{IntValue, PointerValue},
 };
 
-use crate::{
-    identifier::{FQName, Identifier},
-    types,
-};
+use crate::{identifier::Identifier, types};
 
 use super::{
     scope::GlobalScope,
@@ -120,8 +117,9 @@ impl<'ctx> CompilerContext<'ctx> {
     pub fn get_std_type(name: &str) -> types::structs::InstantiatedStructId {
         // TODO what about std types that have type arguments?
         types::structs::InstantiatedStructId(
-            types::structs::StructId::FQName(
-                FQName::parse("std").with_part(Identifier::parse(name)),
+            types::structs::StructId::InModule(
+                types::modules::ModuleId::parse("std"),
+                Identifier::parse(name),
             ),
             types::TypeArgumentValues::new_empty(),
         )

@@ -301,16 +301,13 @@ impl<'ctx> Compiler<'ctx> {
         // TODO this is a bit hacky, we should have an attribute on the structs marking them as
         // predefined, so that the definitions are ignored, but the impls are not
         structs
-            .get_mut(&types::structs::StructId::FQName(*TYPE_NAME_STRING))
+            .get_mut(&*TYPE_NAME_STRING)
             .unwrap()
             .fields
             .append(&mut string::describe_structure().fields);
 
         // TODO should the array struct be declared in stdlib, like string?
-        structs.insert(
-            types::structs::StructId::FQName(*TYPE_NAME_ARRAY),
-            array::describe_structure(),
-        );
+        structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
 
         self.context.global_scope.structs = AllStructs::new(structs, functions);
 

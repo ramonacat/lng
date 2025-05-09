@@ -228,17 +228,13 @@ impl<'pre> DefinitionChecker<'pre> {
                 kind: types::ItemKind::Function(imported_item_id),
                 ..
             }) => {
-                // TODO this match should be removed and we should pass the ID directly to the
-                // import
-                let imported_item_id = match imported_item_id {
-                    types::functions::FunctionId::FQName(fqname) => fqname,
-                    types::functions::FunctionId::Extern(_) => todo!(),
-                };
+                // TODO the imported item id should not be FQName, but ItemId
+                let imported_item_id = imported_item_id.fqname();
                 root_module.declare_item(
                     item_path,
                     types::Item {
                         kind: types::ItemKind::Import(types::Import {
-                            imported_item: *imported_item_id,
+                            imported_item: imported_item_id,
                             position: imported_item.position,
                         }),
                         visibility: types::Visibility::Internal, // TODO can imports be reexported?
@@ -396,7 +392,7 @@ impl<'pre> DefinitionChecker<'pre> {
                     position,
                     type_: types::Type::new_not_generic(types::TypeKind::Object {
                         type_name: types::structs::InstantiatedStructId(
-                            types::structs::StructId::FQName(*TYPE_NAME_STRING),
+                            *TYPE_NAME_STRING,
                             types::TypeArgumentValues::new_empty(),
                         ),
                     }),

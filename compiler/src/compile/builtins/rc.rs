@@ -17,7 +17,8 @@ use crate::{
 };
 
 #[derive(BuiltinStruct)]
-#[fqname("std.rc")]
+#[module_id("std")]
+#[struct_name("rc")]
 #[generic(TPointee)]
 #[repr(C)]
 pub struct BuiltinRc<TPointee> {

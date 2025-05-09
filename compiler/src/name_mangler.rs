@@ -2,13 +2,15 @@ use itertools::Itertools;
 
 use crate::{
     identifier::{FQName, Identifier},
-    types,
+    types::{self, modules::ModuleId, structs::StructId},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IdentifierKind {
     FQName(FQName),
+    Module(ModuleId, Identifier),
     Identifier(Identifier),
+    Struct(StructId, Identifier),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +35,20 @@ impl MangledIdentifier {
                     .join("$$")),
             source: self.source,
         }
+    }
+}
+
+pub fn mangle_item_name(module: ModuleId, item: Identifier) -> MangledIdentifier {
+    MangledIdentifier {
+        mangled: module.into_mangled().mangled + "$" + &item.raw(),
+        source: IdentifierKind::Module(module, item),
+    }
+}
+
+pub fn mangle_struct_item_name(struct_id: StructId, item: Identifier) -> MangledIdentifier {
+    MangledIdentifier {
+        mangled: struct_id.into_mangled().mangled + "$" + &item.raw(),
+        source: IdentifierKind::Struct(struct_id, item),
     }
 }
 

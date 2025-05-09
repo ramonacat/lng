@@ -5,19 +5,25 @@ use inkwell::values::BasicValue;
 
 use crate::{
     compile::{context::CompilerContext, unique_name, value::StructInstance},
-    identifier::{FQName, Identifier},
-    types,
+    identifier::Identifier,
+    types::{self, structs::StructId},
 };
 
 use super::rc::RcValue;
 
-pub static TYPE_NAME_ARRAY: LazyLock<FQName> = LazyLock::new(|| FQName::parse("std.array"));
+pub static TYPE_NAME_ARRAY: LazyLock<StructId> = LazyLock::new(|| {
+    StructId::InModule(
+        types::modules::ModuleId::parse("std"),
+        Identifier::parse("array"),
+    )
+});
 static ITEMS_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("items"));
 static LENGTH_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("length"));
 static CAPACITY_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("capacity"));
 
 #[derive(BuiltinStruct)]
-#[fqname("std.array")]
+#[module_id("std")]
+#[struct_name("array")]
 #[generic(TItem)]
 #[repr(C)]
 pub struct BuiltinArray<TItem> {
@@ -56,10 +62,7 @@ impl ArrayValue {
             item_type.clone(),
         );
         let tav = types::TypeArgumentValues::new(tav);
-        let id = types::structs::InstantiatedStructId(
-            types::structs::StructId::FQName(*TYPE_NAME_ARRAY),
-            tav,
-        );
+        let id = types::structs::InstantiatedStructId(*TYPE_NAME_ARRAY, tav);
 
         let array_value = context.global_scope.structs.inspect_instantiated(&id, |a| {
             a.unwrap()
