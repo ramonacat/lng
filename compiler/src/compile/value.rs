@@ -130,16 +130,9 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         todo!("support reading non-static fields!");
     }
 
-    // TODO remove this, new_with_statics should be the only constructor
     // TODO we should take the generic arguments here, this handle should be one per the set of
     // types
-    // TODO the constructor should not be called willy nilly, but instead this should be
-    // constructed through CompilerScope, so there's only one instance per set of type arguments
-    pub(crate) fn new(description: types::structs::Struct) -> Self {
-        Self::new_with_statics(description, HashMap::new())
-    }
-
-    pub(crate) fn new_with_statics(
+    pub(crate) fn new(
         description: types::structs::Struct,
         mut static_fields: HashMap<Identifier, Value<'ctx>>,
     ) -> Self {

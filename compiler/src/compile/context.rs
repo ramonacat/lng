@@ -65,7 +65,7 @@ impl<'ctx> AllStructs<'ctx> {
             .or_insert_with(|| {
                 let instantiated = self.structs.get(&id.0).unwrap().instantiate(&id.1);
 
-                InstantiatedStructType::new(instantiated)
+                InstantiatedStructType::new(instantiated, HashMap::new())
             });
     }
 

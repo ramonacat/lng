@@ -51,7 +51,7 @@ impl<'ctx> RcValue<'ctx> {
             struct_instance.value().as_basic_value_enum(),
         );
 
-        let rc = InstantiatedStructType::new(context.builtins.rc_handle.clone())
+        let rc = InstantiatedStructType::new(context.builtins.rc_handle.clone(), HashMap::new())
             .build_heap_instance(context, name, field_values);
 
         Self {
@@ -100,7 +100,8 @@ pub fn build_cleanup<'ctx>(
         }
         context.builder.position_at_end(before);
 
-        let rc_handle = InstantiatedStructType::new(context.builtins.rc_handle.clone());
+        let rc_handle =
+            InstantiatedStructType::new(context.builtins.rc_handle.clone(), HashMap::new());
         let old_refcount = rc_handle
             .build_field_load(
                 *REFCOUNT_FIELD,
@@ -191,7 +192,8 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
 
-        let rc_handle = InstantiatedStructType::new(context.builtins.rc_handle.clone());
+        let rc_handle =
+            InstantiatedStructType::new(context.builtins.rc_handle.clone(), HashMap::new());
 
         let init_refcount = rc_handle.build_field_load(
             *REFCOUNT_FIELD,
