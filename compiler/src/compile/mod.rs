@@ -653,21 +653,22 @@ impl<'ctx> Compiler<'ctx> {
         };
 
         // TODO we should already have an InstantiatedFunctionId here, probably?
+        let instantiated_function_id =
+            InstantiatedFunctionId(*function_id, TypeArgumentValues::new_empty());
         let definition = self
             .context
             .global_scope
             .structs
-            .inspect_instantiated_function(
-                &InstantiatedFunctionId(*function_id, TypeArgumentValues::new_empty()),
-                |function| function.unwrap().definition.clone(),
-            );
+            .inspect_instantiated_function(&instantiated_function_id, |function| {
+                function.unwrap().definition.clone()
+            });
         if !self
             .context
             .global_scope
             .get_module(definition.module_name)
             .unwrap()
             // TODO mangle the instantiated FunctionId here!
-            .has_function(&function_id.into_mangled())
+            .has_function(&instantiated_function_id.into_mangled())
         {
             self.compile_function(&definition).unwrap();
         }

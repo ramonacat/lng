@@ -36,6 +36,12 @@ impl FunctionId {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct InstantiatedFunctionId(pub FunctionId, pub TypeArgumentValues);
 
+impl InstantiatedFunctionId {
+    pub(crate) fn into_mangled(self) -> MangledIdentifier {
+        self.0.into_mangled().with_types(&self.1)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Function {
     pub id: FunctionId,

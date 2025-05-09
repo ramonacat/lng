@@ -132,7 +132,7 @@ impl std::fmt::Display for TypeArgument {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeArgumentValues(HashMap<TypeArgument, Type>);
+pub struct TypeArgumentValues(pub(crate) HashMap<TypeArgument, Type>);
 
 impl std::hash::Hash for TypeArgumentValues {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {

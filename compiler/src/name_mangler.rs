@@ -1,6 +1,9 @@
 use itertools::Itertools;
 
-use crate::{identifier::Identifier, types};
+use crate::{
+    identifier::Identifier,
+    types::{self, TypeArgumentValues},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IdentifierKind {
@@ -17,6 +20,19 @@ pub struct MangledIdentifier {
 impl MangledIdentifier {
     pub(crate) fn as_str(&self) -> &str {
         self.mangled.as_str()
+    }
+
+    pub(crate) fn with_types(self, arg: &TypeArgumentValues) -> Self {
+        Self {
+            mangled: self.mangled
+                + "$$$"
+                + &(arg
+                    .0
+                    .iter()
+                    .map(|(name, value)| name.to_string() + "$" + &value.to_string())
+                    .join("$$")),
+            source: self.source,
+        }
     }
 }
 
