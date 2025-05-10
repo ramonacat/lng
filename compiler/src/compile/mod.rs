@@ -104,7 +104,10 @@ pub fn compile(
 
     unsafe {
         let main = execution_engine
-            .get_function::<unsafe extern "C" fn()>(main.into_mangled().as_str())
+            .get_function::<unsafe extern "C" fn()>(
+                main.into_mangled(&types::TypeArgumentValues::new_empty())
+                    .as_str(),
+            )
             .unwrap();
         main.call();
     }
@@ -548,10 +551,13 @@ impl<'ctx> Compiler<'ctx> {
                     &unique_name(&[&name.to_string(), "rc"]),
                     &StructInstance::new(
                         value,
-                        types::InstantiatedType::new(types::InstantiatedTypeKind::Object {
-                            type_name: *name,
-                            type_argument_values: types::TypeArgumentValues::new_empty(),
-                        }),
+                        types::InstantiatedType::new(
+                            types::InstantiatedTypeKind::Object {
+                                type_name: *name,
+                                type_argument_values: types::TypeArgumentValues::new_empty(),
+                            },
+                            types::TypeArgumentValues::new_empty(),
+                        ),
                     ),
                     &self.context,
                 );

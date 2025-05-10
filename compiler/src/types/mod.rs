@@ -138,14 +138,26 @@ pub enum InstantiatedTypeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InstantiatedType {
     kind: InstantiatedTypeKind,
+    argument_values: TypeArgumentValues,
 }
+
 impl InstantiatedType {
+    pub(crate) const fn new(
+        kind: InstantiatedTypeKind,
+        argument_values: TypeArgumentValues,
+    ) -> Self {
+        Self {
+            kind,
+            argument_values,
+        }
+    }
+
     pub(crate) const fn kind(&self) -> &InstantiatedTypeKind {
         &self.kind
     }
 
-    pub(crate) const fn new(kind: InstantiatedTypeKind) -> Self {
-        Self { kind }
+    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues {
+        &self.argument_values
     }
 }
 
@@ -265,7 +277,10 @@ impl GenericType {
             GenericTypeKind::Function(function_id) => InstantiatedTypeKind::Function(*function_id),
         };
 
-        InstantiatedType { kind }
+        InstantiatedType {
+            kind,
+            argument_values: type_argument_values.clone(),
+        }
     }
 
     pub(crate) const fn arguments(&self) -> &TypeArguments {

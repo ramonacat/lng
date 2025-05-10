@@ -43,9 +43,9 @@ pub enum StructId {
 }
 
 impl StructId {
-    pub(crate) fn into_mangled(self) -> MangledIdentifier {
+    pub(crate) fn into_mangled(self, tav: &TypeArgumentValues) -> MangledIdentifier {
         match self {
-            Self::InModule(module_id, identifier) => mangle_item_name(module_id, identifier),
+            Self::InModule(module_id, identifier) => mangle_item_name(module_id, identifier, tav),
         }
     }
 }

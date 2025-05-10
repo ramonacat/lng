@@ -137,7 +137,6 @@ impl<'ctx> GlobalScope<'ctx> {
         self.modules.get(&path)
     }
 
-    // TODO this should really just return things by ID
     pub(crate) fn get_value(&self, module: ModuleId, item_name: Identifier) -> Option<Value<'ctx>> {
         self.modules
             .get(&module)

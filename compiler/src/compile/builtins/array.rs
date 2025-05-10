@@ -75,7 +75,10 @@ impl ArrayValue {
             &unique_name(&["rc_array"]),
             &StructInstance::new(
                 array_value,
-                types::InstantiatedType::new(types::InstantiatedTypeKind::Struct(id)),
+                types::InstantiatedType::new(
+                    types::InstantiatedTypeKind::Struct(id),
+                    types::TypeArgumentValues::new(tav),
+                ),
             ),
             context,
         )

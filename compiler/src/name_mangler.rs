@@ -1,8 +1,9 @@
 use itertools::Itertools;
+use std::fmt::Write;
 
 use crate::{
     identifier::{FQName, Identifier},
-    types::{modules::ModuleId, structs::StructId},
+    types::{TypeArgumentValues, modules::ModuleId, structs::StructId},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,16 +26,38 @@ impl MangledIdentifier {
     }
 }
 
-pub fn mangle_item_name(module: ModuleId, item: Identifier) -> MangledIdentifier {
+pub fn mangle_type_argument_values(tav: &TypeArgumentValues) -> String {
+    let mut result = String::new();
+
+    for (id, value) in &tav.0 {
+        write!(result, "{id}$_${value}").unwrap();
+    }
+
+    result
+}
+
+pub fn mangle_item_name(
+    module: ModuleId,
+    item: Identifier,
+    tav: &TypeArgumentValues,
+) -> MangledIdentifier {
     MangledIdentifier {
-        mangled: module.into_mangled().mangled + "$" + &item.raw(),
+        mangled: module.into_mangled().mangled
+            + "$$"
+            + &item.raw()
+            + "$$$"
+            + &mangle_type_argument_values(tav),
         source: IdentifierKind::Module(module, item),
     }
 }
 
-pub fn mangle_struct_item_name(struct_id: StructId, item: Identifier) -> MangledIdentifier {
+pub fn mangle_struct_item_name(
+    struct_id: StructId,
+    item: Identifier,
+    tav: &TypeArgumentValues,
+) -> MangledIdentifier {
     MangledIdentifier {
-        mangled: struct_id.into_mangled().mangled + "$" + &item.raw(),
+        mangled: struct_id.into_mangled(tav).mangled + "$$" + &item.raw() + "$$$",
         source: IdentifierKind::Struct(struct_id, item),
     }
 }

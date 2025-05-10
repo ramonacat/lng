@@ -29,7 +29,9 @@ impl types::functions::Function<InstantiatedType> {
     pub(super) fn mangled_id(&self) -> MangledIdentifier {
         match self.body {
             types::functions::FunctionBody::Extern(identifier) => nomangle_identifier(identifier),
-            types::functions::FunctionBody::Statements(_) => self.id.into_mangled(),
+            types::functions::FunctionBody::Statements(_) => {
+                self.id.into_mangled(self.type_.argument_values())
+            }
         }
     }
 }

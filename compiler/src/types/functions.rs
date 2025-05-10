@@ -31,11 +31,12 @@ impl Display for FunctionId {
 }
 
 impl FunctionId {
-    pub(crate) fn into_mangled(self) -> MangledIdentifier {
+    pub(crate) fn into_mangled(self, tav: &TypeArgumentValues) -> MangledIdentifier {
         match self {
-            // TODO the type_ should be used for mangling!
-            Self::InModule(module_id, fqname) => mangle_item_name(module_id, fqname),
-            Self::InStruct(struct_id, identifier) => mangle_struct_item_name(struct_id, identifier),
+            Self::InModule(module_id, fqname) => mangle_item_name(module_id, fqname, tav),
+            Self::InStruct(struct_id, identifier) => {
+                mangle_struct_item_name(struct_id, identifier, tav)
+            }
         }
     }
 
