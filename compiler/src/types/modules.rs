@@ -1,9 +1,5 @@
 use crate::types::FunctionId;
-use crate::{
-    identifier::{FQName, Identifier},
-    name_mangler::MangledIdentifier,
-    types::Struct,
-};
+use crate::{identifier::FQName, name_mangler::MangledIdentifier, types::Struct};
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
@@ -26,12 +22,6 @@ impl Display for ModuleId {
 }
 
 impl ModuleId {
-    pub(crate) fn child(self, path: Identifier) -> Self {
-        match self {
-            Self::FQName(fqname) => Self::FQName(fqname.with_part(path)),
-        }
-    }
-
     pub(crate) fn parse(arg: &str) -> Self {
         Self::FQName(FQName::parse(arg))
     }

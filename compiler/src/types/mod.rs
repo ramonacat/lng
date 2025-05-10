@@ -13,11 +13,7 @@ use itertools::Itertools;
 use modules::ModuleId;
 use structs::{Struct, StructId};
 
-use crate::{
-    ast,
-    identifier::{FQName, Identifier},
-    std::TYPE_NAME_U64,
-};
+use crate::{ast, identifier::Identifier, std::TYPE_NAME_U64};
 
 pub trait AnyType: Display + Clone + Debug + Hash + Eq + PartialEq {}
 impl AnyType for GenericType {}
@@ -332,7 +328,7 @@ pub enum ExpressionKind<T: AnyType> {
     },
     Literal(Literal),
     LocalVariableAccess(Identifier),
-    GlobalVariableAccess(FQName),
+    GlobalVariableAccess(ModuleId, Identifier),
     StructConstructor(StructId),
     FieldAccess {
         target: Box<Expression<T>>,
@@ -367,8 +363,8 @@ impl Expression<GenericType> {
                 ExpressionKind::LocalVariableAccess(identifier) => {
                     ExpressionKind::LocalVariableAccess(*identifier)
                 }
-                ExpressionKind::GlobalVariableAccess(fqname) => {
-                    ExpressionKind::GlobalVariableAccess(*fqname)
+                ExpressionKind::GlobalVariableAccess(module_id, identifier) => {
+                    ExpressionKind::GlobalVariableAccess(*module_id, *identifier)
                 }
                 ExpressionKind::StructConstructor(instantiated_struct_id) => {
                     ExpressionKind::StructConstructor(*instantiated_struct_id)

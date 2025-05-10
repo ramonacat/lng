@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use crate::{
-    identifier::{FQName, Identifier},
+    identifier::Identifier,
     type_check::declarations::DeclaredRootModule,
     types::{GenericType, TypeArguments},
 };
@@ -409,9 +409,7 @@ impl DefinitionChecker {
                 .resolve_import(module_path, name);
             if let Some(global) = &self.root_module_declaration.get_item(module_path, name) {
                 (
-                    types::ExpressionKind::GlobalVariableAccess(FQName::parse(
-                        &module_path.child(name).to_string(),
-                    )),
+                    types::ExpressionKind::GlobalVariableAccess(module_path, name),
                     global.type_(),
                 )
             } else {

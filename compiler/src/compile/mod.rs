@@ -492,41 +492,34 @@ impl<'ctx> Compiler<'ctx> {
             types::ExpressionKind::LocalVariableAccess(name) => {
                 Ok((None, compiled_function.scope.get_value(*name).unwrap()))
             }
-            // TODO the name here should be a pair of (ModuleId, Identifier)
-            types::ExpressionKind::GlobalVariableAccess(name) => {
+            types::ExpressionKind::GlobalVariableAccess(module_id, name) => {
                 let value = self
                     .context
                     .global_scope
-                    .get_value(
-                        types::modules::ModuleId::parse(&name.without_last().to_string()),
-                        name.last(),
-                    )
+                    .get_value(*module_id, *name)
                     .or_else(|| {
-                        // TODO this is sorta hacky and doesn't support generics
-                        let (module_id, item_id) = (
-                            types::modules::ModuleId::parse(&name.without_last().to_string()),
-                            name.last(),
-                        );
+                        let function_id = types::functions::FunctionId::InModule(*module_id, *name);
+
                         self.context
                             .global_scope
                             .structs
                             .inspect_instantiated_function(
                                 &(
-                                    types::functions::FunctionId::InModule(module_id, item_id),
+                                    function_id,
+                                    // TODO we need to ensure during typecheck that we won't get
+                                    // here without the right TypeArgumentValues, we will need to
+                                    // attach TypeArgumentValues to expressions
                                     types::TypeArgumentValues::new_empty(),
                                 ),
                                 |f_| {
                                     f_.map(|x| {
                                         self.context
                                             .global_scope
-                                            .get_module(module_id)
+                                            .get_module(*module_id)
                                             .unwrap()
                                             .get_or_create_function(x, &self.context);
 
-                                        Value::Function(types::functions::FunctionId::InModule(
-                                            module_id,
-                                            name.last(),
-                                        ))
+                                        Value::Function(function_id)
                                     })
                                 },
                             )
