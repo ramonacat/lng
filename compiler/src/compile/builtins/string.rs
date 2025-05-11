@@ -7,7 +7,7 @@ use crate::{
     compile::{context::CompilerContext, value::StructInstance},
     identifier::Identifier,
     std::TYPE_NAME_STRING,
-    types::{self, TypeArgumentValues},
+    types::{self, TypeArgumentValues, functions::InstantiatedStructId},
 };
 
 use super::rc::RcValue;
@@ -58,7 +58,7 @@ impl StringValue {
         let id = *TYPE_NAME_STRING;
 
         let literal_value = context.global_scope.structs.inspect_instantiated(
-            &(id, TypeArgumentValues::new_empty()),
+            &InstantiatedStructId::new(id, TypeArgumentValues::new_empty()),
             |string_handle| {
                 string_handle.unwrap().build_heap_instance(
                     context,

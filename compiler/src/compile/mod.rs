@@ -29,7 +29,10 @@ use crate::{
     ast,
     identifier::{FQName, Identifier},
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types::{self, InstantiatedType},
+    types::{
+        self, InstantiatedType,
+        functions::{InstantiatedFunctionId, InstantiatedStructId},
+    },
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -311,7 +314,7 @@ impl<'ctx> Compiler<'ctx> {
                 .global_scope
                 .structs
                 .inspect_instantiated_function(
-                    &(main, types::TypeArgumentValues::new_empty()),
+                    &InstantiatedFunctionId::new(main, types::TypeArgumentValues::new_empty()),
                     |function| {
                         let function = function.unwrap();
                         // TODO verify in type_check that main has no generic arguments
@@ -507,7 +510,7 @@ impl<'ctx> Compiler<'ctx> {
                             .global_scope
                             .structs
                             .inspect_instantiated_function(
-                                &(
+                                &InstantiatedFunctionId::new(
                                     function_id,
                                     // TODO we need to ensure during typecheck that we won't get
                                     // here without the right TypeArgumentValues, we will need to
@@ -530,6 +533,8 @@ impl<'ctx> Compiler<'ctx> {
 
                 Ok((None, value.unwrap()))
             }
+            // TODO instead of the name, we should take an expression here, so that dynamically
+            // generated structs can be implemented
             types::ExpressionKind::StructConstructor(name) => {
                 // TODO ensure the struct is instantiated in the context
                 // TODO get the type argument values from the expression!
@@ -537,7 +542,7 @@ impl<'ctx> Compiler<'ctx> {
                 // TODO actually set the field values!
 
                 let value = self.context.global_scope.structs.inspect_instantiated(
-                    &(*name, types::TypeArgumentValues::new_empty()),
+                    &InstantiatedStructId::new(*name, types::TypeArgumentValues::new_empty()),
                     |s| {
                         s.unwrap().build_heap_instance(
                             &self.context,
@@ -628,8 +633,8 @@ impl<'ctx> Compiler<'ctx> {
             Value::Struct(_) => todo!(),
         };
 
-        // TODO we should already have an InstantiatedFunctionId here, probably?
-        let instantiated_function_id = (*function_id, types::TypeArgumentValues::new_empty());
+        let instantiated_function_id =
+            InstantiatedFunctionId::new(*function_id, types::TypeArgumentValues::new_empty());
         let definition = self
             .context
             .global_scope
@@ -638,7 +643,6 @@ impl<'ctx> Compiler<'ctx> {
                 function.unwrap().clone()
             });
 
-        dbg!(function_id, definition.id, definition.module_name);
         if !self
             .context
             .global_scope
@@ -699,12 +703,10 @@ impl<'ctx> Compiler<'ctx> {
                 type_argument_values,
             } => Value::Reference(RcValue::from_pointer(
                 call_result.into_pointer_value(),
-                self.context
-                    .global_scope
-                    .structs
-                    .inspect_instantiated(&(*id, type_argument_values.clone()), |x| {
-                        x.unwrap().definition.type_.clone()
-                    }),
+                self.context.global_scope.structs.inspect_instantiated(
+                    &InstantiatedStructId::new(*id, type_argument_values.clone()),
+                    |x| x.unwrap().definition.type_.clone(),
+                ),
             )),
             types::InstantiatedTypeKind::Array { .. } => todo!(),
             types::InstantiatedTypeKind::Callable { .. } => todo!(),

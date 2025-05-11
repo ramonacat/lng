@@ -6,7 +6,7 @@ use inkwell::values::BasicValue;
 use crate::{
     compile::{context::CompilerContext, unique_name, value::StructInstance},
     identifier::Identifier,
-    types::{self, structs::StructId},
+    types::{self, functions::InstantiatedStructId, structs::StructId},
 };
 
 use super::rc::RcValue;
@@ -64,7 +64,7 @@ impl ArrayValue {
         let id = *TYPE_NAME_ARRAY;
 
         let array_value = context.global_scope.structs.inspect_instantiated(
-            &(id, types::TypeArgumentValues::new(tav.clone())),
+            &InstantiatedStructId::new(id, types::TypeArgumentValues::new(tav.clone())),
             |a| {
                 a.unwrap()
                     .build_heap_instance(context, &unique_name(&["string"]), field_values)

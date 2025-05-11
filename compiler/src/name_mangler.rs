@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use crate::{
     identifier::{FQName, Identifier},
-    types::{TypeArgumentValues, modules::ModuleId, structs::StructId},
+    types::{InstantiatedType, TypeArgumentValues, modules::ModuleId, structs::StructId},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +26,7 @@ impl MangledIdentifier {
     }
 }
 
-pub fn mangle_type_argument_values(tav: &TypeArgumentValues) -> String {
+pub fn mangle_type_argument_values(tav: &TypeArgumentValues<InstantiatedType>) -> String {
     let mut result = String::new();
 
     for (id, value) in &tav.0 {
@@ -39,7 +39,7 @@ pub fn mangle_type_argument_values(tav: &TypeArgumentValues) -> String {
 pub fn mangle_item_name(
     module: ModuleId,
     item: Identifier,
-    tav: &TypeArgumentValues,
+    tav: &TypeArgumentValues<InstantiatedType>,
 ) -> MangledIdentifier {
     MangledIdentifier {
         mangled: module.into_mangled().mangled
@@ -54,7 +54,7 @@ pub fn mangle_item_name(
 pub fn mangle_struct_item_name(
     struct_id: StructId,
     item: Identifier,
-    tav: &TypeArgumentValues,
+    tav: &TypeArgumentValues<InstantiatedType>,
 ) -> MangledIdentifier {
     MangledIdentifier {
         mangled: struct_id.into_mangled(tav).mangled + "$$" + &item.raw() + "$$$",

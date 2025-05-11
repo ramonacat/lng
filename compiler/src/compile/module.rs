@@ -8,7 +8,7 @@ use super::{
 use crate::{
     identifier::Identifier,
     name_mangler::{MangledIdentifier, nomangle_identifier},
-    types::{self, InstantiatedType},
+    types::{self, InstantiatedType, functions::InstantiatedStructId},
 };
 use inkwell::{
     module::{Linkage, Module},
@@ -117,12 +117,10 @@ impl<'ctx> CompiledModule<'ctx> {
                 } => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        context
-                            .global_scope
-                            .structs
-                            .inspect_instantiated(&(*id, type_argument_values.clone()), |x| {
-                                x.unwrap().definition.type_.clone()
-                            }),
+                        context.global_scope.structs.inspect_instantiated(
+                            &InstantiatedStructId::new(*id, type_argument_values.clone()),
+                            |x| x.unwrap().definition.type_.clone(),
+                        ),
                     );
                     rcs.push(rc.clone());
 

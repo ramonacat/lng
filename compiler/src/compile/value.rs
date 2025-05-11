@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::{
     identifier::Identifier,
-    types::{self, InstantiatedType},
+    types::{self, InstantiatedType, functions::InstantiatedStructId},
 };
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
@@ -151,7 +151,7 @@ pub enum Value<'ctx> {
     Empty,
     Primitive(
         types::structs::StructId,
-        types::TypeArgumentValues,
+        types::TypeArgumentValues<InstantiatedType>,
         BasicValueEnum<'ctx>,
     ),
     Reference(RcValue<'ctx>),
@@ -193,12 +193,12 @@ impl<'ctx> Value<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> Option<Self> {
         match self {
-            Value::Primitive(struct_id, tav, _) => context
-                .global_scope
-                .structs
-                .inspect_instantiated(&(*struct_id, tav.clone()), |struct_| {
-                    struct_.unwrap().read_field_value(self.clone(), field_path)
-                }),
+            Value::Primitive(struct_id, tav, _) => {
+                context.global_scope.structs.inspect_instantiated(
+                    &InstantiatedStructId::new(*struct_id, tav.clone()),
+                    |struct_| struct_.unwrap().read_field_value(self.clone(), field_path),
+                )
+            }
             Value::Reference(ref_) => {
                 let ref_type = ref_.type_();
                 let (struct_id, type_argument_values) = match ref_type.kind() {
@@ -215,12 +215,10 @@ impl<'ctx> Value<'ctx> {
                     types::InstantiatedTypeKind::Struct(_) => todo!(),
                     types::InstantiatedTypeKind::Function(_) => todo!(),
                 };
-                context
-                    .global_scope
-                    .structs
-                    .inspect_instantiated(&(struct_id, type_argument_values.clone()), |struct_| {
-                        struct_.unwrap().read_field_value(self.clone(), field_path)
-                    })
+                context.global_scope.structs.inspect_instantiated(
+                    &InstantiatedStructId::new(struct_id, type_argument_values.clone()),
+                    |struct_| struct_.unwrap().read_field_value(self.clone(), field_path),
+                )
             }
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),

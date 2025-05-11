@@ -25,7 +25,7 @@ pub struct StructField<T: AnyType> {
 impl StructField<GenericType> {
     pub(crate) fn instantiate(
         &self,
-        type_argument_values: &TypeArgumentValues,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
     ) -> StructField<InstantiatedType> {
         StructField {
             struct_id: self.struct_id,
@@ -43,7 +43,10 @@ pub enum StructId {
 }
 
 impl StructId {
-    pub(crate) fn into_mangled(self, tav: &TypeArgumentValues) -> MangledIdentifier {
+    pub(crate) fn into_mangled(
+        self,
+        tav: &TypeArgumentValues<InstantiatedType>,
+    ) -> MangledIdentifier {
         match self {
             Self::InModule(module_id, identifier) => mangle_item_name(module_id, identifier, tav),
         }
@@ -80,7 +83,7 @@ impl<T: AnyType> Struct<T> {
 impl Struct<GenericType> {
     pub(crate) fn instantiate(
         &self,
-        type_argument_values: &TypeArgumentValues,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
     ) -> Struct<InstantiatedType> {
         Struct {
             id: self.id,

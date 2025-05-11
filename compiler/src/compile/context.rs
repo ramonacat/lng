@@ -10,7 +10,10 @@ use inkwell::{
 
 use crate::{
     identifier::Identifier,
-    types::{self, InstantiatedType},
+    types::{
+        self, InstantiatedType,
+        functions::{InstantiatedFunctionId, InstantiatedStructId},
+    },
 };
 
 use super::{scope::GlobalScope, unique_name, value::InstantiatedStructType};
@@ -21,20 +24,12 @@ pub struct Builtins {
 
 pub struct AllItems<'ctx> {
     structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
-    instantiated_structs: RwLock<
-        HashMap<
-            (types::structs::StructId, types::TypeArgumentValues),
-            InstantiatedStructType<'ctx>,
-        >,
-    >,
+    instantiated_structs: RwLock<HashMap<InstantiatedStructId, InstantiatedStructType<'ctx>>>,
 
     functions:
         HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
     instantiated_functions: RwLock<
-        HashMap<
-            (types::functions::FunctionId, types::TypeArgumentValues),
-            types::functions::Function<types::InstantiatedType>,
-        >,
+        HashMap<InstantiatedFunctionId, types::functions::Function<types::InstantiatedType>>,
     >,
 }
 
@@ -56,7 +51,8 @@ impl<'ctx> AllItems<'ctx> {
 
     pub(crate) fn inspect_instantiated<T>(
         &self,
-        handle: &(types::structs::StructId, types::TypeArgumentValues),
+        // TODO create an InstantiatedStructId type
+        handle: &InstantiatedStructId,
         inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
     ) -> T {
         self.instantiate(handle);
@@ -65,13 +61,17 @@ impl<'ctx> AllItems<'ctx> {
     }
 
     // TODO deal with setting the static fields here
-    fn instantiate(&self, id: &(types::structs::StructId, types::TypeArgumentValues)) {
+    fn instantiate(&self, id: &InstantiatedStructId) {
         self.instantiated_structs
             .write()
             .unwrap()
             .entry(id.clone())
             .or_insert_with(|| {
-                let instantiated = self.structs.get(&id.0).unwrap().instantiate(&id.1);
+                let instantiated = self
+                    .structs
+                    .get(&id.id())
+                    .unwrap()
+                    .instantiate(id.argument_values());
 
                 InstantiatedStructType::new(instantiated, HashMap::new())
             });
@@ -79,7 +79,8 @@ impl<'ctx> AllItems<'ctx> {
 
     pub(crate) fn inspect_instantiated_function<T>(
         &self,
-        id: &(types::functions::FunctionId, types::TypeArgumentValues),
+        // TODO create an InstantiatedFunctionId type
+        id: &InstantiatedFunctionId,
         inspect: impl FnOnce(Option<&types::functions::Function<types::InstantiatedType>>) -> T,
     ) -> T {
         self.instantiate_function(id);
@@ -87,13 +88,17 @@ impl<'ctx> AllItems<'ctx> {
         inspect(self.instantiated_functions.read().unwrap().get(id))
     }
 
-    fn instantiate_function(&self, id: &(types::functions::FunctionId, types::TypeArgumentValues)) {
+    fn instantiate_function(&self, id: &InstantiatedFunctionId) {
         self.instantiated_functions
             .write()
             .unwrap()
             .entry(id.clone())
             .or_insert_with(|| {
-                let instantiated = self.functions.get(&id.0).unwrap().instantiate(&id.1);
+                let instantiated = self
+                    .functions
+                    .get(&id.id())
+                    .unwrap()
+                    .instantiate(id.argument_values());
 
                 instantiated
             });

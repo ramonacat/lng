@@ -11,6 +11,38 @@ use super::{
     modules::ModuleId, structs::StructId,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct InstantiatedFunctionId(FunctionId, TypeArgumentValues<InstantiatedType>);
+impl InstantiatedFunctionId {
+    pub(crate) const fn id(&self) -> FunctionId {
+        self.0
+    }
+
+    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues<InstantiatedType> {
+        &self.1
+    }
+
+    pub(crate) const fn new(id: FunctionId, tav: TypeArgumentValues<InstantiatedType>) -> Self {
+        Self(id, tav)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct InstantiatedStructId(StructId, TypeArgumentValues<InstantiatedType>);
+impl InstantiatedStructId {
+    pub(crate) const fn id(&self) -> StructId {
+        self.0
+    }
+
+    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues<InstantiatedType> {
+        &self.1
+    }
+
+    pub(crate) const fn new(id: StructId, tav: TypeArgumentValues<InstantiatedType>) -> Self {
+        Self(id, tav)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionId {
     InModule(ModuleId, Identifier),
@@ -31,7 +63,10 @@ impl Display for FunctionId {
 }
 
 impl FunctionId {
-    pub(crate) fn into_mangled(self, tav: &TypeArgumentValues) -> MangledIdentifier {
+    pub(crate) fn into_mangled(
+        self,
+        tav: &TypeArgumentValues<InstantiatedType>,
+    ) -> MangledIdentifier {
         match self {
             Self::InModule(module_id, fqname) => mangle_item_name(module_id, fqname, tav),
             Self::InStruct(struct_id, identifier) => {
@@ -68,7 +103,7 @@ impl<T: AnyType> Function<T> {
 impl Function<GenericType> {
     pub(crate) fn instantiate(
         &self,
-        type_argument_values: &TypeArgumentValues,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
     ) -> Function<InstantiatedType> {
         Function {
             id: self.id,
@@ -96,7 +131,7 @@ pub enum FunctionBody<T: AnyType> {
 impl FunctionBody<GenericType> {
     fn instantiate(
         &self,
-        type_argument_values: &TypeArgumentValues,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
     ) -> FunctionBody<InstantiatedType> {
         match self {
             Self::Extern(identifier) => FunctionBody::Extern(*identifier),
@@ -120,7 +155,7 @@ pub struct Argument<T: AnyType> {
 impl Argument<GenericType> {
     pub(crate) fn instantiate(
         &self,
-        type_argument_values: &TypeArgumentValues,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
     ) -> Argument<InstantiatedType> {
         Argument {
             name: self.name,

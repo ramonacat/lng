@@ -74,29 +74,64 @@ impl std::fmt::Display for TypeArgument {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeArgumentValues(pub(crate) HashMap<TypeArgument, InstantiatedType>);
+pub struct TypeArgumentValues<TType: AnyType>(pub(crate) HashMap<TypeArgument, TType>);
 
-impl std::hash::Hash for TypeArgumentValues {
+impl<TType: AnyType> std::hash::Hash for TypeArgumentValues<TType> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.iter().collect_vec().hash(state);
+        self.0
+            .iter()
+            .sorted_by(|x, y| x.0.0.raw().cmp(&y.0.0.raw()))
+            .collect_vec()
+            .hash(state);
     }
 }
 
-impl TypeArgumentValues {
+impl<TType: AnyType> TypeArgumentValues<TType> {
     pub(crate) fn new_empty() -> Self {
         Self(HashMap::new())
     }
 
-    fn get(&self, type_argument: TypeArgument) -> Option<&InstantiatedType> {
+    fn get(&self, type_argument: TypeArgument) -> Option<&TType> {
         self.0.get(&type_argument)
     }
 
-    pub(crate) const fn new(tav: HashMap<TypeArgument, InstantiatedType>) -> Self {
+    pub(crate) const fn new(tav: HashMap<TypeArgument, TType>) -> Self {
         Self(tav)
+    }
+
+    fn set(&mut self, argument: TypeArgument, value: TType) {
+        let old = self.0.insert(argument, value);
+
+        assert!(old.is_none());
+    }
+
+    fn merge(self, type_argument_values: Self) -> Self {
+        let Self(mut values) = self;
+
+        for (name, value) in type_argument_values.0 {
+            values.insert(name, value);
+        }
+
+        Self(values)
     }
 }
 
-impl std::fmt::Display for TypeArgumentValues {
+impl TypeArgumentValues<GenericType> {
+    pub(crate) fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
+    ) -> TypeArgumentValues<InstantiatedType> {
+        let instantiated_arguments = self
+            .0
+            .iter()
+            .map(|(arg, value)| (*arg, value.instantiate(type_argument_values)))
+            .collect();
+
+        TypeArgumentValues(instantiated_arguments)
+    }
+}
+
+impl<TType: AnyType> std::fmt::Display for TypeArgumentValues<TType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.0.is_empty() {
             return Ok(());
@@ -118,7 +153,7 @@ pub enum InstantiatedTypeKind {
     Unit,
     Object {
         type_name: StructId,
-        type_argument_values: TypeArgumentValues,
+        type_argument_values: TypeArgumentValues<InstantiatedType>,
     },
     Array {
         element_type: Box<InstantiatedType>,
@@ -138,13 +173,13 @@ pub enum InstantiatedTypeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InstantiatedType {
     kind: InstantiatedTypeKind,
-    argument_values: TypeArgumentValues,
+    argument_values: TypeArgumentValues<InstantiatedType>,
 }
 
 impl InstantiatedType {
     pub(crate) const fn new(
         kind: InstantiatedTypeKind,
-        argument_values: TypeArgumentValues,
+        argument_values: TypeArgumentValues<Self>,
     ) -> Self {
         Self {
             kind,
@@ -156,7 +191,7 @@ impl InstantiatedType {
         &self.kind
     }
 
-    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues {
+    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues<Self> {
         &self.argument_values
     }
 }
@@ -202,6 +237,9 @@ pub enum GenericTypeKind {
 pub struct GenericType {
     kind: GenericTypeKind,
     type_arguments: TypeArguments,
+    // Generic types can have values for type arguments, but are not required to have all of them
+    // (or any at all), until they get to the final instantiation.
+    type_argument_values: TypeArgumentValues<GenericType>,
 }
 
 impl Display for GenericType {
@@ -223,22 +261,23 @@ impl Display for GenericType {
 }
 
 impl GenericType {
-    pub(crate) const fn new(kind: GenericTypeKind, type_arguments: TypeArguments) -> Self {
+    pub(crate) fn new(kind: GenericTypeKind, type_arguments: TypeArguments) -> Self {
         Self {
             kind,
             type_arguments,
+            type_argument_values: TypeArgumentValues::new_empty(),
         }
     }
 
-    pub(crate) const fn u64() -> Self {
+    pub(crate) fn u64() -> Self {
         Self::new(GenericTypeKind::U64, TypeArguments::new_empty())
     }
 
-    pub(crate) const fn u8() -> Self {
+    pub(crate) fn u8() -> Self {
         Self::new(GenericTypeKind::U8, TypeArguments::new_empty())
     }
 
-    pub(crate) const fn unit() -> Self {
+    pub(crate) fn unit() -> Self {
         Self::new(GenericTypeKind::Unit, TypeArguments::new_empty())
     }
 
@@ -246,11 +285,21 @@ impl GenericType {
         &self.kind
     }
 
-    // TODO this potentially can return an error!
+    #[allow(unused)] // TODO this will be used once we actually have a syntax for generics
+    pub(crate) fn set_type_argument(&mut self, argument: TypeArgument, value: Self) {
+        self.type_argument_values.set(argument, value);
+    }
+
+    // TODO this potentially can return an error (if arguments are missing)!
     pub(crate) fn instantiate(
         &self,
-        type_argument_values: &TypeArgumentValues,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
     ) -> InstantiatedType {
+        let type_argument_values = self
+            .type_argument_values
+            .instantiate(type_argument_values)
+            .merge(type_argument_values.clone());
+
         let kind: InstantiatedTypeKind = match &self.kind {
             GenericTypeKind::Generic(type_argument) => {
                 type_argument_values
@@ -265,13 +314,13 @@ impl GenericType {
                 type_argument_values: type_argument_values.clone(),
             },
             GenericTypeKind::Array { element_type } => InstantiatedTypeKind::Array {
-                element_type: Box::new(element_type.instantiate(type_argument_values)),
+                element_type: Box::new(element_type.instantiate(&type_argument_values)),
             },
             GenericTypeKind::Callable(function_id) => InstantiatedTypeKind::Callable(*function_id),
             GenericTypeKind::U64 => InstantiatedTypeKind::U64,
             GenericTypeKind::U8 => InstantiatedTypeKind::U8,
             GenericTypeKind::Pointer(pointee) => {
-                InstantiatedTypeKind::Pointer(Box::new(pointee.instantiate(type_argument_values)))
+                InstantiatedTypeKind::Pointer(Box::new(pointee.instantiate(&type_argument_values)))
             }
             GenericTypeKind::Struct(struct_id) => InstantiatedTypeKind::Struct(*struct_id),
             GenericTypeKind::Function(function_id) => InstantiatedTypeKind::Function(*function_id),
@@ -279,7 +328,7 @@ impl GenericType {
 
         InstantiatedType {
             kind,
-            argument_values: type_argument_values.clone(),
+            argument_values: type_argument_values,
         }
     }
 
@@ -313,7 +362,7 @@ pub enum Statement<T: AnyType> {
 impl Statement<GenericType> {
     fn instantiate(
         &self,
-        type_argument_values: &TypeArgumentValues,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
     ) -> Statement<InstantiatedType> {
         match self {
             Self::Expression(expression) => {
@@ -361,7 +410,7 @@ pub struct Expression<T: AnyType> {
 impl Expression<GenericType> {
     fn instantiate(
         &self,
-        type_argument_values: &TypeArgumentValues,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
     ) -> Expression<InstantiatedType> {
         Expression {
             position: self.position,
@@ -402,7 +451,7 @@ pub struct LetStatement<T: AnyType> {
 impl LetStatement<GenericType> {
     fn instantiate(
         &self,
-        type_argument_values: &TypeArgumentValues,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
     ) -> LetStatement<InstantiatedType> {
         LetStatement {
             binding: self.binding,
