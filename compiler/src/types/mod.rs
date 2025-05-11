@@ -12,12 +12,19 @@ use functions::{FunctionId, InstantiatedFunctionId};
 use itertools::Itertools;
 use modules::ModuleId;
 use structs::{InstantiatedStructId, Struct, StructId};
+use thiserror::Error;
 
 use crate::{ast, identifier::Identifier, std::TYPE_NAME_U64};
 
 pub trait AnyType: Display + Clone + Debug + Hash + Eq + PartialEq {}
 impl AnyType for GenericType {}
 impl AnyType for InstantiatedType {}
+
+#[derive(Debug, Error)]
+pub enum TypeError {
+    #[error("missing type argument: {0}")]
+    MissingTypeArgument(TypeArgument),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ItemId {
@@ -120,14 +127,14 @@ impl TypeArgumentValues<GenericType> {
     pub(crate) fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> TypeArgumentValues<InstantiatedType> {
+    ) -> Result<TypeArgumentValues<InstantiatedType>, TypeError> {
         let instantiated_arguments = self
             .0
             .iter()
-            .map(|(arg, value)| (*arg, value.instantiate(type_argument_values)))
-            .collect();
+            .map(|(arg, value)| Ok((*arg, value.instantiate(type_argument_values)?)))
+            .collect::<Result<HashMap<_, _>, _>>()?;
 
-        TypeArgumentValues(instantiated_arguments)
+        Ok(TypeArgumentValues(instantiated_arguments))
     }
 }
 
@@ -283,33 +290,31 @@ impl GenericType {
     pub(crate) fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> InstantiatedType {
+    ) -> Result<InstantiatedType, TypeError> {
         let type_argument_values = self
             .type_argument_values
-            .instantiate(type_argument_values)
+            .instantiate(type_argument_values)?
             .merge(type_argument_values.clone());
 
         let kind: InstantiatedTypeKind = match &self.kind {
-            GenericTypeKind::Generic(type_argument) => {
-                type_argument_values
-                    .get(*type_argument)
-                    .unwrap()
-                    .clone()
-                    .kind
-            }
+            GenericTypeKind::Generic(type_argument) => type_argument_values
+                .get(*type_argument)
+                .ok_or(TypeError::MissingTypeArgument(*type_argument))?
+                .kind
+                .clone(),
             GenericTypeKind::Unit => InstantiatedTypeKind::Unit,
             GenericTypeKind::Object { type_name } => InstantiatedTypeKind::Object {
                 type_name: *type_name,
                 type_argument_values,
             },
             GenericTypeKind::Array { element_type } => InstantiatedTypeKind::Array {
-                element_type: Box::new(element_type.instantiate(&type_argument_values)),
+                element_type: Box::new(element_type.instantiate(&type_argument_values)?),
             },
             GenericTypeKind::Callable(function_id) => InstantiatedTypeKind::Callable(*function_id),
             GenericTypeKind::U64 => InstantiatedTypeKind::U64,
             GenericTypeKind::U8 => InstantiatedTypeKind::U8,
             GenericTypeKind::Pointer(pointee) => {
-                InstantiatedTypeKind::Pointer(Box::new(pointee.instantiate(&type_argument_values)))
+                InstantiatedTypeKind::Pointer(Box::new(pointee.instantiate(&type_argument_values)?))
             }
             GenericTypeKind::Struct(struct_id) => InstantiatedTypeKind::Struct(
                 InstantiatedStructId::new(*struct_id, type_argument_values),
@@ -319,7 +324,7 @@ impl GenericType {
             ),
         };
 
-        InstantiatedType { kind }
+        Ok(InstantiatedType { kind })
     }
 
     pub(crate) const fn arguments(&self) -> &TypeArguments {
@@ -353,18 +358,18 @@ impl Statement<GenericType> {
     fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Statement<InstantiatedType> {
-        match self {
+    ) -> Result<Statement<InstantiatedType>, TypeError> {
+        Ok(match self {
             Self::Expression(expression) => {
-                Statement::Expression(expression.instantiate(type_argument_values))
+                Statement::Expression(expression.instantiate(type_argument_values)?)
             }
             Self::Let(let_statement) => {
-                Statement::Let(let_statement.instantiate(type_argument_values))
+                Statement::Let(let_statement.instantiate(type_argument_values)?)
             }
             Self::Return(expression) => {
-                Statement::Return(expression.instantiate(type_argument_values))
+                Statement::Return(expression.instantiate(type_argument_values)?)
             }
-        }
+        })
     }
 }
 
@@ -401,17 +406,17 @@ impl Expression<GenericType> {
     fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Expression<InstantiatedType> {
-        Expression {
+    ) -> Result<Expression<InstantiatedType>, TypeError> {
+        Ok(Expression {
             position: self.position,
-            type_: self.type_.instantiate(type_argument_values),
+            type_: self.type_.instantiate(type_argument_values)?,
             kind: match &self.kind {
                 ExpressionKind::Call { target, arguments } => ExpressionKind::Call {
-                    target: Box::new(target.instantiate(type_argument_values)),
+                    target: Box::new(target.instantiate(type_argument_values)?),
                     arguments: arguments
                         .iter()
                         .map(|x| x.instantiate(type_argument_values))
-                        .collect(),
+                        .collect::<Result<Vec<_>, _>>()?,
                 },
                 ExpressionKind::Literal(literal) => ExpressionKind::Literal(literal.clone()),
                 ExpressionKind::LocalVariableAccess(identifier) => {
@@ -422,16 +427,16 @@ impl Expression<GenericType> {
                 }
                 ExpressionKind::StructConstructor(instantiated_struct_id) => {
                     ExpressionKind::StructConstructor(Box::new(
-                        instantiated_struct_id.instantiate(type_argument_values),
+                        instantiated_struct_id.instantiate(type_argument_values)?,
                     ))
                 }
                 ExpressionKind::FieldAccess { target, field } => ExpressionKind::FieldAccess {
-                    target: Box::new(target.instantiate(type_argument_values)),
+                    target: Box::new(target.instantiate(type_argument_values)?),
                     field: *field,
                 },
                 ExpressionKind::SelfAccess => ExpressionKind::SelfAccess,
             },
-        }
+        })
     }
 }
 
@@ -444,11 +449,11 @@ impl LetStatement<GenericType> {
     fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> LetStatement<InstantiatedType> {
-        LetStatement {
+    ) -> Result<LetStatement<InstantiatedType>, TypeError> {
+        Ok(LetStatement {
             binding: self.binding,
-            value: self.value.instantiate(type_argument_values),
-        }
+            value: self.value.instantiate(type_argument_values)?,
+        })
     }
 }
 

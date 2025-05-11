@@ -61,7 +61,8 @@ impl<'ctx> RcValue<'ctx> {
             context
                 .builtins
                 .rc_handle
-                .instantiate(&types::TypeArgumentValues::new(tav)),
+                .instantiate(&types::TypeArgumentValues::new(tav))
+                .unwrap(),
             HashMap::new(),
         )
         .build_heap_instance(context, name, field_values);
@@ -122,7 +123,8 @@ pub fn build_cleanup<'ctx>(
             context
                 .builtins
                 .rc_handle
-                .instantiate(&types::TypeArgumentValues::new(tav)),
+                .instantiate(&types::TypeArgumentValues::new(tav))
+                .unwrap(),
             HashMap::new(),
         );
         let old_refcount = rc_handle
@@ -224,7 +226,8 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             context
                 .builtins
                 .rc_handle
-                .instantiate(&types::TypeArgumentValues(tav)),
+                .instantiate(&types::TypeArgumentValues(tav))
+                .unwrap(),
             HashMap::new(),
         );
 

@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use super::{
-    AnyType, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues,
+    AnyType, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues, TypeError,
     modules::ModuleId,
 };
 
@@ -24,13 +24,13 @@ impl StructField<GenericType> {
     pub(crate) fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> StructField<InstantiatedType> {
-        StructField {
+    ) -> Result<StructField<InstantiatedType>, TypeError> {
+        Ok(StructField {
             struct_id: self.struct_id,
             name: self.name,
-            type_: self.type_.instantiate(type_argument_values),
+            type_: self.type_.instantiate(type_argument_values)?,
             static_: self.static_,
-        }
+        })
     }
 }
 
@@ -94,16 +94,16 @@ impl Struct<GenericType> {
     pub(crate) fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Struct<InstantiatedType> {
-        Struct {
+    ) -> Result<Struct<InstantiatedType>, TypeError> {
+        Ok(Struct {
             id: self.id,
             fields: self
                 .fields
                 .iter()
                 .map(|x| x.instantiate(type_argument_values))
-                .collect(),
+                .collect::<Result<Vec<_>, _>>()?,
             impls: self.impls.clone(),
-            type_: self.type_.instantiate(type_argument_values),
-        }
+            type_: self.type_.instantiate(type_argument_values)?,
+        })
     }
 }

@@ -68,7 +68,8 @@ impl<'ctx> AllItems<'ctx> {
                     .structs
                     .get(&id.id())
                     .unwrap()
-                    .instantiate(id.argument_values());
+                    .instantiate(id.argument_values())
+                    .unwrap();
 
                 InstantiatedStructType::new(instantiated, HashMap::new())
             });
@@ -98,7 +99,8 @@ impl<'ctx> AllItems<'ctx> {
                     .functions
                     .get(&id.id())
                     .unwrap()
-                    .instantiate(id.argument_values());
+                    .instantiate(id.argument_values())
+                    .unwrap();
 
                 instantiated
             });

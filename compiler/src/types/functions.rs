@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use crate::{ast, identifier::Identifier};
 
 use super::{
-    AnyType, GenericType, InstantiatedType, Statement, TypeArgumentValues, Visibility,
+    AnyType, GenericType, InstantiatedType, Statement, TypeArgumentValues, TypeError, Visibility,
     modules::ModuleId, structs::StructId,
 };
 
@@ -79,21 +79,21 @@ impl Function<GenericType> {
     pub(crate) fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Function<InstantiatedType> {
-        Function {
+    ) -> Result<Function<InstantiatedType>, TypeError> {
+        Ok(Function {
             id: self.id,
             module_name: self.module_name,
             arguments: self
                 .arguments
                 .iter()
                 .map(|x| x.instantiate(type_argument_values))
-                .collect(),
-            return_type: self.return_type.instantiate(type_argument_values),
-            body: self.body.instantiate(type_argument_values),
+                .collect::<Result<Vec<_>, _>>()?,
+            return_type: self.return_type.instantiate(type_argument_values)?,
+            body: self.body.instantiate(type_argument_values)?,
             position: self.position,
             visibility: self.visibility,
-            type_: self.type_.instantiate(type_argument_values),
-        }
+            type_: self.type_.instantiate(type_argument_values)?,
+        })
     }
 }
 
@@ -107,16 +107,16 @@ impl FunctionBody<GenericType> {
     fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> FunctionBody<InstantiatedType> {
-        match self {
+    ) -> Result<FunctionBody<InstantiatedType>, TypeError> {
+        Ok(match self {
             Self::Extern(identifier) => FunctionBody::Extern(*identifier),
             Self::Statements(statements) => FunctionBody::Statements(
                 statements
                     .iter()
                     .map(|x| x.instantiate(type_argument_values))
-                    .collect(),
+                    .collect::<Result<Vec<_>, _>>()?,
             ),
-        }
+        })
     }
 }
 
@@ -131,12 +131,12 @@ impl Argument<GenericType> {
     pub(crate) fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Argument<InstantiatedType> {
-        Argument {
+    ) -> Result<Argument<InstantiatedType>, TypeError> {
+        Ok(Argument {
             name: self.name,
-            type_: self.type_.instantiate(type_argument_values),
+            type_: self.type_.instantiate(type_argument_values)?,
             position: self.position,
-        }
+        })
     }
 }
 
