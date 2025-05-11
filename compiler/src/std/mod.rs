@@ -18,6 +18,7 @@ pub(crate) static TYPE_NAME_U64: LazyLock<types::structs::StructId> = LazyLock::
         Identifier::parse("u64"),
     )
 });
+
 pub(crate) static TYPE_NAME_STRING: LazyLock<types::structs::StructId> = LazyLock::new(|| {
     types::structs::StructId::InModule(
         types::modules::ModuleId::parse("std"),

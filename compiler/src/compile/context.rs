@@ -104,13 +104,6 @@ impl<'ctx> AllItems<'ctx> {
             });
     }
 
-    pub(crate) fn get_struct(
-        &self,
-        struct_id: types::structs::StructId,
-    ) -> Option<&types::structs::Struct<types::GenericType>> {
-        self.structs.get(&struct_id)
-    }
-
     pub(crate) fn get_function(
         &self,
         id: types::functions::FunctionId,
@@ -145,7 +138,6 @@ impl<'ctx> CompilerContext<'ctx> {
     }
 
     pub fn get_std_type(name: &str) -> types::structs::StructId {
-        // TODO what about std types that have type arguments?
         types::structs::StructId::InModule(
             types::modules::ModuleId::parse("std"),
             Identifier::parse(name),

@@ -31,7 +31,7 @@ use crate::{
     ast,
     identifier::{FQName, Identifier},
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types,
+    types::{self, modules::ModuleId},
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -235,7 +235,16 @@ impl<'ctx> Compiler<'ctx> {
         let global_scope = std.unwrap_or_else(|| {
             // If there is no std, then we want to get in early and create the builtins, so that
             // the rest of the compilation can just add methods, etc. to them
-            let mut scope = GlobalScope::new(HashMap::new(), HashMap::new());
+
+            let rc_struct_id =
+                types::structs::StructId::InModule(ModuleId::parse("std"), Identifier::parse("rc"));
+
+            let mut structs = HashMap::new();
+            structs.insert(*TYPE_NAME_STRING, string::describe_structure());
+            structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
+            structs.insert(rc_struct_id, rc::describe_structure());
+
+            let mut scope = GlobalScope::new(structs, HashMap::new());
 
             let std = scope.get_or_create_module(types::modules::ModuleId::parse("std"), || {
                 context.create_module("std")
@@ -243,16 +252,10 @@ impl<'ctx> Compiler<'ctx> {
 
             std.set_variable(
                 Identifier::parse("string"),
-                Value::Struct(string::describe_structure()),
+                Value::Struct(*TYPE_NAME_STRING),
             );
-            std.set_variable(
-                Identifier::parse("array"),
-                Value::Struct(array::describe_structure()),
-            );
-            std.set_variable(
-                Identifier::parse("rc"),
-                Value::Struct(rc::describe_structure()),
-            );
+            std.set_variable(Identifier::parse("array"), Value::Struct(*TYPE_NAME_ARRAY));
+            std.set_variable(Identifier::parse("rc"), Value::Struct(rc_struct_id));
             scope
         });
 
@@ -488,7 +491,9 @@ impl<'ctx> Compiler<'ctx> {
                     Value::InstantiatedStruct(struct_) => {
                         (struct_.id(), struct_.argument_values().clone())
                     }
-                    Value::Struct(struct_) => (struct_.id, types::TypeArgumentValues::new_empty()),
+                    Value::Struct(struct_id) => {
+                        (*struct_id, types::TypeArgumentValues::new_empty())
+                    }
                 };
                 // TODO ensure the struct is instantiated in the context
                 // TODO get the type argument values from the expression!
@@ -578,12 +583,26 @@ impl<'ctx> Compiler<'ctx> {
             .or_else(|| {
                 let struct_id = types::structs::StructId::InModule(module_id, name);
 
-                self.context
-                    .global_scope
-                    .structs
-                    .get_struct(struct_id)
-                    .cloned()
-                    .map(Value::Struct)
+                self.context.global_scope.structs.inspect_instantiated(
+                    &types::structs::InstantiatedStructId::new(
+                        struct_id,
+                        types::TypeArgumentValues::new_empty(),
+                    ),
+                    |s_| {
+                        s_.map(|x| {
+                            let types::InstantiatedTypeKind::Struct(x) = x.definition.type_.kind()
+                            else {
+                                todo!();
+                            };
+                            let instantiated_struct_id = types::structs::InstantiatedStructId::new(
+                                struct_id,
+                                x.argument_values().clone(),
+                            );
+
+                            Value::InstantiatedStruct(instantiated_struct_id)
+                        })
+                    },
+                )
             });
         value
     }

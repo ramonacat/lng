@@ -154,10 +154,7 @@ pub enum Value<'ctx> {
     ),
     Reference(RcValue<'ctx>),
     Function(types::functions::FunctionId),
-    // TODO this should be StructId
-    Struct(types::structs::Struct<types::GenericType>),
-    #[allow(unused)] // TODO this will be used once we have a syntax for instantitating generic
-    // types!
+    Struct(types::structs::StructId),
     InstantiatedStruct(types::structs::InstantiatedStructId),
 }
 

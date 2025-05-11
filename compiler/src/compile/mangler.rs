@@ -1,4 +1,3 @@
-// TODO move everything from crate::name_mangler here!
 use super::context::CompilerContext;
 use crate::types;
 use crate::{
