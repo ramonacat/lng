@@ -48,7 +48,6 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         binding_name: &str,
         mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
     ) -> PointerValue<'ctx> {
-        // TODO ensure the type has all the type arguments filled in here
         let llvm_type = context.make_struct_type(&self.definition.fields);
 
         let instance = context
@@ -118,8 +117,6 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         todo!("support reading non-static fields!");
     }
 
-    // TODO we should take the generic arguments here, this handle should be one per the set of
-    // types
     pub(crate) fn new(
         description: types::structs::Struct<types::InstantiatedType>,
         mut static_fields: HashMap<Identifier, Value<'ctx>>,
@@ -141,8 +138,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     }
 }
 
-// TODO The *Handle structs should be lightweight handles, and not copied with the vecs and all
-// that
+// TODO this should be Copy, once InstantiatedStructId is
 #[derive(Clone)]
 pub enum Value<'ctx> {
     Empty,

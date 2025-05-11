@@ -348,8 +348,6 @@ impl<'ctx> Compiler<'ctx> {
         self.get_or_create_module(module_path);
         let module = self.context.global_scope.get_module(module_path).unwrap();
 
-        // TODO in reality, at this point we should already have the handle instantiated, do this
-        // earlier!
         let mut compiled_function = module.begin_compile_function(handle, &self.context);
 
         self.compile_statements(statements, module_path, &mut compiled_function)?;
