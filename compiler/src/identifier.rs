@@ -7,9 +7,6 @@ use string_interner::StringInterner;
 use string_interner::backend::StringBackend;
 use string_interner::symbol::SymbolU32;
 
-use crate::name_mangler::MangledIdentifier;
-use crate::name_mangler::mangle_fq_name;
-
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct Identifier(SymbolU32);
 
@@ -90,10 +87,6 @@ impl FQName {
         let raw = self.0.raw();
 
         raw.split('.').map(Identifier::parse).collect()
-    }
-
-    pub(crate) fn into_mangled(self) -> MangledIdentifier {
-        mangle_fq_name(self)
     }
 
     pub(crate) fn len(self) -> usize {

@@ -110,6 +110,13 @@ impl<'ctx> AllItems<'ctx> {
     ) -> Option<&types::structs::Struct<types::GenericType>> {
         self.structs.get(&struct_id)
     }
+
+    pub(crate) fn get_function(
+        &self,
+        id: types::functions::FunctionId,
+    ) -> Option<&types::functions::Function<types::GenericType>> {
+        self.functions.get(&id)
+    }
 }
 
 impl std::fmt::Debug for AllItems<'_> {

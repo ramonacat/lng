@@ -1,7 +1,5 @@
 use std::fmt::{Display, Formatter};
 
-use crate::name_mangler::{MangledIdentifier, mangle_item_name};
-
 use super::{
     AnyType, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues,
     modules::ModuleId,
@@ -42,17 +40,6 @@ pub enum StructId {
     // TODO a dynamically generated one can also be used here
 }
 
-impl StructId {
-    pub(crate) fn into_mangled(
-        self,
-        tav: &TypeArgumentValues<InstantiatedType>,
-    ) -> MangledIdentifier {
-        match self {
-            Self::InModule(module_id, identifier) => mangle_item_name(module_id, identifier, tav),
-        }
-    }
-}
-
 impl Display for StructId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -63,6 +50,13 @@ impl Display for StructId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InstantiatedStructId(StructId, TypeArgumentValues<InstantiatedType>);
+
+impl Display for InstantiatedStructId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.0, self.1)
+    }
+}
+
 impl InstantiatedStructId {
     pub(crate) const fn id(&self) -> StructId {
         self.0

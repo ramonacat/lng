@@ -1,5 +1,6 @@
 pub mod builtins;
 mod context;
+pub(crate) mod mangler;
 mod module;
 pub(crate) mod scope;
 mod value;
@@ -20,6 +21,7 @@ use inkwell::{
     module::Module,
     values::{AnyValue, BasicMetadataValueEnum, BasicValue},
 };
+use mangler::{MangledIdentifier, mangle_module_id, mangle_type};
 use module::CompiledModule;
 use rand::Rng;
 use scope::{GlobalScope, Scope};
@@ -104,10 +106,7 @@ pub fn compile(
 
     unsafe {
         let main = execution_engine
-            .get_function::<unsafe extern "C" fn()>(
-                main.into_mangled(&types::TypeArgumentValues::new_empty())
-                    .as_str(),
-            )
+            .get_function::<unsafe extern "C" fn()>(main.as_str())
             .unwrap();
         main.call();
     }
@@ -220,7 +219,7 @@ impl<'ctx> CompiledFunction<'ctx> {
 pub enum CompiledRootModule<'ctx> {
     App {
         scope: GlobalScope<'ctx>,
-        main: types::functions::FunctionId,
+        main: MangledIdentifier,
     },
     Library {
         scope: GlobalScope<'ctx>,
@@ -290,7 +289,7 @@ impl<'ctx> Compiler<'ctx> {
         }
 
         if let Some(main) = main {
-            let definition = self
+            let main = self
                 .context
                 .global_scope
                 .structs
@@ -301,17 +300,18 @@ impl<'ctx> Compiler<'ctx> {
                     ),
                     |function| {
                         let function = function.unwrap();
+
                         // TODO verify in type_check that main has no generic arguments
-                        // TODO can we avoid this clone?
+                        // TODO can we get rid of this clone?
                         function.clone()
                     },
                 );
-
-            self.compile_function(&definition).unwrap();
+            self.compile_function(&main).unwrap();
+            let mangled_main = mangle_type(&main.type_, &self.context);
 
             CompiledRootModule::App {
                 scope: self.context.global_scope,
-                main,
+                main: mangled_main,
             }
         } else {
             CompiledRootModule::Library {
@@ -329,7 +329,7 @@ impl<'ctx> Compiler<'ctx> {
             .get_or_create_module(module_path, || {
                 self.context
                     .llvm_context
-                    .create_module(module_path.into_mangled().as_str())
+                    .create_module(mangle_module_id(module_path).as_str())
             })
     }
 
@@ -366,6 +366,7 @@ impl<'ctx> Compiler<'ctx> {
                         Value::Primitive(_, _, _)
                         | Value::Function(_)
                         | Value::Struct(_)
+                        | Value::InstantiatedStruct(_)
                         | Value::Empty => true,
                     }
                 })
@@ -476,16 +477,18 @@ impl<'ctx> Compiler<'ctx> {
                 Ok((None, value.unwrap()))
             }
             types::ExpressionKind::StructConstructor(target) => {
-                let target_tav = target.type_.argument_values();
                 let target =
                     self.compile_expression(target, self_, compiled_function, module_path)?;
 
-                let name = match &target.1 {
+                let (name, target_tav) = match &target.1 {
                     Value::Empty => todo!(),
                     Value::Primitive(_, _, _) => todo!(),
                     Value::Reference(_) => todo!(),
                     Value::Function(_) => todo!(),
-                    Value::Struct(struct_) => struct_.id,
+                    Value::InstantiatedStruct(struct_) => {
+                        (struct_.id(), struct_.argument_values().clone())
+                    }
+                    Value::Struct(struct_) => (struct_.id, types::TypeArgumentValues::new_empty()),
                 };
                 // TODO ensure the struct is instantiated in the context
                 // TODO get the type argument values from the expression!
@@ -507,13 +510,10 @@ impl<'ctx> Compiler<'ctx> {
                     &unique_name(&[&name.to_string(), "rc"]),
                     &StructInstance::new(
                         value,
-                        types::InstantiatedType::new(
-                            types::InstantiatedTypeKind::Object {
-                                type_name: name,
-                                type_argument_values: target_tav.clone(),
-                            },
-                            types::TypeArgumentValues::new_empty(),
-                        ),
+                        types::InstantiatedType::new(types::InstantiatedTypeKind::Object {
+                            type_name: name,
+                            type_argument_values: target_tav,
+                        }),
                     ),
                     &self.context,
                 );
@@ -632,6 +632,7 @@ impl<'ctx> Compiler<'ctx> {
             Value::Primitive(_, _, _) => todo!(),
             Value::Reference(_) => todo!(),
             Value::Struct(_) => todo!(),
+            Value::InstantiatedStruct(_) => todo!(),
         };
 
         let instantiated_function_id = types::functions::InstantiatedFunctionId::new(
@@ -651,7 +652,7 @@ impl<'ctx> Compiler<'ctx> {
             .global_scope
             .get_module(definition.module_name)
             .unwrap()
-            .has_function(&definition.mangled_id())
+            .has_function(&mangle_type(&definition.type_, &self.context))
         {
             self.compile_function(&definition).unwrap();
         }
@@ -685,6 +686,7 @@ impl<'ctx> Compiler<'ctx> {
                     todo!("implement passing struct definitions as arguments")
                 }
                 Value::Empty => todo!(),
+                Value::InstantiatedStruct(_) => todo!(),
             })
             .collect::<Vec<BasicMetadataValueEnum>>();
 

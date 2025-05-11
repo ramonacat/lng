@@ -1,5 +1,5 @@
 use crate::types::FunctionId;
-use crate::{identifier::FQName, name_mangler::MangledIdentifier, types::Struct};
+use crate::{identifier::FQName, types::Struct};
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
@@ -24,12 +24,6 @@ impl Display for ModuleId {
 impl ModuleId {
     pub(crate) fn parse(arg: &str) -> Self {
         Self::FQName(FQName::parse(arg))
-    }
-
-    pub(crate) fn into_mangled(self) -> MangledIdentifier {
-        match self {
-            Self::FQName(fqname) => fqname.into_mangled(),
-        }
     }
 
     // TODO this is problematic, we'll need

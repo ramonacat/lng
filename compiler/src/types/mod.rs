@@ -8,10 +8,10 @@ use std::{
     hash::Hash,
 };
 
-use functions::FunctionId;
+use functions::{FunctionId, InstantiatedFunctionId};
 use itertools::Itertools;
 use modules::ModuleId;
-use structs::{Struct, StructId};
+use structs::{InstantiatedStructId, Struct, StructId};
 
 use crate::{ast, identifier::Identifier, std::TYPE_NAME_U64};
 
@@ -166,34 +166,22 @@ pub enum InstantiatedTypeKind {
     U64,
     U8,
     Pointer(Box<InstantiatedType>),
-    // TODO these should be Instantiated(Struct|Function)Id
-    Struct(StructId),
-    Function(FunctionId),
+    Struct(InstantiatedStructId),
+    Function(InstantiatedFunctionId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InstantiatedType {
     kind: InstantiatedTypeKind,
-    argument_values: TypeArgumentValues<InstantiatedType>,
 }
 
 impl InstantiatedType {
-    pub(crate) const fn new(
-        kind: InstantiatedTypeKind,
-        argument_values: TypeArgumentValues<Self>,
-    ) -> Self {
-        Self {
-            kind,
-            argument_values,
-        }
+    pub(crate) const fn new(kind: InstantiatedTypeKind) -> Self {
+        Self { kind }
     }
 
     pub(crate) const fn kind(&self) -> &InstantiatedTypeKind {
         &self.kind
-    }
-
-    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues<Self> {
-        &self.argument_values
     }
 }
 
@@ -312,7 +300,7 @@ impl GenericType {
             GenericTypeKind::Unit => InstantiatedTypeKind::Unit,
             GenericTypeKind::Object { type_name } => InstantiatedTypeKind::Object {
                 type_name: *type_name,
-                type_argument_values: type_argument_values.clone(),
+                type_argument_values,
             },
             GenericTypeKind::Array { element_type } => InstantiatedTypeKind::Array {
                 element_type: Box::new(element_type.instantiate(&type_argument_values)),
@@ -323,14 +311,15 @@ impl GenericType {
             GenericTypeKind::Pointer(pointee) => {
                 InstantiatedTypeKind::Pointer(Box::new(pointee.instantiate(&type_argument_values)))
             }
-            GenericTypeKind::Struct(struct_id) => InstantiatedTypeKind::Struct(*struct_id),
-            GenericTypeKind::Function(function_id) => InstantiatedTypeKind::Function(*function_id),
+            GenericTypeKind::Struct(struct_id) => InstantiatedTypeKind::Struct(
+                InstantiatedStructId::new(*struct_id, type_argument_values),
+            ),
+            GenericTypeKind::Function(function_id) => InstantiatedTypeKind::Function(
+                InstantiatedFunctionId::new(*function_id, type_argument_values),
+            ),
         };
 
-        InstantiatedType {
-            kind,
-            argument_values: type_argument_values,
-        }
+        InstantiatedType { kind }
     }
 
     pub(crate) const fn arguments(&self) -> &TypeArguments {

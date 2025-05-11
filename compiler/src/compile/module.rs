@@ -3,13 +3,11 @@ use std::rc::Rc;
 use super::{
     CompiledFunction, Scope, Value, builtins,
     context::CompilerContext,
+    mangle_type,
+    mangler::MangledIdentifier,
     rc::{self, RcValue},
 };
-use crate::{
-    identifier::Identifier,
-    name_mangler::{MangledIdentifier, nomangle_identifier},
-    types,
-};
+use crate::{identifier::Identifier, types};
 use inkwell::{
     module::{Linkage, Module},
     values::FunctionValue,
@@ -23,15 +21,6 @@ impl types::functions::Function<types::InstantiatedType> {
                 types::Visibility::Internal => Linkage::Internal,
             },
             types::functions::FunctionBody::Extern(_) => Linkage::External,
-        }
-    }
-
-    pub(super) fn mangled_id(&self) -> MangledIdentifier {
-        match self.body {
-            types::functions::FunctionBody::Extern(identifier) => nomangle_identifier(identifier),
-            types::functions::FunctionBody::Statements(_) => {
-                self.id.into_mangled(self.type_.argument_values())
-            }
         }
     }
 }
@@ -182,12 +171,14 @@ impl<'ctx> CompiledModule<'ctx> {
         handle: &types::functions::Function<types::InstantiatedType>,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
+        let mangled_name = mangle_type(&handle.type_, context);
+
         self.llvm_module
-            .get_function(handle.mangled_id().as_str())
+            .get_function(mangled_name.as_str())
             .unwrap_or_else(|| {
                 self.declare_function(
                     handle.linkage(),
-                    &handle.mangled_id(),
+                    &mangled_name,
                     &handle.arguments,
                     &handle.return_type,
                     context,

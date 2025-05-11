@@ -1,10 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use crate::{
-    ast,
-    identifier::Identifier,
-    name_mangler::{MangledIdentifier, mangle_item_name, mangle_struct_item_name},
-};
+use crate::{ast, identifier::Identifier};
 
 use super::{
     AnyType, GenericType, InstantiatedType, Statement, TypeArgumentValues, Visibility,
@@ -13,6 +9,13 @@ use super::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct InstantiatedFunctionId(FunctionId, TypeArgumentValues<InstantiatedType>);
+
+impl Display for InstantiatedFunctionId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.0, self.1)
+    }
+}
+
 impl InstantiatedFunctionId {
     pub(crate) const fn id(&self) -> FunctionId {
         self.0
@@ -47,18 +50,6 @@ impl Display for FunctionId {
 }
 
 impl FunctionId {
-    pub(crate) fn into_mangled(
-        self,
-        tav: &TypeArgumentValues<InstantiatedType>,
-    ) -> MangledIdentifier {
-        match self {
-            Self::InModule(module_id, fqname) => mangle_item_name(module_id, fqname, tav),
-            Self::InStruct(struct_id, identifier) => {
-                mangle_struct_item_name(struct_id, identifier, tav)
-            }
-        }
-    }
-
     pub(crate) const fn local(&self) -> Identifier {
         match self {
             Self::InModule(_, identifier) | Self::InStruct(_, identifier) => *identifier,

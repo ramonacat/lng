@@ -7,7 +7,7 @@ use crate::{
     compile::{context::CompilerContext, value::StructInstance},
     identifier::Identifier,
     std::TYPE_NAME_STRING,
-    types,
+    types::{self, structs::InstantiatedStructId},
 };
 
 use super::rc::RcValue;
@@ -72,10 +72,9 @@ impl StringValue {
             name,
             &StructInstance::new(
                 literal_value,
-                types::InstantiatedType::new(
-                    types::InstantiatedTypeKind::Struct(id),
-                    types::TypeArgumentValues::new_empty(),
-                ),
+                types::InstantiatedType::new(types::InstantiatedTypeKind::Struct(
+                    InstantiatedStructId::new(id, types::TypeArgumentValues::new_empty()),
+                )),
             ),
             context,
         )

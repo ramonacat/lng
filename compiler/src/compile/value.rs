@@ -156,6 +156,9 @@ pub enum Value<'ctx> {
     Function(types::functions::FunctionId),
     // TODO this should be StructId
     Struct(types::structs::Struct<types::GenericType>),
+    #[allow(unused)] // TODO this will be used once we have a syntax for instantitating generic
+    // types!
+    InstantiatedStruct(types::structs::InstantiatedStructId),
 }
 
 impl Debug for Value<'_> {
@@ -170,6 +173,7 @@ impl Debug for Value<'_> {
             Value::Function(function_handle) => write!(f, "{function_handle:?}"),
             Value::Struct(struct_handle) => write!(f, "{struct_handle:?}"),
             Value::Empty => todo!(),
+            Value::InstantiatedStruct(_) => todo!(),
         }
     }
 }
@@ -182,6 +186,7 @@ impl<'ctx> Value<'ctx> {
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::Empty => todo!(),
+            Value::InstantiatedStruct(_) => todo!(),
         }
     }
 
@@ -224,6 +229,7 @@ impl<'ctx> Value<'ctx> {
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::Empty => todo!(),
+            Value::InstantiatedStruct(_) => todo!(),
         }
     }
 }
