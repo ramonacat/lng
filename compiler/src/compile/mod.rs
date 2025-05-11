@@ -366,7 +366,7 @@ impl<'ctx> Compiler<'ctx> {
 
                     match return_ {
                         Value::Reference(rc_value) => rc_value.as_ptr() != x.as_ptr(),
-                        Value::Primitive(_, _, _)
+                        Value::Primitive(_, _)
                         | Value::Function(_)
                         | Value::Struct(_)
                         | Value::InstantiatedStruct(_)
@@ -485,7 +485,7 @@ impl<'ctx> Compiler<'ctx> {
 
                 let (name, target_tav) = match &target.1 {
                     Value::Empty => todo!(),
-                    Value::Primitive(_, _, _) => todo!(),
+                    Value::Primitive(_, _) => todo!(),
                     Value::Reference(_) => todo!(),
                     Value::Function(_) => todo!(),
                     Value::InstantiatedStruct(struct_) => {
@@ -624,8 +624,10 @@ impl<'ctx> Compiler<'ctx> {
             types::Literal::UnsignedInteger(value) => (
                 None,
                 Value::Primitive(
-                    CompilerContext::get_std_type("u64"),
-                    types::TypeArgumentValues::new_empty(),
+                    types::structs::InstantiatedStructId::new(
+                        CompilerContext::get_std_type("u64"),
+                        types::TypeArgumentValues::new_empty(),
+                    ),
                     self.context.const_u64(*value).as_basic_value_enum(),
                 ),
             ),
@@ -648,7 +650,7 @@ impl<'ctx> Compiler<'ctx> {
         let function_id = match &compiled_target.1 {
             Value::Function(function_id) => function_id,
             Value::Empty => todo!(),
-            Value::Primitive(_, _, _) => todo!(),
+            Value::Primitive(_, _) => todo!(),
             Value::Reference(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
@@ -698,7 +700,7 @@ impl<'ctx> Compiler<'ctx> {
         let call_arguments = compiled_arguments_iter
             .iter_mut()
             .map(|a| match a {
-                Value::Primitive(_, _, v) => v.as_basic_value_enum().into(),
+                Value::Primitive(_, v) => v.as_basic_value_enum().into(),
                 Value::Reference(rc_value) => rc_value.as_ptr().as_basic_value_enum().into(),
                 Value::Function(_) => todo!("implement passing callables as arguments"),
                 Value::Struct(_) => {

@@ -146,12 +146,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 #[derive(Clone)]
 pub enum Value<'ctx> {
     Empty,
-    Primitive(
-        // TODO this should be InstantiatedStructId
-        types::structs::StructId,
-        types::TypeArgumentValues<types::InstantiatedType>,
-        BasicValueEnum<'ctx>,
-    ),
+    Primitive(types::structs::InstantiatedStructId, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     Function(types::functions::FunctionId),
     Struct(types::structs::StructId),
@@ -161,8 +156,8 @@ pub enum Value<'ctx> {
 impl Debug for Value<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Primitive(struct_id, tav, basic_value_enum) => {
-                write!(f, "{struct_id}{tav}({basic_value_enum})")
+            Value::Primitive(struct_id, basic_value_enum) => {
+                write!(f, "{struct_id}({basic_value_enum})")
             }
             Value::Reference(rc_value) => {
                 write!(f, "Rc<{:?}>({})", rc_value.type_(), rc_value.as_ptr())
@@ -178,7 +173,7 @@ impl Debug for Value<'_> {
 impl<'ctx> Value<'ctx> {
     pub fn as_basic_value(&self) -> BasicValueEnum<'ctx> {
         match self {
-            Value::Primitive(_, _, value) => *value,
+            Value::Primitive(_, value) => *value,
             Value::Reference(value) => value.as_ptr().as_basic_value_enum(),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
@@ -193,12 +188,12 @@ impl<'ctx> Value<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> Option<Self> {
         match self {
-            Value::Primitive(struct_id, tav, _) => {
-                context.global_scope.structs.inspect_instantiated(
-                    &types::structs::InstantiatedStructId::new(*struct_id, tav.clone()),
-                    |struct_| struct_.unwrap().read_field_value(self.clone(), field_path),
-                )
-            }
+            Value::Primitive(struct_id, _) => context
+                .global_scope
+                .structs
+                .inspect_instantiated(struct_id, |struct_| {
+                    struct_.unwrap().read_field_value(self.clone(), field_path)
+                }),
             Value::Reference(ref_) => {
                 let ref_type = ref_.type_();
                 let (struct_id, type_argument_values) = match ref_type.kind() {

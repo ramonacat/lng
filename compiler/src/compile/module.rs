@@ -124,8 +124,10 @@ impl<'ctx> CompiledModule<'ctx> {
                 ),
                 types::InstantiatedTypeKind::Callable { .. } => todo!(),
                 types::InstantiatedTypeKind::U64 => Value::Primitive(
-                    CompilerContext::get_std_type("u64"),
-                    types::TypeArgumentValues::new_empty(),
+                    types::structs::InstantiatedStructId::new(
+                        CompilerContext::get_std_type("u64"),
+                        types::TypeArgumentValues::new_empty(),
+                    ),
                     argument_value,
                 ),
                 types::InstantiatedTypeKind::Pointer(_) => todo!(),
