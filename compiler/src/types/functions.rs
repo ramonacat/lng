@@ -27,7 +27,6 @@ impl InstantiatedFunctionId {
     }
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionId {
     InModule(ModuleId, Identifier),

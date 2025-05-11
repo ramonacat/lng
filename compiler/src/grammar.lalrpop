@@ -88,9 +88,9 @@ Expression: ast::Expression = {
         position: ast::SourceSpan::new(filename, start, end),
         kind: ast::ExpressionKind::Call{target: Box::new(target), arguments: arguments.unwrap_or_default() }
     },
-    <start:@L> <name:Identifier> "{" "}" <end:@R> => ast::Expression {
+    <start:@L> <target:Expression> "{" "}" <end:@R> => ast::Expression {
         position: ast::SourceSpan::new(filename, start, end),
-        kind: ast::ExpressionKind::StructConstructor(name)
+        kind: ast::ExpressionKind::StructConstructor(Box::new(target))
     },
     <start:@L> <target:Expression> "." <field_name:Identifier> <end:@R> => ast::Expression {
         position: ast::SourceSpan::new(filename, start, end),

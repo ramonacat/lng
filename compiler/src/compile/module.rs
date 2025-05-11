@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     identifier::Identifier,
-    name_mangler::{nomangle_identifier, MangledIdentifier},
+    name_mangler::{MangledIdentifier, nomangle_identifier},
     types,
 };
 use inkwell::{
@@ -108,7 +108,8 @@ impl<'ctx> CompiledModule<'ctx> {
 
         context.builder.position_at_end(entry_block);
 
-        for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params()) {
+        for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
+        {
             let value = match &argument.type_.kind() {
                 types::InstantiatedTypeKind::Unit => todo!(),
                 types::InstantiatedTypeKind::Object {
@@ -118,7 +119,10 @@ impl<'ctx> CompiledModule<'ctx> {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
                         context.global_scope.structs.inspect_instantiated(
-                            &types::structs::InstantiatedStructId::new(*id, type_argument_values.clone()),
+                            &types::structs::InstantiatedStructId::new(
+                                *id,
+                                type_argument_values.clone(),
+                            ),
                             |x| x.unwrap().definition.type_.clone(),
                         ),
                     );

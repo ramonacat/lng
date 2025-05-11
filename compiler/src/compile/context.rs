@@ -8,10 +8,7 @@ use inkwell::{
     values::{IntValue, PointerValue},
 };
 
-use crate::{
-    identifier::Identifier,
-    types,
-};
+use crate::{identifier::Identifier, types};
 
 use super::{scope::GlobalScope, unique_name, value::InstantiatedStructType};
 
@@ -21,12 +18,16 @@ pub struct Builtins {
 
 pub struct AllItems<'ctx> {
     structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
-    instantiated_structs: RwLock<HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
+    instantiated_structs:
+        RwLock<HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
 
     functions:
         HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
     instantiated_functions: RwLock<
-        HashMap<types::functions::InstantiatedFunctionId, types::functions::Function<types::InstantiatedType>>,
+        HashMap<
+            types::functions::InstantiatedFunctionId,
+            types::functions::Function<types::InstantiatedType>,
+        >,
     >,
 }
 
@@ -78,6 +79,10 @@ impl<'ctx> AllItems<'ctx> {
         id: &types::functions::InstantiatedFunctionId,
         inspect: impl FnOnce(Option<&types::functions::Function<types::InstantiatedType>>) -> T,
     ) -> T {
+        if !self.functions.contains_key(&id.id()) {
+            return inspect(None);
+        }
+
         self.instantiate_function(id);
 
         inspect(self.instantiated_functions.read().unwrap().get(id))
@@ -97,6 +102,13 @@ impl<'ctx> AllItems<'ctx> {
 
                 instantiated
             });
+    }
+
+    pub(crate) fn get_struct(
+        &self,
+        struct_id: types::structs::StructId,
+    ) -> Option<&types::structs::Struct<types::GenericType>> {
+        self.structs.get(&struct_id)
     }
 }
 

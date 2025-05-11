@@ -74,7 +74,7 @@ pub enum ExpressionKind {
     },
     Literal(Literal),
     VariableReference(Identifier),
-    StructConstructor(Identifier),
+    StructConstructor(Box<Expression>),
     FieldAccess {
         target: Box<Expression>,
         field_name: Identifier,

@@ -64,7 +64,10 @@ impl ArrayValue {
         let id = *TYPE_NAME_ARRAY;
 
         let array_value = context.global_scope.structs.inspect_instantiated(
-            &types::structs::InstantiatedStructId::new(id, types::TypeArgumentValues::new(tav.clone())),
+            &types::structs::InstantiatedStructId::new(
+                id,
+                types::TypeArgumentValues::new(tav.clone()),
+            ),
             |a| {
                 a.unwrap()
                     .build_heap_instance(context, &unique_name(&["string"]), field_values)

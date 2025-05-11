@@ -317,13 +317,13 @@ impl DefinitionChecker {
             }
             // TODO instead of resolving the struct name here, we should make it take an expression
             // instead of an identifier
-            ast::ExpressionKind::StructConstructor(struct_name) => {
-                let struct_type = locals.get(*struct_name);
+            ast::ExpressionKind::StructConstructor(target) => {
+                let target = self.type_check_expression(target, locals, module_path)?;
 
-                let (type_, kind) = if let Some(struct_type) = struct_type {
+                let (type_, kind) = {
                     let types::GenericTypeKind::Object {
                         type_name: instantiated_struct_id,
-                    } = struct_type.kind()
+                    } = target.type_.kind()
                     else {
                         todo!();
                     };
@@ -335,30 +335,8 @@ impl DefinitionChecker {
                             },
                             types::TypeArguments::new_empty(),
                         ),
-                        types::ExpressionKind::StructConstructor(*instantiated_struct_id),
+                        types::ExpressionKind::StructConstructor(Box::new(target)),
                     )
-                } else if self
-                    .root_module_declaration
-                    .get_struct(types::structs::StructId::InModule(
-                        module_path,
-                        *struct_name,
-                    ))
-                    .is_some()
-                {
-                    let struct_id = types::structs::StructId::InModule(module_path, *struct_name);
-                    (
-                        // TODO handle generics here!
-                        types::GenericType::new(
-                            types::GenericTypeKind::Object {
-                                type_name: struct_id,
-                            },
-                            types::TypeArguments::new_empty(),
-                        ),
-                        types::ExpressionKind::StructConstructor(struct_id),
-                    )
-                } else {
-                    return Err(TypeCheckErrorDescription::UndeclaredVariable(*struct_name)
-                        .at(expression.position));
                 };
 
                 Ok(types::Expression {

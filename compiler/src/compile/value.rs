@@ -3,10 +3,7 @@ use std::{collections::HashMap, fmt::Debug};
 use inkwell::values::{BasicValue as _, BasicValueEnum, PointerValue};
 use itertools::Itertools;
 
-use crate::{
-    identifier::Identifier,
-    types,
-};
+use crate::{identifier::Identifier, types};
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
 
@@ -150,6 +147,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 pub enum Value<'ctx> {
     Empty,
     Primitive(
+        // TODO this should be InstantiatedStructId
         types::structs::StructId,
         types::TypeArgumentValues<types::InstantiatedType>,
         BasicValueEnum<'ctx>,
@@ -216,7 +214,10 @@ impl<'ctx> Value<'ctx> {
                     types::InstantiatedTypeKind::Function(_) => todo!(),
                 };
                 context.global_scope.structs.inspect_instantiated(
-                    &types::structs::InstantiatedStructId::new(struct_id, type_argument_values.clone()),
+                    &types::structs::InstantiatedStructId::new(
+                        struct_id,
+                        type_argument_values.clone(),
+                    ),
                     |struct_| struct_.unwrap().read_field_value(self.clone(), field_path),
                 )
             }

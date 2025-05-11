@@ -18,7 +18,7 @@ use inkwell::{
     context::Context,
     execution_engine::ExecutionEngine,
     module::Module,
-    values::{AnyValue, BasicMetadataValueEnum, BasicValue, BasicValueEnum},
+    values::{AnyValue, BasicMetadataValueEnum, BasicValue},
 };
 use module::CompiledModule;
 use rand::Rng;
@@ -211,19 +211,6 @@ pub(crate) struct CompiledFunction<'ctx> {
 }
 
 impl<'ctx> CompiledFunction<'ctx> {
-    fn build_return(
-        &self,
-        return_value: Option<&dyn BasicValue<'ctx>>,
-        context: &CompilerContext<'ctx>,
-    ) -> Result<(), CompileError> {
-        context
-            .builder
-            .build_return(return_value)
-            .unwrap();
-
-        Ok(())
-    }
-
     fn set_return_value(&mut self, value: Value<'ctx>) {
         self.return_value = Some(value);
     }
@@ -308,7 +295,10 @@ impl<'ctx> Compiler<'ctx> {
                 .global_scope
                 .structs
                 .inspect_instantiated_function(
-                    &types::functions::InstantiatedFunctionId::new(main, types::TypeArgumentValues::new_empty()),
+                    &types::functions::InstantiatedFunctionId::new(
+                        main,
+                        types::TypeArgumentValues::new_empty(),
+                    ),
                     |function| {
                         let function = function.unwrap();
                         // TODO verify in type_check that main has no generic arguments
@@ -391,32 +381,20 @@ impl<'ctx> Compiler<'ctx> {
             .build_unconditional_branch(cleanup_label)
             .unwrap();
         self.context.builder.position_at_end(compiled_function.end);
-        // TODO can this match be somehow removed or simplified?
-        if let Some(ref r) = compiled_function.return_value {
-            match &r.as_basic_value() {
-                BasicValueEnum::ArrayValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context)?;
-                }
-                BasicValueEnum::IntValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context)?;
-                }
-                BasicValueEnum::FloatValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context)?;
-                }
-                BasicValueEnum::PointerValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context)?;
-                }
-                BasicValueEnum::StructValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context)?;
-                }
-                BasicValueEnum::VectorValue(v) => {
-                    compiled_function.build_return(Some(v), &self.context)?;
-                }
-                BasicValueEnum::ScalableVectorValue(_) => todo!(),
-            }
+
+        if let Some(return_value) = compiled_function
+            .return_value
+            .as_ref()
+            .map(Value::as_basic_value)
+        {
+            self.context
+                .builder
+                .build_return(Some(&return_value))
+                .unwrap();
         } else {
-            compiled_function.build_return(None, &self.context)?;
+            self.context.builder.build_return(None).unwrap();
         }
+
         Ok(())
     }
 
@@ -493,50 +471,29 @@ impl<'ctx> Compiler<'ctx> {
                 Ok((None, compiled_function.scope.get_value(*name).unwrap()))
             }
             types::ExpressionKind::GlobalVariableAccess(module_id, name) => {
-                let value = self
-                    .context
-                    .global_scope
-                    .get_value(*module_id, *name)
-                    .or_else(|| {
-                        let function_id = types::functions::FunctionId::InModule(*module_id, *name);
-
-                        self.context
-                            .global_scope
-                            .structs
-                            .inspect_instantiated_function(
-                                &types::functions::InstantiatedFunctionId::new(
-                                    function_id,
-                                    // TODO we need to ensure during typecheck that we won't get
-                                    // here without the right TypeArgumentValues, we will need to
-                                    // attach TypeArgumentValues to expressions
-                                    types::TypeArgumentValues::new_empty(),
-                                ),
-                                |f_| {
-                                    f_.map(|x| {
-                                        self.context
-                                            .global_scope
-                                            .get_module(*module_id)
-                                            .unwrap()
-                                            .get_or_create_function(x, &self.context);
-
-                                        Value::Function(function_id)
-                                    })
-                                },
-                            )
-                    });
+                let value = self.compile_expression_global_variable_access(*module_id, *name);
 
                 Ok((None, value.unwrap()))
             }
-            // TODO instead of the name, we should take an expression here, so that dynamically
-            // generated structs can be implemented
-            types::ExpressionKind::StructConstructor(name) => {
+            types::ExpressionKind::StructConstructor(target) => {
+                let target_tav = target.type_.argument_values();
+                let target =
+                    self.compile_expression(target, self_, compiled_function, module_path)?;
+
+                let name = match &target.1 {
+                    Value::Empty => todo!(),
+                    Value::Primitive(_, _, _) => todo!(),
+                    Value::Reference(_) => todo!(),
+                    Value::Function(_) => todo!(),
+                    Value::Struct(struct_) => struct_.id,
+                };
                 // TODO ensure the struct is instantiated in the context
                 // TODO get the type argument values from the expression!
                 let field_values = HashMap::new();
                 // TODO actually set the field values!
 
                 let value = self.context.global_scope.structs.inspect_instantiated(
-                    &types::structs::InstantiatedStructId::new(*name, types::TypeArgumentValues::new_empty()),
+                    &types::structs::InstantiatedStructId::new(name, target_tav.clone()),
                     |s| {
                         s.unwrap().build_heap_instance(
                             &self.context,
@@ -552,8 +509,8 @@ impl<'ctx> Compiler<'ctx> {
                         value,
                         types::InstantiatedType::new(
                             types::InstantiatedTypeKind::Object {
-                                type_name: *name,
-                                type_argument_values: types::TypeArgumentValues::new_empty(),
+                                type_name: name,
+                                type_argument_values: target_tav.clone(),
                             },
                             types::TypeArgumentValues::new_empty(),
                         ),
@@ -579,6 +536,56 @@ impl<'ctx> Compiler<'ctx> {
             }
             types::ExpressionKind::SelfAccess => Ok((None, self_.unwrap())),
         }
+    }
+
+    fn compile_expression_global_variable_access(
+        &self,
+        module_id: types::modules::ModuleId,
+        name: Identifier,
+    ) -> Option<Value<'ctx>> {
+        // TODO there should be something on the global_scope to receive a value by FQN
+        let value = self
+            .context
+            .global_scope
+            .get_value(module_id, name)
+            .or_else(|| {
+                let function_id = types::functions::FunctionId::InModule(module_id, name);
+
+                self.context
+                    .global_scope
+                    .structs
+                    .inspect_instantiated_function(
+                        &types::functions::InstantiatedFunctionId::new(
+                            function_id,
+                            // TODO we need to ensure during typecheck that we won't get
+                            // here without the right TypeArgumentValues, we will need to
+                            // attach TypeArgumentValues to expressions
+                            types::TypeArgumentValues::new_empty(),
+                        ),
+                        |f_| {
+                            f_.map(|x| {
+                                self.context
+                                    .global_scope
+                                    .get_module(module_id)
+                                    .unwrap()
+                                    .get_or_create_function(x, &self.context);
+
+                                Value::Function(function_id)
+                            })
+                        },
+                    )
+            })
+            .or_else(|| {
+                let struct_id = types::structs::StructId::InModule(module_id, name);
+
+                self.context
+                    .global_scope
+                    .structs
+                    .get_struct(struct_id)
+                    .cloned()
+                    .map(Value::Struct)
+            });
+        value
     }
 
     fn compile_literal(
@@ -627,8 +634,10 @@ impl<'ctx> Compiler<'ctx> {
             Value::Struct(_) => todo!(),
         };
 
-        let instantiated_function_id =
-            types::functions::InstantiatedFunctionId::new(*function_id, types::TypeArgumentValues::new_empty());
+        let instantiated_function_id = types::functions::InstantiatedFunctionId::new(
+            *function_id,
+            types::TypeArgumentValues::new_empty(),
+        );
         let definition = self
             .context
             .global_scope

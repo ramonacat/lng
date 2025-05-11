@@ -174,14 +174,6 @@ impl DeclaredRootModule {
                     })
             })
     }
-
-    // TODO this should return a reference, once self.structs is not a RefCell
-    pub(crate) fn get_struct(
-        &self,
-        struct_name: types::structs::StructId,
-    ) -> Option<types::structs::Struct<GenericType>> {
-        self.structs.borrow().get(&struct_name).cloned()
-    }
 }
 
 pub(super) fn resolve_type(

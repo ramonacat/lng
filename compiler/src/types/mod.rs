@@ -166,6 +166,7 @@ pub enum InstantiatedTypeKind {
     U64,
     U8,
     Pointer(Box<InstantiatedType>),
+    // TODO these should be Instantiated(Struct|Function)Id
     Struct(StructId),
     Function(FunctionId),
 }
@@ -393,7 +394,7 @@ pub enum ExpressionKind<T: AnyType> {
     Literal(Literal),
     LocalVariableAccess(Identifier),
     GlobalVariableAccess(ModuleId, Identifier),
-    StructConstructor(StructId),
+    StructConstructor(Box<Expression<T>>),
     FieldAccess {
         target: Box<Expression<T>>,
         field: Identifier,
@@ -431,7 +432,9 @@ impl Expression<GenericType> {
                     ExpressionKind::GlobalVariableAccess(*module_id, *identifier)
                 }
                 ExpressionKind::StructConstructor(instantiated_struct_id) => {
-                    ExpressionKind::StructConstructor(*instantiated_struct_id)
+                    ExpressionKind::StructConstructor(Box::new(
+                        instantiated_struct_id.instantiate(type_argument_values),
+                    ))
                 }
                 ExpressionKind::FieldAccess { target, field } => ExpressionKind::FieldAccess {
                     target: Box::new(target.instantiate(type_argument_values)),
