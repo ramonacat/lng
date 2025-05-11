@@ -6,13 +6,13 @@ use inkwell::values::BasicValue;
 use crate::{
     compile::{context::CompilerContext, unique_name, value::StructInstance},
     identifier::Identifier,
-    types::{self, functions::InstantiatedStructId, structs::StructId},
+    types,
 };
 
 use super::rc::RcValue;
 
-pub static TYPE_NAME_ARRAY: LazyLock<StructId> = LazyLock::new(|| {
-    StructId::InModule(
+pub static TYPE_NAME_ARRAY: LazyLock<types::structs::StructId> = LazyLock::new(|| {
+    types::structs::StructId::InModule(
         types::modules::ModuleId::parse("std"),
         Identifier::parse("array"),
     )
@@ -64,7 +64,7 @@ impl ArrayValue {
         let id = *TYPE_NAME_ARRAY;
 
         let array_value = context.global_scope.structs.inspect_instantiated(
-            &InstantiatedStructId::new(id, types::TypeArgumentValues::new(tav.clone())),
+            &types::structs::InstantiatedStructId::new(id, types::TypeArgumentValues::new(tav.clone())),
             |a| {
                 a.unwrap()
                     .build_heap_instance(context, &unique_name(&["string"]), field_values)

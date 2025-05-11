@@ -5,28 +5,28 @@ use itertools::Itertools;
 
 use crate::{
     identifier::Identifier,
-    types::{self, InstantiatedType, functions::InstantiatedStructId},
+    types,
 };
 
 use super::{builtins::rc::RcValue, context::CompilerContext};
 
 pub struct InstantiatedStructType<'ctx> {
-    pub(crate) definition: types::structs::Struct<InstantiatedType>,
+    pub(crate) definition: types::structs::Struct<types::InstantiatedType>,
     static_field_values: HashMap<Identifier, Value<'ctx>>,
 }
 
-pub struct StructInstance<'ctx>(PointerValue<'ctx>, InstantiatedType);
+pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::InstantiatedType);
 
 impl<'ctx> StructInstance<'ctx> {
     pub(crate) const fn value(&self) -> PointerValue<'ctx> {
         self.0
     }
 
-    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: InstantiatedType) -> Self {
+    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: types::InstantiatedType) -> Self {
         Self(pointer, type_)
     }
 
-    pub(crate) fn type_(&self) -> InstantiatedType {
+    pub(crate) fn type_(&self) -> types::InstantiatedType {
         self.1.clone()
     }
 }
@@ -124,7 +124,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     // TODO we should take the generic arguments here, this handle should be one per the set of
     // types
     pub(crate) fn new(
-        description: types::structs::Struct<InstantiatedType>,
+        description: types::structs::Struct<types::InstantiatedType>,
         mut static_fields: HashMap<Identifier, Value<'ctx>>,
     ) -> Self {
         let default_static_fields: Vec<_> = description
@@ -151,7 +151,7 @@ pub enum Value<'ctx> {
     Empty,
     Primitive(
         types::structs::StructId,
-        types::TypeArgumentValues<InstantiatedType>,
+        types::TypeArgumentValues<types::InstantiatedType>,
         BasicValueEnum<'ctx>,
     ),
     Reference(RcValue<'ctx>),
@@ -195,7 +195,7 @@ impl<'ctx> Value<'ctx> {
         match self {
             Value::Primitive(struct_id, tav, _) => {
                 context.global_scope.structs.inspect_instantiated(
-                    &InstantiatedStructId::new(*struct_id, tav.clone()),
+                    &types::structs::InstantiatedStructId::new(*struct_id, tav.clone()),
                     |struct_| struct_.unwrap().read_field_value(self.clone(), field_path),
                 )
             }
@@ -216,7 +216,7 @@ impl<'ctx> Value<'ctx> {
                     types::InstantiatedTypeKind::Function(_) => todo!(),
                 };
                 context.global_scope.structs.inspect_instantiated(
-                    &InstantiatedStructId::new(struct_id, type_argument_values.clone()),
+                    &types::structs::InstantiatedStructId::new(struct_id, type_argument_values.clone()),
                     |struct_| struct_.unwrap().read_field_value(self.clone(), field_path),
                 )
             }

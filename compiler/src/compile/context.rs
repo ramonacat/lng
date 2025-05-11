@@ -10,10 +10,7 @@ use inkwell::{
 
 use crate::{
     identifier::Identifier,
-    types::{
-        self, InstantiatedType,
-        functions::{InstantiatedFunctionId, InstantiatedStructId},
-    },
+    types,
 };
 
 use super::{scope::GlobalScope, unique_name, value::InstantiatedStructType};
@@ -24,12 +21,12 @@ pub struct Builtins {
 
 pub struct AllItems<'ctx> {
     structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
-    instantiated_structs: RwLock<HashMap<InstantiatedStructId, InstantiatedStructType<'ctx>>>,
+    instantiated_structs: RwLock<HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
 
     functions:
         HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
     instantiated_functions: RwLock<
-        HashMap<InstantiatedFunctionId, types::functions::Function<types::InstantiatedType>>,
+        HashMap<types::functions::InstantiatedFunctionId, types::functions::Function<types::InstantiatedType>>,
     >,
 }
 
@@ -51,8 +48,7 @@ impl<'ctx> AllItems<'ctx> {
 
     pub(crate) fn inspect_instantiated<T>(
         &self,
-        // TODO create an InstantiatedStructId type
-        handle: &InstantiatedStructId,
+        handle: &types::structs::InstantiatedStructId,
         inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
     ) -> T {
         self.instantiate(handle);
@@ -61,7 +57,7 @@ impl<'ctx> AllItems<'ctx> {
     }
 
     // TODO deal with setting the static fields here
-    fn instantiate(&self, id: &InstantiatedStructId) {
+    fn instantiate(&self, id: &types::structs::InstantiatedStructId) {
         self.instantiated_structs
             .write()
             .unwrap()
@@ -79,8 +75,7 @@ impl<'ctx> AllItems<'ctx> {
 
     pub(crate) fn inspect_instantiated_function<T>(
         &self,
-        // TODO create an InstantiatedFunctionId type
-        id: &InstantiatedFunctionId,
+        id: &types::functions::InstantiatedFunctionId,
         inspect: impl FnOnce(Option<&types::functions::Function<types::InstantiatedType>>) -> T,
     ) -> T {
         self.instantiate_function(id);
@@ -88,7 +83,7 @@ impl<'ctx> AllItems<'ctx> {
         inspect(self.instantiated_functions.read().unwrap().get(id))
     }
 
-    fn instantiate_function(&self, id: &InstantiatedFunctionId) {
+    fn instantiate_function(&self, id: &types::functions::InstantiatedFunctionId) {
         self.instantiated_functions
             .write()
             .unwrap()
@@ -157,7 +152,7 @@ impl<'ctx> CompilerContext<'ctx> {
 
     pub fn make_function_type(
         &self,
-        arguments: &[types::functions::Argument<InstantiatedType>],
+        arguments: &[types::functions::Argument<types::InstantiatedType>],
         return_type: &types::InstantiatedType,
     ) -> FunctionType<'ctx> {
         let arguments = arguments
@@ -177,7 +172,7 @@ impl<'ctx> CompilerContext<'ctx> {
 
     pub fn make_struct_type(
         &self,
-        fields: &[types::structs::StructField<InstantiatedType>],
+        fields: &[types::structs::StructField<types::InstantiatedType>],
     ) -> CompiledStruct<'ctx> {
         let mut field_types = vec![];
         let mut field_indices = HashMap::new();

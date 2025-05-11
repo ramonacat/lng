@@ -29,10 +29,7 @@ use crate::{
     ast,
     identifier::{FQName, Identifier},
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types::{
-        self, InstantiatedType,
-        functions::{InstantiatedFunctionId, InstantiatedStructId},
-    },
+    types,
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -206,9 +203,6 @@ impl IntoCompileError for BuilderError {
 }
 
 pub(crate) struct CompiledFunction<'ctx> {
-    // TODO can this just be FunctionId?
-    handle: types::functions::Function<InstantiatedType>,
-
     entry: BasicBlock<'ctx>,
     end: BasicBlock<'ctx>,
     scope: Rc<Scope<'ctx>>,
@@ -225,7 +219,7 @@ impl<'ctx> CompiledFunction<'ctx> {
         context
             .builder
             .build_return(return_value)
-            .map_err(|e| e.at(self.handle.position))?;
+            .unwrap();
 
         Ok(())
     }
@@ -314,7 +308,7 @@ impl<'ctx> Compiler<'ctx> {
                 .global_scope
                 .structs
                 .inspect_instantiated_function(
-                    &InstantiatedFunctionId::new(main, types::TypeArgumentValues::new_empty()),
+                    &types::functions::InstantiatedFunctionId::new(main, types::TypeArgumentValues::new_empty()),
                     |function| {
                         let function = function.unwrap();
                         // TODO verify in type_check that main has no generic arguments
@@ -351,7 +345,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_function(
         &mut self,
-        handle: &types::functions::Function<InstantiatedType>,
+        handle: &types::functions::Function<types::InstantiatedType>,
     ) -> Result<(), CompileError> {
         let types::functions::FunctionBody::Statements(statements) = &handle.body else {
             return Ok(());
@@ -428,7 +422,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_statements(
         &mut self,
-        statements: &Vec<types::Statement<InstantiatedType>>,
+        statements: &Vec<types::Statement<types::InstantiatedType>>,
         module_path: types::modules::ModuleId,
         compiled_function: &mut CompiledFunction<'ctx>,
     ) -> Result<(), CompileError> {
@@ -472,7 +466,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_expression(
         &mut self,
-        expression: &types::Expression<InstantiatedType>,
+        expression: &types::Expression<types::InstantiatedType>,
         self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
         module_path: types::modules::ModuleId,
@@ -510,7 +504,7 @@ impl<'ctx> Compiler<'ctx> {
                             .global_scope
                             .structs
                             .inspect_instantiated_function(
-                                &InstantiatedFunctionId::new(
+                                &types::functions::InstantiatedFunctionId::new(
                                     function_id,
                                     // TODO we need to ensure during typecheck that we won't get
                                     // here without the right TypeArgumentValues, we will need to
@@ -542,7 +536,7 @@ impl<'ctx> Compiler<'ctx> {
                 // TODO actually set the field values!
 
                 let value = self.context.global_scope.structs.inspect_instantiated(
-                    &InstantiatedStructId::new(*name, types::TypeArgumentValues::new_empty()),
+                    &types::structs::InstantiatedStructId::new(*name, types::TypeArgumentValues::new_empty()),
                     |s| {
                         s.unwrap().build_heap_instance(
                             &self.context,
@@ -634,7 +628,7 @@ impl<'ctx> Compiler<'ctx> {
         };
 
         let instantiated_function_id =
-            InstantiatedFunctionId::new(*function_id, types::TypeArgumentValues::new_empty());
+            types::functions::InstantiatedFunctionId::new(*function_id, types::TypeArgumentValues::new_empty());
         let definition = self
             .context
             .global_scope
@@ -648,7 +642,6 @@ impl<'ctx> Compiler<'ctx> {
             .global_scope
             .get_module(definition.module_name)
             .unwrap()
-            // TODO mangle the type arguments as well!
             .has_function(&definition.mangled_id())
         {
             self.compile_function(&definition).unwrap();
@@ -704,7 +697,7 @@ impl<'ctx> Compiler<'ctx> {
             } => Value::Reference(RcValue::from_pointer(
                 call_result.into_pointer_value(),
                 self.context.global_scope.structs.inspect_instantiated(
-                    &InstantiatedStructId::new(*id, type_argument_values.clone()),
+                    &types::structs::InstantiatedStructId::new(*id, type_argument_values.clone()),
                     |x| x.unwrap().definition.type_.clone(),
                 ),
             )),

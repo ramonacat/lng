@@ -7,15 +7,15 @@ use super::{
 };
 use crate::{
     identifier::Identifier,
-    name_mangler::{MangledIdentifier, nomangle_identifier},
-    types::{self, InstantiatedType, functions::InstantiatedStructId},
+    name_mangler::{nomangle_identifier, MangledIdentifier},
+    types,
 };
 use inkwell::{
     module::{Linkage, Module},
     values::FunctionValue,
 };
 
-impl types::functions::Function<InstantiatedType> {
+impl types::functions::Function<types::InstantiatedType> {
     const fn linkage(&self) -> Linkage {
         match self.body {
             types::functions::FunctionBody::Statements(_) => match self.visibility {
@@ -62,7 +62,7 @@ impl<'ctx> CompiledModule<'ctx> {
     fn declare_function_inner(
         &self,
         name: &MangledIdentifier,
-        arguments: &[types::functions::Argument<InstantiatedType>],
+        arguments: &[types::functions::Argument<types::InstantiatedType>],
         return_type: &types::InstantiatedType,
         linkage: Linkage,
         context: &CompilerContext<'ctx>,
@@ -77,7 +77,7 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         linkage: Linkage,
         name: &MangledIdentifier,
-        arguments: &[types::functions::Argument<InstantiatedType>],
+        arguments: &[types::functions::Argument<types::InstantiatedType>],
         return_type: &types::InstantiatedType,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
@@ -94,13 +94,13 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn begin_compile_function(
         &self,
-        handle: &types::functions::Function<InstantiatedType>,
+        function: &types::functions::Function<types::InstantiatedType>,
         context: &CompilerContext<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
         let mut rcs = vec![];
         let scope = self.scope.child();
 
-        let llvm_function = self.get_or_create_function(handle, context);
+        let llvm_function = self.get_or_create_function(function, context);
 
         let entry_block = context
             .llvm_context
@@ -108,7 +108,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
         context.builder.position_at_end(entry_block);
 
-        for (argument, argument_value) in handle.arguments.iter().zip(llvm_function.get_params()) {
+        for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params()) {
             let value = match &argument.type_.kind() {
                 types::InstantiatedTypeKind::Unit => todo!(),
                 types::InstantiatedTypeKind::Object {
@@ -118,7 +118,7 @@ impl<'ctx> CompiledModule<'ctx> {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
                         context.global_scope.structs.inspect_instantiated(
-                            &InstantiatedStructId::new(*id, type_argument_values.clone()),
+                            &types::structs::InstantiatedStructId::new(*id, type_argument_values.clone()),
                             |x| x.unwrap().definition.type_.clone(),
                         ),
                     );
@@ -153,7 +153,6 @@ impl<'ctx> CompiledModule<'ctx> {
         rc::build_prologue(&rcs, context);
 
         CompiledFunction {
-            handle: handle.clone(),
             scope,
             entry: entry_block,
             end: end_block,
@@ -176,7 +175,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn get_or_create_function(
         &self,
-        handle: &types::functions::Function<InstantiatedType>,
+        handle: &types::functions::Function<types::InstantiatedType>,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.llvm_module

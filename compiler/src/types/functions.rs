@@ -27,21 +27,6 @@ impl InstantiatedFunctionId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InstantiatedStructId(StructId, TypeArgumentValues<InstantiatedType>);
-impl InstantiatedStructId {
-    pub(crate) const fn id(&self) -> StructId {
-        self.0
-    }
-
-    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues<InstantiatedType> {
-        &self.1
-    }
-
-    pub(crate) const fn new(id: StructId, tav: TypeArgumentValues<InstantiatedType>) -> Self {
-        Self(id, tav)
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FunctionId {
