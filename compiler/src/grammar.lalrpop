@@ -7,20 +7,31 @@ Identifier: identifier::Identifier = {
     r"\p{ID_Start}\p{ID_Continue}*" => identifier::Identifier::parse(<>)
 }
 
-ImportPath: identifier::FQName = {
-    <l:ImportPath> "::" <r:Identifier> => l.with_part(r),
-    <id:Identifier> => identifier::FQName::from_identifier(id)
+ModulePath: identifier::FQName = {
+    <l:ModulePath> "." <r:Identifier> => {
+        l.with_part(r)
+    },
+    <l:Identifier> => identifier::FQName::from_identifier(l)
+}
+
+ImportItem:ast::ImportItem = {
+    <l:Identifier> => ast::ImportItem(l, l),
+    "(" <l:Identifier> "as" <as_:Identifier> ")" => ast::ImportItem(l, as_)
+}
+
+ImportItems:Vec<ast::ImportItem> = {
+    <mut l:ImportItems> "," <r:ImportItem> => {
+        l.push(r);
+
+        l
+    }, 
+    <l:ImportItem> => vec![l]
 }
 
 Import: ast::Import = {
-    <start:@L> "import" <path:ImportPath> ";" <end:@R> => ast::Import { 
+    <start:@L> "import" <items:ImportItems> "from" <path:ModulePath> ";" <end:@R> => ast::Import { 
         path, 
-        alias: None,
-        position: ast::SourceSpan::new(filename, start, end)
-    },
-    <start:@L> "import" <path:ImportPath> "as" <alias:Identifier> ";" <end:@R> => ast::Import { 
-        path, 
-        alias: Some(alias),
+        items,
         position: ast::SourceSpan::new(filename, start, end)
     }
 }

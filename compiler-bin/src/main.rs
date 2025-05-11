@@ -8,9 +8,8 @@ use compiler::{
 
 fn main() {
     let program = "
-        import std::string;
-        import std::println;
-        import main::printer::my_println;
+        import string, println from std;
+        import my_println from main.printer;
 
         struct Greeter {}
 
@@ -31,8 +30,7 @@ fn main() {
     ";
 
     let printer = "
-        import std::string;
-        import std::println;
+        import string, println from std;
 
         export fn my_println(arg: string): () {
             println(arg);

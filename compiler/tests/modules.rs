@@ -5,16 +5,15 @@ mod common;
 #[test]
 pub fn import_function_from_nested() {
     let main = "
-        import std::string;
-        import main::test::my_println;
+        import string from std;
+        import my_println from main.test;
 
         export fn main(): () {
             my_println(\"hello\");
         }
     ";
     let main_test = "
-        import std::string;
-        import std::println;
+        import string, println from std;
 
         export fn my_println(text: string): () {
             println(text);
@@ -32,16 +31,15 @@ pub fn import_function_from_nested() {
 #[test]
 pub fn import_aliased() {
     let main = "
-        import std::string;
-        import main::test::my_println as just_println;
+        import string from std;
+        import (my_println as just_println) from main.test;
 
         export fn main(): () {
             just_println(\"hello\");
         }
     ";
     let main_test = "
-        import std::string;
-        import std::println;
+        import string, println from std;
 
         export fn my_println(text: string): () {
             println(text);

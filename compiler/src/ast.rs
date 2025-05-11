@@ -188,9 +188,12 @@ pub struct Declaration {
 }
 
 #[derive(Debug)]
+pub struct ImportItem(pub Identifier, pub Identifier);
+
+#[derive(Debug)]
 pub struct Import {
     pub path: FQName,
-    pub alias: Option<Identifier>,
+    pub items: Vec<ImportItem>,
     pub position: SourceSpan,
 }
 

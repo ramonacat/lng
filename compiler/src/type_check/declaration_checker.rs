@@ -41,23 +41,21 @@ impl DeclarationChecker {
     fn type_check_imports(&mut self, program: &[ast::SourceFile]) {
         for file in program {
             for import in &file.imports {
-                // TODO this ducking around with path is potentially incorrect, we should decide on
-                // parsing/syntax level which part is the module and which is item
-                let exporting_module_name = import.path.without_last();
-                let name = import.path.last();
-
+                let exporting_module_name = import.path;
                 let importing_module_path = FQName::parse(&file.name.to_string());
 
-                self.root_module_declaration.import(
-                    (
-                        types::modules::ModuleId::FQName(importing_module_path),
-                        import.alias.unwrap_or(name),
-                    ),
-                    (
-                        types::modules::ModuleId::FQName(exporting_module_name),
-                        name,
-                    ),
-                );
+                for item in &import.items {
+                    self.root_module_declaration.import(
+                        (
+                            types::modules::ModuleId::FQName(importing_module_path),
+                            item.1,
+                        ),
+                        (
+                            types::modules::ModuleId::FQName(exporting_module_name),
+                            item.0,
+                        ),
+                    );
+                }
             }
         }
     }

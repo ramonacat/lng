@@ -2,6 +2,7 @@ mod declaration_checker;
 mod declarations;
 mod definition_checker;
 pub mod errors;
+mod expression_checker;
 
 use declaration_checker::DeclarationChecker;
 use declarations::{DeclaredFunction, DeclaredRootModule, DeclaredStructField};

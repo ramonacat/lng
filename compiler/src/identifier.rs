@@ -66,7 +66,6 @@ impl Display for FQName {
 }
 
 impl FQName {
-    // TODO check all usages of parse&from_parts that can be simplified
     pub(crate) fn parse(raw: &str) -> Self {
         let interned = Identifier::parse(raw);
 
@@ -75,10 +74,6 @@ impl FQName {
 
     pub(crate) fn from_identifier(id: Identifier) -> Self {
         Self::parse(&id.raw())
-    }
-
-    fn from_parts(path: impl Iterator<Item = impl Into<Identifier>>) -> Self {
-        Self::parse(&path.map(Into::<Identifier>::into).join("."))
     }
 
     pub(crate) fn with_part(self, new_part: Identifier) -> Self {
@@ -99,17 +94,6 @@ impl FQName {
 
     pub(crate) fn into_mangled(self) -> MangledIdentifier {
         mangle_fq_name(self)
-    }
-
-    pub(crate) fn last(self) -> Identifier {
-        *self.parts().last().unwrap()
-    }
-
-    pub(crate) fn without_last(self) -> Self {
-        let parts = self.parts();
-        let len = parts.len();
-
-        Self::from_parts(&mut parts[..len - 1].iter().copied())
     }
 
     pub(crate) fn len(self) -> usize {
