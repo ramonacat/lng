@@ -51,7 +51,7 @@ impl PartialEq<str> for Identifier {
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct FQName(SymbolU32);
+pub struct FQName(Identifier);
 
 impl std::fmt::Debug for FQName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -65,20 +65,15 @@ impl Display for FQName {
     }
 }
 
-static FQNAMES: LazyLock<RwLock<StringInterner<StringBackend>>> =
-    LazyLock::new(|| RwLock::new(StringInterner::default()));
-
 impl FQName {
     // TODO check all usages of parse&from_parts that can be simplified
-    pub fn parse(raw: &str) -> Self {
-        // TODO do we really want to have a separate interns for FQNames? Or should those just
-        // wrap an Identifier?
-        let interned = FQNAMES.write().unwrap().get_or_intern(raw);
+    pub(crate) fn parse(raw: &str) -> Self {
+        let interned = Identifier::parse(raw);
 
         Self(interned)
     }
 
-    pub fn from_identifier(id: Identifier) -> Self {
+    pub(crate) fn from_identifier(id: Identifier) -> Self {
         Self::parse(&id.raw())
     }
 
@@ -86,8 +81,8 @@ impl FQName {
         Self::parse(&path.map(Into::<Identifier>::into).join("."))
     }
 
-    pub fn with_part(self, new_part: Identifier) -> Self {
-        let raw = FQNAMES.read().unwrap().resolve(self.0).unwrap().to_string();
+    pub(crate) fn with_part(self, new_part: Identifier) -> Self {
+        let raw = self.0.raw();
 
         if raw.is_empty() {
             Self::parse(&format!("{new_part}"))
@@ -96,8 +91,8 @@ impl FQName {
         }
     }
 
-    pub fn parts(self) -> Vec<Identifier> {
-        let raw = FQNAMES.read().unwrap().resolve(self.0).unwrap().to_string();
+    fn parts(self) -> Vec<Identifier> {
+        let raw = self.0.raw();
 
         raw.split('.').map(Identifier::parse).collect()
     }
@@ -106,11 +101,11 @@ impl FQName {
         mangle_fq_name(self)
     }
 
-    pub fn last(self) -> Identifier {
+    pub(crate) fn last(self) -> Identifier {
         *self.parts().last().unwrap()
     }
 
-    pub fn without_last(self) -> Self {
+    pub(crate) fn without_last(self) -> Self {
         let parts = self.parts();
         let len = parts.len();
 

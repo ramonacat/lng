@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use std::fmt::Write;
 
 use crate::{
@@ -63,12 +62,7 @@ pub fn mangle_struct_item_name(
 }
 
 pub fn mangle_fq_name(fq_name: FQName) -> MangledIdentifier {
-    let mangled_module_path = fq_name
-        .parts()
-        .iter()
-        .copied()
-        .map(Identifier::raw)
-        .join("$");
+    let mangled_module_path = fq_name.to_string().replace('.', "$");
 
     MangledIdentifier {
         mangled: mangled_module_path,

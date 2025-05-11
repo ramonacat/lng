@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     ast,
-    identifier::{FQName, Identifier},
+    identifier::Identifier,
     types::{self, GenericType},
 };
 
@@ -207,17 +207,10 @@ pub(super) fn resolve_type(
             let (current_module, name) = root_module.resolve_import(current_module, *name);
 
             let item = root_module
-                // TODO get_item should take a pair of (ModuleId, Identifier)
                 .get_item(current_module, name)
                 // TODO should there be a keyword for global scope access instead of this or_else?
                 // TODO if this is a global, we should have the (ModuleId, Identifier) pair here!
-                .or_else(|| {
-                    let item_id = FQName::from_identifier(name);
-                    root_module.get_item(
-                        types::modules::ModuleId::FQName(item_id.without_last()),
-                        item_id.last(),
-                    )
-                })
+                .or_else(|| root_module.get_item(current_module, name))
                 .unwrap();
 
             Ok(item.type_())
