@@ -1,4 +1,5 @@
 pub mod functions;
+pub mod interfaces;
 pub mod modules;
 pub mod structs;
 
@@ -9,12 +10,13 @@ use std::{
 };
 
 use functions::{FunctionId, InstantiatedFunctionId};
+use interfaces::InterfaceId;
 use itertools::Itertools;
 use modules::ModuleId;
 use structs::{InstantiatedStructId, Struct, StructId};
 use thiserror::Error;
 
-use crate::{ast, identifier::Identifier, std::TYPE_NAME_U64};
+use crate::{ast, identifier::Identifier};
 
 pub trait AnyType: Display + Clone + Debug + Hash + Eq + PartialEq {}
 impl AnyType for GenericType {}
@@ -175,6 +177,11 @@ pub enum InstantiatedTypeKind {
     Pointer(Box<InstantiatedType>),
     Struct(InstantiatedStructId),
     Function(InstantiatedFunctionId),
+    IndirectCallable(InterfaceId, Identifier),
+    InterfaceObject {
+        interface_id: InterfaceId,
+        type_argument_values: TypeArgumentValues<InstantiatedType>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -207,6 +214,8 @@ impl Display for InstantiatedType {
             InstantiatedTypeKind::Pointer(instantiated_type) => write!(f, "{instantiated_type}*"),
             InstantiatedTypeKind::Struct(struct_id) => write!(f, "{struct_id}"),
             InstantiatedTypeKind::Function(function_id) => write!(f, "{function_id}"),
+            InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
+            InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
         }
     }
 }
@@ -215,10 +224,11 @@ impl Display for InstantiatedType {
 pub enum GenericTypeKind {
     Generic(TypeArgument),
     Unit,
-    Object { type_name: StructId },
+    StructObject { type_name: StructId },
     Array { element_type: Box<GenericType> },
     // TODO this should be an object with special properties
     Callable(FunctionId),
+    IndirectCallable(InterfaceId, Identifier),
     // TODO add u128,u32,u16,u8 and signed counterparts
     // TODO add bool
     // TODO add float
@@ -227,6 +237,8 @@ pub enum GenericTypeKind {
     Pointer(Box<GenericType>),
     Struct(StructId),
     Function(FunctionId),
+    Interface(InterfaceId),
+    InterfaceObject(InterfaceId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -244,7 +256,7 @@ impl Display for GenericType {
         match generic_type_kind {
             GenericTypeKind::Generic(type_argument) => write!(f, "{type_argument}"),
             GenericTypeKind::Unit => write!(f, "()"),
-            GenericTypeKind::Object { type_name } => write!(f, "{type_name}"),
+            GenericTypeKind::StructObject { type_name } => write!(f, "{type_name}"),
             GenericTypeKind::Array { element_type } => write!(f, "{element_type}[]"),
             GenericTypeKind::Callable(function_id) => write!(f, "callable<{function_id}>"),
             GenericTypeKind::U64 => write!(f, "u64"),
@@ -252,6 +264,9 @@ impl Display for GenericType {
             GenericTypeKind::Pointer(generic_type) => write!(f, "{generic_type}*"),
             GenericTypeKind::Struct(struct_id) => write!(f, "{struct_id}"),
             GenericTypeKind::Function(function_id) => write!(f, "{function_id}"),
+            GenericTypeKind::Interface(_) => todo!(),
+            GenericTypeKind::InterfaceObject(_) => todo!(),
+            GenericTypeKind::IndirectCallable(_, _) => todo!(),
         }
     }
 }
@@ -303,7 +318,7 @@ impl GenericType {
                 .kind
                 .clone(),
             GenericTypeKind::Unit => InstantiatedTypeKind::Unit,
-            GenericTypeKind::Object { type_name } => InstantiatedTypeKind::Object {
+            GenericTypeKind::StructObject { type_name } => InstantiatedTypeKind::Object {
                 type_name: *type_name,
                 type_argument_values,
             },
@@ -322,6 +337,16 @@ impl GenericType {
             GenericTypeKind::Function(function_id) => InstantiatedTypeKind::Function(
                 InstantiatedFunctionId::new(*function_id, type_argument_values),
             ),
+            GenericTypeKind::Interface(_) => todo!(),
+            GenericTypeKind::InterfaceObject(interface_id) => {
+                InstantiatedTypeKind::InterfaceObject {
+                    interface_id: *interface_id,
+                    type_argument_values,
+                }
+            }
+            GenericTypeKind::IndirectCallable(interface_id, function_name) => {
+                InstantiatedTypeKind::IndirectCallable(*interface_id, *function_name)
+            }
         };
 
         Ok(InstantiatedType { kind })
@@ -331,18 +356,228 @@ impl GenericType {
         &self.type_arguments
     }
 
-    pub(crate) fn struct_name(&self) -> StructId {
-        match self.kind() {
-            GenericTypeKind::Generic(_) => todo!(),
-            GenericTypeKind::Unit => todo!(),
-            GenericTypeKind::Object { type_name } => *type_name,
-            GenericTypeKind::Array { .. } => todo!(),
-            GenericTypeKind::Callable(_) => todo!(),
-            GenericTypeKind::U64 => *TYPE_NAME_U64,
-            GenericTypeKind::U8 => todo!(),
-            GenericTypeKind::Pointer(_) => todo!(),
-            GenericTypeKind::Struct(_) => todo!(),
-            GenericTypeKind::Function(_) => todo!(),
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn can_assign_to(
+        &self,
+        type_: &Self,
+        lookup_struct: impl FnOnce(StructId) -> Option<Struct<Self>>,
+    ) -> bool {
+        match (self.kind(), type_.kind()) {
+            (GenericTypeKind::Generic(_), GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::Unit) => todo!(),
+            (
+                GenericTypeKind::StructObject { type_name: left },
+                GenericTypeKind::StructObject { type_name: right },
+            ) => left == right,
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::Array { .. }, GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::Callable(_), GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::U64, GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::U8, GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::Pointer(_), GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::StructObject { .. }) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::Generic(_)) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::Unit) => todo!(),
+            (
+                GenericTypeKind::InterfaceObject(interface_id),
+                GenericTypeKind::StructObject {
+                    type_name: struct_id,
+                },
+            ) => {
+                let struct_ = lookup_struct(*struct_id).unwrap();
+
+                dbg!(&struct_);
+
+                struct_.implements(*interface_id)
+            }
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::Array { .. }) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::Callable(_)) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::Pointer(_)) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::Struct(_)) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::Function(_)) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::InterfaceObject(_)) => todo!(),
+            (GenericTypeKind::Generic(_), GenericTypeKind::IndirectCallable(_, _)) => todo!(),
+            (GenericTypeKind::Unit, GenericTypeKind::IndirectCallable(_, _)) => todo!(),
+            (GenericTypeKind::StructObject { .. }, GenericTypeKind::IndirectCallable(_, _)) => {
+                todo!()
+            }
+            (GenericTypeKind::Array { .. }, GenericTypeKind::IndirectCallable(_, _)) => {
+                todo!()
+            }
+            (GenericTypeKind::Callable(_), GenericTypeKind::IndirectCallable(_, _)) => {
+                todo!()
+            }
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::Generic(_)) => {
+                todo!()
+            }
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::Unit) => todo!(),
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::StructObject { .. }) => {
+                todo!()
+            }
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::Array { .. }) => {
+                todo!()
+            }
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::Callable(_)) => {
+                todo!()
+            }
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::IndirectCallable(_, _)) => {
+                todo!()
+            }
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::U64) => todo!(),
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::U8) => todo!(),
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::Pointer(_)) => {
+                todo!()
+            }
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::Struct(_)) => {
+                todo!()
+            }
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::Function(_)) => {
+                todo!()
+            }
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::Interface(_)) => todo!(),
+            (GenericTypeKind::IndirectCallable(_, _), GenericTypeKind::InterfaceObject(_)) => {
+                todo!()
+            }
+            (GenericTypeKind::U64, GenericTypeKind::IndirectCallable(_, _)) => {
+                todo!()
+            }
+            (GenericTypeKind::U8, GenericTypeKind::IndirectCallable(_, _)) => {
+                todo!()
+            }
+            (GenericTypeKind::Pointer(_), GenericTypeKind::IndirectCallable(_, _)) => todo!(),
+            (GenericTypeKind::Struct(_), GenericTypeKind::IndirectCallable(_, _)) => todo!(),
+            (GenericTypeKind::Function(_), GenericTypeKind::IndirectCallable(_, _)) => todo!(),
+            (GenericTypeKind::Interface(_), GenericTypeKind::IndirectCallable(_, _)) => {
+                todo!()
+            }
+            (GenericTypeKind::InterfaceObject(_), GenericTypeKind::IndirectCallable(_, _)) => {
+                todo!()
+            }
         }
     }
 }

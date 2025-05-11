@@ -165,7 +165,22 @@ pub struct Struct {
 #[derive(Debug, Clone)]
 pub struct Impl {
     pub struct_name: Identifier,
+    pub interface_name: Option<Identifier>,
     pub functions: Vec<Function>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionDeclaration {
+    pub name: Identifier,
+    pub arguments: Vec<Argument>,
+    pub return_type: TypeDescription,
+    pub position: SourceSpan,
+}
+
+#[derive(Debug, Clone)]
+pub struct Interface {
+    pub name: Identifier,
+    pub declarations: Vec<FunctionDeclaration>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +188,7 @@ pub enum DeclarationKind {
     Function(Function),
     Struct(Struct),
     Impl(Impl),
+    Interface(Interface),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

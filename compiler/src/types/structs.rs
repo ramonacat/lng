@@ -1,8 +1,11 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+};
 
 use super::{
     AnyType, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues, TypeError,
-    modules::ModuleId,
+    interfaces::InterfaceId, modules::ModuleId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -77,6 +80,7 @@ pub struct Struct<T: AnyType> {
     pub fields: Vec<StructField<T>>,
     pub impls: Vec<FunctionId>,
     pub type_: T,
+    pub implemented_interfaces: HashMap<InterfaceId, HashMap<Identifier, FunctionId>>,
 }
 
 impl<T: AnyType> Struct<T> {
@@ -87,6 +91,10 @@ impl<T: AnyType> Struct<T> {
             .unwrap()
             .type_
             .clone()
+    }
+
+    pub(crate) fn implements(&self, interface_id: InterfaceId) -> bool {
+        self.implemented_interfaces.contains_key(&interface_id)
     }
 }
 
@@ -104,6 +112,8 @@ impl Struct<GenericType> {
                 .collect::<Result<Vec<_>, _>>()?,
             impls: self.impls.clone(),
             type_: self.type_.instantiate(type_argument_values)?,
+            // TODO these should be instantiated as well?
+            implemented_interfaces: self.implemented_interfaces.clone(),
         })
     }
 }

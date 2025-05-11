@@ -17,7 +17,8 @@ lalrpop_mod!(
         clippy::unnecessary_wraps,
         clippy::cloned_instead_of_copied,
         clippy::match_same_arms,
-        clippy::too_many_lines
+        clippy::too_many_lines,
+        clippy::cognitive_complexity
     )]
     grammar
 );

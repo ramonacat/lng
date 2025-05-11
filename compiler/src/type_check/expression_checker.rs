@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::ast;
 use crate::identifier::Identifier;
 use crate::std::TYPE_NAME_STRING;
 use crate::types;
+use crate::{ast, std::TYPE_NAME_U64};
 
 use super::{
     DeclaredFunction, DeclaredRootModule,
@@ -66,7 +66,7 @@ impl<'root> ExpressionChecker<'root> {
                 ast::Literal::String(value, _) => Ok(types::Expression {
                     position,
                     type_: types::GenericType::new(
-                        types::GenericTypeKind::Object {
+                        types::GenericTypeKind::StructObject {
                             type_name: *TYPE_NAME_STRING,
                         },
                         types::TypeArguments::new_empty(),
@@ -86,7 +86,7 @@ impl<'root> ExpressionChecker<'root> {
                 let target = self.type_check_expression(target, locals, module_path)?;
 
                 let (type_, kind) = {
-                    let types::GenericTypeKind::Object {
+                    let types::GenericTypeKind::StructObject {
                         type_name: instantiated_struct_id,
                     } = target.type_.kind()
                     else {
@@ -95,7 +95,7 @@ impl<'root> ExpressionChecker<'root> {
 
                     (
                         types::GenericType::new(
-                            types::GenericTypeKind::Object {
+                            types::GenericTypeKind::StructObject {
                                 type_name: *instantiated_struct_id,
                             },
                             types::TypeArguments::new_empty(),
@@ -113,15 +113,7 @@ impl<'root> ExpressionChecker<'root> {
             ast::ExpressionKind::FieldAccess { target, field_name } => {
                 let target = self.type_check_expression(target, locals, module_path)?;
 
-                let struct_name = target.type_.struct_name();
-
-                let field_type = self
-                    .root_module_declaration
-                    .structs
-                    .borrow()
-                    .get(&struct_name)
-                    .unwrap()
-                    .field_type(*field_name);
+                let field_type = self.field_type(&target.type_, *field_name);
 
                 Ok(types::Expression {
                     position,
@@ -144,43 +136,10 @@ impl<'root> ExpressionChecker<'root> {
         position: ast::SourceSpan,
     ) -> Result<types::Expression<types::GenericType>, TypeCheckError> {
         let checked_target = self.type_check_expression(target, locals, module_path)?;
+        let target_type_kind = checked_target.type_.kind();
 
-        let types::GenericTypeKind::Callable(function_id) = checked_target.type_.kind() else {
-            return Err(
-                TypeCheckErrorDescription::CallingNotCallableItem(checked_target.type_)
-                    .at(position),
-            );
-        };
-
-        let (mut callable_arguments, return_type) = {
-            let root_module = self.root_module_declaration.functions.borrow();
-            if let Some(DeclaredFunction {
-                arguments: callable_arguments,
-                return_type,
-                ..
-            }) = root_module.get(function_id)
-            {
-                (callable_arguments.clone(), return_type.clone())
-            } else if let Some(types::functions::Function {
-                id: _,
-                arguments,
-                return_type,
-                body: _,
-                position: _,
-                visibility: _,
-                module_name: _,
-                type_: _,
-            }) = self
-                .root_module_declaration
-                .predeclared_functions
-                .borrow()
-                .get(function_id)
-            {
-                (arguments.clone(), return_type.clone())
-            } else {
-                panic!("calling unknown function: {function_id}");
-            }
-        };
+        let (mut callable_arguments, return_type) =
+            self.retrieve_callable_info(&checked_target, target_type_kind);
 
         let self_argument = callable_arguments
             .first()
@@ -195,7 +154,7 @@ impl<'root> ExpressionChecker<'root> {
         if passed_arguments.len() + usize::from(self_argument.is_some()) != callable_arguments.len()
         {
             return Err(TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(
-                checked_target.type_.clone(),
+                checked_target.type_,
             )
             .at(position));
         }
@@ -255,6 +214,63 @@ impl<'root> ExpressionChecker<'root> {
         Ok(expression_type)
     }
 
+    fn retrieve_callable_info(
+        &self,
+        checked_target: &types::Expression<types::GenericType>,
+        target_type_kind: &types::GenericTypeKind,
+    ) -> (
+        Vec<types::functions::Argument<types::GenericType>>,
+        types::GenericType,
+    ) {
+        let (callable_arguments, return_type) = {
+            if let types::GenericTypeKind::Callable(function_id) = target_type_kind {
+                let root_module = self.root_module_declaration.functions.borrow();
+                if let Some(DeclaredFunction {
+                    arguments: callable_arguments,
+                    return_type,
+                    ..
+                }) = root_module.get(function_id)
+                {
+                    (callable_arguments.clone(), return_type.clone())
+                } else if let Some(types::functions::Function {
+                    id: _,
+                    arguments,
+                    return_type,
+                    body: _,
+                    position: _,
+                    visibility: _,
+                    module_name: _,
+                    type_: _,
+                }) = self
+                    .root_module_declaration
+                    .predeclared_functions
+                    .borrow()
+                    .get(function_id)
+                {
+                    (arguments.clone(), return_type.clone())
+                } else {
+                    panic!("calling unknown function: {function_id}");
+                }
+            } else if let types::GenericTypeKind::IndirectCallable(interface_id, function_name) =
+                checked_target.type_.kind()
+            {
+                let interfaces = self.root_module_declaration.interfaces.borrow();
+
+                let function = interfaces
+                    .get(interface_id)
+                    .unwrap()
+                    .functions
+                    .get(function_name)
+                    .unwrap();
+
+                (function.arguments.clone(), function.return_type.clone())
+            } else {
+                todo!()
+            }
+        };
+        (callable_arguments, return_type)
+    }
+
     fn type_check_variable_reference(
         &self,
         expression: &ast::Expression,
@@ -292,6 +308,58 @@ impl<'root> ExpressionChecker<'root> {
     pub(crate) const fn new(root_module_declaration: &'root DeclaredRootModule) -> Self {
         Self {
             root_module_declaration,
+        }
+    }
+
+    fn field_type(
+        &self,
+        r#type: &types::GenericType,
+        field_name: Identifier,
+    ) -> types::GenericType {
+        match r#type.kind() {
+            types::GenericTypeKind::Generic(_) => todo!(),
+            types::GenericTypeKind::Unit => todo!(),
+            types::GenericTypeKind::StructObject { type_name } => self
+                .root_module_declaration
+                .structs
+                .borrow()
+                .get(type_name)
+                .map(|x| x.field_type(field_name))
+                .unwrap(),
+            types::GenericTypeKind::Array { .. } => todo!(),
+            types::GenericTypeKind::Callable(_) => todo!(),
+            types::GenericTypeKind::U64 => self
+                .root_module_declaration
+                .structs
+                .borrow()
+                .get(&*TYPE_NAME_U64)
+                .map(|x| x.field_type(field_name))
+                .unwrap(),
+            types::GenericTypeKind::U8 => todo!(),
+            types::GenericTypeKind::Pointer(_) => todo!(),
+            types::GenericTypeKind::Struct(struct_id) => self
+                .root_module_declaration
+                .structs
+                .borrow()
+                .get(struct_id)
+                .map(|x| x.field_type(field_name))
+                .unwrap(),
+            types::GenericTypeKind::Function(_) => todo!(),
+            types::GenericTypeKind::Interface(_) => todo!(),
+            types::GenericTypeKind::InterfaceObject(interface_id) => self
+                .root_module_declaration
+                .interfaces
+                .borrow()
+                .get(interface_id)
+                .map(|i| i.functions.get(&field_name).unwrap())
+                .map(|_| {
+                    types::GenericType::new(
+                        types::GenericTypeKind::IndirectCallable(*interface_id, field_name),
+                        r#type.arguments().clone(),
+                    )
+                })
+                .unwrap(),
+            types::GenericTypeKind::IndirectCallable(_, _) => todo!(),
         }
     }
 }

@@ -205,6 +205,10 @@ impl<'ctx> Value<'ctx> {
                     types::InstantiatedTypeKind::Pointer(_) => todo!(),
                     types::InstantiatedTypeKind::Struct(_) => todo!(),
                     types::InstantiatedTypeKind::Function(_) => todo!(),
+                    types::InstantiatedTypeKind::IndirectCallable(_, _) => {
+                        todo!()
+                    }
+                    types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
                 };
                 context.global_scope.structs.inspect_instantiated(
                     &types::structs::InstantiatedStructId::new(

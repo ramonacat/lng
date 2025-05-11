@@ -134,6 +134,8 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::InstantiatedTypeKind::U8 => todo!(),
                 types::InstantiatedTypeKind::Struct(_) => todo!(),
                 types::InstantiatedTypeKind::Function(_) => todo!(),
+                types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
+                types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
             };
 
             scope.set_value(argument.name, value);

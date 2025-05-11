@@ -40,6 +40,7 @@ impl DefinitionChecker {
             predeclared_functions,
             modules,
             imports: _,
+            interfaces: _,
         } = root_module_declaration;
 
         let mut functions = self.functions.take();
@@ -225,7 +226,13 @@ impl DefinitionChecker {
                     type_,
                 )?;
 
-                if checked_expression.type_ != type_ {
+                if !type_.can_assign_to(&checked_expression.type_, |id| {
+                    self.root_module_declaration
+                        .structs
+                        .borrow()
+                        .get(&id)
+                        .cloned()
+                }) {
                     return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
                         target_variable: *name,
                         variable_type: type_,

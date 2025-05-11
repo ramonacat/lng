@@ -44,6 +44,8 @@ pub(super) fn mangle_type(
                 },
             })
             .unwrap(),
+        types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
+        types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
     }
 }
 

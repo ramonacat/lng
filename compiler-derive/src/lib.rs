@@ -98,8 +98,8 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
                 id: struct_id,
                 type_: crate::types::GenericType::new(crate::types::GenericTypeKind::Struct(struct_id), type_argument_names),
                 fields: vec![#(#fields_gen),*],
-                impls: vec![]
-
+                impls: vec![],
+                implemented_interfaces: std::collections::HashMap::new(),
             }
         }
     }

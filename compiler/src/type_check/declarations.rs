@@ -37,6 +37,9 @@ pub(super) struct DeclaredRootModule {
     pub(super) modules: HashMap<types::modules::ModuleId, types::modules::Module>,
     pub(super) imports:
         HashMap<(types::modules::ModuleId, Identifier), (types::modules::ModuleId, Identifier)>,
+    pub(super) interfaces: RefCell<
+        HashMap<types::interfaces::InterfaceId, types::interfaces::Interface<types::GenericType>>,
+    >,
 }
 
 impl std::fmt::Debug for DeclaredRootModule {
@@ -69,13 +72,15 @@ pub enum ItemKind {
     Struct(types::structs::Struct<GenericType>),
     Function(DeclaredFunction),
     PredeclaredFunction(types::functions::Function<GenericType>),
+    Interface(types::interfaces::Interface<GenericType>),
 }
+
 impl ItemKind {
     pub(crate) fn type_(&self) -> types::GenericType {
         match self {
             // TODO handle generics
             Self::Struct(struct_) => types::GenericType::new(
-                types::GenericTypeKind::Object {
+                types::GenericTypeKind::StructObject {
                     type_name: struct_.id,
                 },
                 struct_.type_.arguments().clone(),
@@ -87,6 +92,10 @@ impl ItemKind {
             Self::PredeclaredFunction(function) => types::GenericType::new(
                 types::GenericTypeKind::Callable(function.id),
                 function.type_.arguments().clone(),
+            ),
+            Self::Interface(interface) => types::GenericType::new(
+                types::GenericTypeKind::InterfaceObject(interface.id),
+                interface.type_.arguments().clone(),
             ),
         }
     }
@@ -100,6 +109,7 @@ impl DeclaredRootModule {
             predeclared_functions: RefCell::new(HashMap::new()),
             modules: HashMap::new(),
             imports: HashMap::new(),
+            interfaces: RefCell::new(HashMap::new()),
         }
     }
 
@@ -117,6 +127,7 @@ impl DeclaredRootModule {
             predeclared_functions: RefCell::new(functions),
             modules: modules.clone(),
             imports: HashMap::new(),
+            interfaces: RefCell::new(HashMap::new()),
         }
     }
 
@@ -166,12 +177,18 @@ impl DeclaredRootModule {
                     .map(|predeclared_function| {
                         ItemKind::PredeclaredFunction(predeclared_function.clone())
                     })
-                    .or_else(|| {
-                        self.structs
-                            .borrow()
-                            .get(&types::structs::StructId::InModule(module_id, name))
-                            .map(|struct_| ItemKind::Struct(struct_.clone()))
-                    })
+            })
+            .or_else(|| {
+                self.structs
+                    .borrow()
+                    .get(&types::structs::StructId::InModule(module_id, name))
+                    .map(|struct_| ItemKind::Struct(struct_.clone()))
+            })
+            .or_else(|| {
+                self.interfaces
+                    .borrow()
+                    .get(&types::interfaces::InterfaceId::InModule(module_id, name))
+                    .map(|interface| ItemKind::Interface(interface.clone()))
             })
     }
 }
@@ -198,12 +215,7 @@ pub(super) fn resolve_type(
         ast::TypeDescription::Named(name) => {
             let (current_module, name) = root_module.resolve_import(current_module, *name);
 
-            let item = root_module
-                .get_item(current_module, name)
-                // TODO should there be a keyword for global scope access instead of this or_else?
-                // TODO if this is a global, we should have the (ModuleId, Identifier) pair here!
-                .or_else(|| root_module.get_item(current_module, name))
-                .unwrap();
+            let item = root_module.get_item(current_module, name).unwrap();
 
             Ok(item.type_())
         }

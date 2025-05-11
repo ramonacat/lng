@@ -738,6 +738,8 @@ impl<'ctx> Compiler<'ctx> {
             types::InstantiatedTypeKind::Pointer(_) => todo!(),
             types::InstantiatedTypeKind::Struct(_) => todo!(),
             types::InstantiatedTypeKind::Function(_) => todo!(),
+            types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
+            types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
         };
         Ok(value)
     }

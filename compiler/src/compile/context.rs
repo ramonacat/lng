@@ -160,6 +160,8 @@ impl<'ctx> CompilerContext<'ctx> {
             }
             types::InstantiatedTypeKind::Struct(_) => todo!(),
             types::InstantiatedTypeKind::Function(_) => todo!(),
+            types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
+            types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
         }
     }
 
