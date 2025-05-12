@@ -121,7 +121,6 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             Value::Primitive(_, _) => todo!(),
             Value::Reference(rc_value) => rc_value.pointee(context, global_scope),
             Value::Function(_) => todo!(),
-            Value::Struct(_) => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
         };
 
@@ -179,7 +178,6 @@ pub enum Value<'ctx> {
     Primitive(types::structs::InstantiatedStructId, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
     Function(types::functions::FunctionId),
-    Struct(types::structs::StructId),
     InstantiatedStruct(types::structs::InstantiatedStructId),
 }
 
@@ -193,7 +191,6 @@ impl Debug for Value<'_> {
                 write!(f, "Rc<{:?}>({})", rc_value.type_(), rc_value.as_ptr())
             }
             Value::Function(function_handle) => write!(f, "{function_handle:?}"),
-            Value::Struct(struct_handle) => write!(f, "{struct_handle:?}"),
             Value::Empty => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
         }
@@ -206,7 +203,6 @@ impl<'ctx> Value<'ctx> {
             Value::Primitive(_, value) => *value,
             Value::Reference(value) => value.as_ptr().as_basic_value_enum(),
             Value::Function(_) => todo!(),
-            Value::Struct(_) => todo!(),
             Value::Empty => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
         }
@@ -267,7 +263,6 @@ impl<'ctx> Value<'ctx> {
                 )
             }
             Value::Function(_) => todo!(),
-            Value::Struct(_) => todo!(),
             Value::Empty => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
         }

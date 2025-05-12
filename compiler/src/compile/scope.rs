@@ -1,13 +1,8 @@
 use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::RwLock};
 
-use inkwell::module::Module;
+use crate::{identifier::Identifier, types};
 
-use crate::{
-    identifier::Identifier,
-    types::{self, GenericType, modules::ModuleId},
-};
-
-use super::{Value, context::AllItems, module::CompiledModule};
+use super::{Value, context::AllItems};
 
 pub struct Scope<'ctx> {
     locals: RwLock<HashMap<Identifier, Value<'ctx>>>,
@@ -80,7 +75,6 @@ impl<'ctx> Scope<'ctx> {
 }
 
 pub struct GlobalScope<'ctx> {
-    modules: HashMap<types::modules::ModuleId, CompiledModule<'ctx>>,
     scope: Rc<Scope<'ctx>>,
     // TODO should it be made private?
     pub structs: AllItems<'ctx>,
@@ -89,11 +83,6 @@ pub struct GlobalScope<'ctx> {
 impl Debug for GlobalScope<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{")?;
-
-        for module in &self.modules {
-            writeln!(f, "  {}: ", module.0)?;
-            module.1.debug_print(f, 1)?;
-        }
 
         writeln!(f, "---STRUCTS---")?;
 
@@ -109,41 +98,22 @@ impl Debug for GlobalScope<'_> {
     }
 }
 
-impl GlobalScope<'_> {
+impl<'ctx> GlobalScope<'ctx> {
     pub(crate) fn new(
-        structs: HashMap<types::structs::StructId, types::structs::Struct<GenericType>>,
-        functions: HashMap<types::functions::FunctionId, types::functions::Function<GenericType>>,
+        structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
+        functions: HashMap<
+            types::functions::FunctionId,
+            types::functions::Function<types::GenericType>,
+        >,
     ) -> Self {
         Self {
-            modules: HashMap::new(),
             scope: Scope::root(),
             structs: AllItems::new(structs, functions),
         }
     }
-}
 
-impl<'ctx> GlobalScope<'ctx> {
-    pub(super) fn get_or_create_module(
-        &mut self,
-        path: types::modules::ModuleId,
-        create_llvm_module: impl FnOnce() -> Module<'ctx>,
-    ) -> &mut CompiledModule<'ctx> {
-        self.modules
-            .entry(path)
-            .or_insert_with(|| CompiledModule::new(self.scope.child(), create_llvm_module()))
-    }
-
-    pub fn get_module(&self, path: types::modules::ModuleId) -> Option<&CompiledModule<'ctx>> {
-        self.modules.get(&path)
-    }
-
-    pub(crate) fn get_value(&self, module: ModuleId, item_name: Identifier) -> Option<Value<'ctx>> {
-        self.modules
-            .get(&module)
-            .and_then(|x| x.get_variable(item_name))
-    }
-
-    pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
-        self.modules.into_values()
+    // TODO should we take care of creating child scopes here, instead of exposing scope()?
+    pub(crate) const fn scope(&self) -> &Rc<Scope<'ctx>> {
+        &self.scope
     }
 }

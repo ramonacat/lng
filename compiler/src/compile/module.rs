@@ -74,10 +74,6 @@ impl<'ctx> CompiledModule<'ctx> {
         self.declare_function_inner(name, arguments, return_type, linkage, context)
     }
 
-    pub(crate) fn set_variable(&self, name: Identifier, value: Value<'ctx>) {
-        self.scope.set_value(name, value);
-    }
-
     pub(crate) fn get_variable(&self, name: Identifier) -> Option<Value<'ctx>> {
         self.scope.get_value(name)
     }

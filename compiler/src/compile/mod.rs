@@ -31,7 +31,7 @@ use crate::{
     ast,
     identifier::{FQName, Identifier},
     std::{TYPE_NAME_STRING, compile_std, runtime::register_mappings},
-    types::{self, modules::ModuleId},
+    types,
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -59,24 +59,29 @@ pub fn compile(
     let context = Context::create();
     let std = compile_std(std_program, &context)?;
 
-    let CompiledRootModule::Library { scope: std_scope } = std else {
+    let CompiledRootModule::Library {
+        scope: std_scope,
+        modules: std_modules,
+    } = std
+    else {
         todo!();
     };
 
-    let compiler = Compiler::new(&context, Some(std_scope));
+    let compiler = Compiler::new(&context, Some(std_scope), Some(std_modules));
 
     let compiled_root_module = compiler.compile(program);
     let root_module = context.create_module("root");
 
     let CompiledRootModule::App {
-        scope: global_scope,
+        scope: _,
         main,
+        modules,
     } = compiled_root_module
     else {
         todo!();
     };
 
-    for module in global_scope.into_modules() {
+    for module in modules.into_modules() {
         println!("{}", module.to_ir());
 
         let finalized = module.finalize();
@@ -116,9 +121,44 @@ pub fn compile(
 
 type RegisterGlobalMappings = Option<Box<dyn FnOnce(&ExecutionEngine, &Module)>>;
 
+#[derive(Debug)]
+pub struct Modules<'ctx> {
+    modules: HashMap<types::modules::ModuleId, CompiledModule<'ctx>>,
+}
+
+impl<'ctx> Modules<'ctx> {
+    pub(super) fn get_or_create(
+        &mut self,
+        path: types::modules::ModuleId,
+        scope: &Rc<Scope<'ctx>>,
+        create_llvm_module: impl FnOnce() -> Module<'ctx>,
+    ) -> &mut CompiledModule<'ctx> {
+        self.modules
+            .entry(path)
+            .or_insert_with(|| CompiledModule::new(scope.child(), create_llvm_module()))
+    }
+
+    #[must_use]
+    pub fn get(&self, path: types::modules::ModuleId) -> Option<&CompiledModule<'ctx>> {
+        self.modules.get(&path)
+    }
+
+    pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
+        self.modules.into_values()
+    }
+
+    #[must_use]
+    fn new() -> Self {
+        Self {
+            modules: HashMap::new(),
+        }
+    }
+}
+
 pub(crate) struct Compiler<'ctx> {
     context: CompilerContext<'ctx>,
     global_scope: GlobalScope<'ctx>,
+    modules: Modules<'ctx>,
 }
 
 #[derive(Debug)]
@@ -220,15 +260,21 @@ impl<'ctx> CompiledFunction<'ctx> {
 pub enum CompiledRootModule<'ctx> {
     App {
         scope: GlobalScope<'ctx>,
+        modules: Modules<'ctx>,
         main: MangledIdentifier,
     },
     Library {
         scope: GlobalScope<'ctx>,
+        modules: Modules<'ctx>,
     },
 }
 
 impl<'ctx> Compiler<'ctx> {
-    pub fn new(context: &'ctx Context, std: Option<GlobalScope<'ctx>>) -> Self {
+    pub fn new(
+        context: &'ctx Context,
+        std: Option<GlobalScope<'ctx>>,
+        modules: Option<Modules<'ctx>>,
+    ) -> Self {
         let builtins = Builtins {
             rc_handle: rc::describe_structure(),
         };
@@ -242,20 +288,10 @@ impl<'ctx> Compiler<'ctx> {
             structs.insert(*TYPE_NAME_STRING, string::describe_structure());
             structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
 
-            let mut scope = GlobalScope::new(structs, HashMap::new());
-
-            let std = scope.get_or_create_module(types::modules::ModuleId::parse("std"), || {
-                context.create_module("std")
-            });
-
-            std.set_variable(
-                Identifier::parse("string"),
-                Value::Struct(*TYPE_NAME_STRING),
-            );
-            std.set_variable(Identifier::parse("array"), Value::Struct(*TYPE_NAME_ARRAY));
-
-            scope
+            GlobalScope::new(structs, HashMap::new())
         });
+
+        let modules = modules.unwrap_or_else(Modules::new);
 
         Self {
             context: CompilerContext {
@@ -264,6 +300,7 @@ impl<'ctx> Compiler<'ctx> {
                 builtins,
             },
             global_scope,
+            modules,
         }
     }
 
@@ -283,8 +320,10 @@ impl<'ctx> Compiler<'ctx> {
         // TODO should the array struct be declared in stdlib, like string?
         structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
 
-        let rc_struct_id =
-            types::structs::StructId::InModule(ModuleId::parse("std"), Identifier::parse("rc"));
+        let rc_struct_id = types::structs::StructId::InModule(
+            types::modules::ModuleId::parse("std"),
+            Identifier::parse("rc"),
+        );
         structs.insert(rc_struct_id, rc::describe_structure());
 
         self.global_scope.structs = AllItems::new(structs, functions);
@@ -312,10 +351,12 @@ impl<'ctx> Compiler<'ctx> {
 
             CompiledRootModule::App {
                 scope: self.global_scope,
+                modules: self.modules,
                 main: mangled_main,
             }
         } else {
             CompiledRootModule::Library {
+                modules: self.modules,
                 scope: self.global_scope,
             }
         }
@@ -325,11 +366,12 @@ impl<'ctx> Compiler<'ctx> {
         &mut self,
         module_path: types::modules::ModuleId,
     ) -> &mut CompiledModule<'ctx> {
-        self.global_scope.get_or_create_module(module_path, || {
-            self.context
-                .llvm_context
-                .create_module(mangle_module_id(module_path).as_str())
-        })
+        self.modules
+            .get_or_create(module_path, self.global_scope.scope(), || {
+                self.context
+                    .llvm_context
+                    .create_module(mangle_module_id(module_path).as_str())
+            })
     }
 
     fn compile_function(
@@ -344,7 +386,7 @@ impl<'ctx> Compiler<'ctx> {
 
         self.get_or_create_module(module_path);
 
-        let module = self.global_scope.get_module(module_path).unwrap();
+        let module = self.modules.get(module_path).unwrap();
 
         let mut compiled_function =
             module.begin_compile_function(handle, &self.context, &self.global_scope);
@@ -365,7 +407,6 @@ impl<'ctx> Compiler<'ctx> {
                         Value::Reference(rc_value) => rc_value.as_ptr() != x.as_ptr(),
                         Value::Primitive(_, _)
                         | Value::Function(_)
-                        | Value::Struct(_)
                         | Value::InstantiatedStruct(_)
                         | Value::Empty => true,
                     }
@@ -488,9 +529,6 @@ impl<'ctx> Compiler<'ctx> {
                     Value::InstantiatedStruct(struct_) => {
                         (struct_.id(), struct_.argument_values().clone())
                     }
-                    Value::Struct(struct_id) => {
-                        (*struct_id, types::TypeArgumentValues::new_empty())
-                    }
                 };
                 // TODO ensure the struct is instantiated in the context
                 // TODO get the type argument values from the expression!
@@ -560,55 +598,59 @@ impl<'ctx> Compiler<'ctx> {
         name: Identifier,
     ) -> Option<Value<'ctx>> {
         // TODO there should be something on the global_scope to receive a value by FQN
-        let value = self
-            .global_scope
-            .get_value(module_id, name)
-            .or_else(|| {
-                let function_id = types::functions::FunctionId::InModule(module_id, name);
+        let value = {
+            let this = &self.modules;
+            this.modules
+                .get(&module_id)
+                .and_then(|x| x.get_variable(name))
+        }
+        .or_else(|| {
+            let function_id = types::functions::FunctionId::InModule(module_id, name);
 
-                self.global_scope.structs.inspect_instantiated_function(
-                    &types::functions::InstantiatedFunctionId::new(
-                        function_id,
-                        // TODO we need to ensure during typecheck that we won't get
-                        // here without the right TypeArgumentValues
-                        types::TypeArgumentValues::new_empty(),
-                    ),
-                    |f_| {
-                        f_.map(|x| {
-                            self.global_scope
-                                .get_module(module_id)
-                                .unwrap()
-                                .get_or_create_function(x, &self.context, &self.global_scope);
+            self.global_scope.structs.inspect_instantiated_function(
+                &types::functions::InstantiatedFunctionId::new(
+                    function_id,
+                    // TODO we need to ensure during typecheck that we won't get
+                    // here without the right TypeArgumentValues
+                    types::TypeArgumentValues::new_empty(),
+                ),
+                |f_| {
+                    f_.map(|x| {
+                        self.modules.get(module_id).unwrap().get_or_create_function(
+                            x,
+                            &self.context,
+                            &self.global_scope,
+                        );
 
-                            Value::Function(function_id)
-                        })
-                    },
-                )
-            })
-            .or_else(|| {
-                let struct_id = types::structs::StructId::InModule(module_id, name);
+                        Value::Function(function_id)
+                    })
+                },
+            )
+        })
+        .or_else(|| {
+            let struct_id = types::structs::StructId::InModule(module_id, name);
 
-                self.global_scope.structs.inspect_instantiated(
-                    &types::structs::InstantiatedStructId::new(
-                        struct_id,
-                        types::TypeArgumentValues::new_empty(),
-                    ),
-                    |s_| {
-                        s_.map(|x| {
-                            let types::InstantiatedTypeKind::Struct(x) = x.definition.type_.kind()
-                            else {
-                                todo!();
-                            };
-                            let instantiated_struct_id = types::structs::InstantiatedStructId::new(
-                                struct_id,
-                                x.argument_values().clone(),
-                            );
+            self.global_scope.structs.inspect_instantiated(
+                &types::structs::InstantiatedStructId::new(
+                    struct_id,
+                    types::TypeArgumentValues::new_empty(),
+                ),
+                |s_| {
+                    s_.map(|x| {
+                        let types::InstantiatedTypeKind::Struct(x) = x.definition.type_.kind()
+                        else {
+                            todo!();
+                        };
+                        let instantiated_struct_id = types::structs::InstantiatedStructId::new(
+                            struct_id,
+                            x.argument_values().clone(),
+                        );
 
-                            Value::InstantiatedStruct(instantiated_struct_id)
-                        })
-                    },
-                )
-            });
+                        Value::InstantiatedStruct(instantiated_struct_id)
+                    })
+                },
+            )
+        });
         value
     }
 
@@ -657,7 +699,6 @@ impl<'ctx> Compiler<'ctx> {
             Value::Empty => todo!(),
             Value::Primitive(_, _) => todo!(),
             Value::Reference(_) => todo!(),
-            Value::Struct(_) => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
         };
 
@@ -673,8 +714,8 @@ impl<'ctx> Compiler<'ctx> {
             });
 
         if !self
-            .global_scope
-            .get_module(definition.module_name)
+            .modules
+            .get(definition.module_name)
             .unwrap()
             .has_function(&mangle_type(&definition.type_, &self.global_scope))
         {
@@ -682,8 +723,8 @@ impl<'ctx> Compiler<'ctx> {
         }
 
         let function_value = self
-            .global_scope
-            .get_module(module_path)
+            .modules
+            .get(module_path)
             .unwrap()
             .get_or_create_function(&definition, &self.context, &self.global_scope);
 
@@ -705,9 +746,6 @@ impl<'ctx> Compiler<'ctx> {
                 Value::Primitive(_, v) => v.as_basic_value_enum().into(),
                 Value::Reference(rc_value) => rc_value.as_ptr().as_basic_value_enum().into(),
                 Value::Function(_) => todo!("implement passing callables as arguments"),
-                Value::Struct(_) => {
-                    todo!("implement passing struct definitions as arguments")
-                }
                 Value::Empty => todo!(),
                 Value::InstantiatedStruct(_) => todo!(),
             })
