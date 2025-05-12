@@ -130,12 +130,12 @@ impl<'ctx> Modules<'ctx> {
     pub(super) fn get_or_create(
         &mut self,
         path: types::modules::ModuleId,
-        scope: &Rc<Scope<'ctx>>,
+        scope: Rc<Scope<'ctx>>,
         create_llvm_module: impl FnOnce() -> Module<'ctx>,
     ) -> &mut CompiledModule<'ctx> {
         self.modules
             .entry(path)
-            .or_insert_with(|| CompiledModule::new(scope.child(), create_llvm_module()))
+            .or_insert_with(|| CompiledModule::new(scope, create_llvm_module()))
     }
 
     #[must_use]
@@ -376,7 +376,7 @@ impl<'ctx> Compiler<'ctx> {
         module_path: types::modules::ModuleId,
     ) -> &mut CompiledModule<'ctx> {
         self.modules
-            .get_or_create(module_path, self.global_scope.scope(), || {
+            .get_or_create(module_path, self.global_scope.child(), || {
                 self.context
                     .llvm_context
                     .create_module(mangle_module_id(module_path).as_str())

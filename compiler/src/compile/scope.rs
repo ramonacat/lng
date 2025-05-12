@@ -112,8 +112,7 @@ impl<'ctx> GlobalScope<'ctx> {
         }
     }
 
-    // TODO should we take care of creating child scopes here, instead of exposing scope()?
-    pub(crate) const fn scope(&self) -> &Rc<Scope<'ctx>> {
-        &self.scope
+    pub(super) fn child(&self) -> Rc<Scope<'ctx>> {
+        self.scope.child()
     }
 }
