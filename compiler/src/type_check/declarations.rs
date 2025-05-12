@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{
     ast,
@@ -25,7 +25,6 @@ pub(super) struct DeclaredStructField {
     pub(super) static_: bool,
 }
 
-// TODO can we kill the RefCells and let the borrowck do the borrowck?
 pub(super) struct DeclaredRootModule {
     // TODO make the fields private
     pub(super) structs:
@@ -36,9 +35,8 @@ pub(super) struct DeclaredRootModule {
     pub(super) modules: HashMap<types::modules::ModuleId, types::modules::Module>,
     pub(super) imports:
         HashMap<(types::modules::ModuleId, Identifier), (types::modules::ModuleId, Identifier)>,
-    pub(super) interfaces: RefCell<
+    pub(super) interfaces:
         HashMap<types::interfaces::InterfaceId, types::interfaces::Interface<types::GenericType>>,
-    >,
 }
 
 impl std::fmt::Debug for DeclaredRootModule {
@@ -109,7 +107,7 @@ impl DeclaredRootModule {
             predeclared_functions: HashMap::new(),
             modules: HashMap::new(),
             imports: HashMap::new(),
-            interfaces: RefCell::new(HashMap::new()),
+            interfaces: HashMap::new(),
         }
     }
 
@@ -127,7 +125,7 @@ impl DeclaredRootModule {
             predeclared_functions: functions,
             modules: modules.clone(),
             imports: HashMap::new(),
-            interfaces: RefCell::new(HashMap::new()),
+            interfaces: HashMap::new(),
         }
     }
 
@@ -183,7 +181,6 @@ impl DeclaredRootModule {
             })
             .or_else(|| {
                 self.interfaces
-                    .borrow()
                     .get(&types::interfaces::InterfaceId::InModule(module_id, name))
                     .map(|interface| ItemKind::Interface(interface.clone()))
             })

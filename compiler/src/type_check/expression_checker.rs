@@ -268,7 +268,7 @@ impl<'root> ExpressionChecker<'root> {
             } else if let types::GenericTypeKind::IndirectCallable(interface_id, function_name) =
                 checked_target.type_.kind()
             {
-                let interfaces = self.root_module_declaration.interfaces.borrow();
+                let interfaces = &self.root_module_declaration.interfaces;
 
                 let function = interfaces
                     .get(interface_id)
@@ -360,7 +360,6 @@ impl<'root> ExpressionChecker<'root> {
             types::GenericTypeKind::InterfaceObject(interface_id) => self
                 .root_module_declaration
                 .interfaces
-                .borrow()
                 .get(interface_id)
                 .map(|i| i.functions.get(&field_name).unwrap())
                 .map(|_| {

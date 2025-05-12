@@ -268,7 +268,7 @@ impl DeclarationChecker {
     }
 
     fn type_check_interface(
-        &self,
+        &mut self,
         module_path: ModuleId,
         interface: &ast::Interface,
     ) -> Result<(), TypeCheckError> {
@@ -293,7 +293,7 @@ impl DeclarationChecker {
             );
         }
 
-        self.root_module_declaration.interfaces.borrow_mut().insert(
+        self.root_module_declaration.interfaces.insert(
             interface_id,
             types::interfaces::Interface {
                 id: interface_id,
