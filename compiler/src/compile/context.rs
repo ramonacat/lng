@@ -45,7 +45,6 @@ impl<'ctx> AllItems<'ctx> {
         }
     }
 
-    // TODO rename all the methods of this struct to sensible things
     pub(crate) fn get_struct(
         &self,
         handle: &types::structs::InstantiatedStructId,
@@ -104,20 +103,6 @@ impl<'ctx> AllItems<'ctx> {
 
                 instantiated
             });
-    }
-
-    pub(crate) fn get_function(
-        &self,
-        id: types::functions::FunctionId,
-    ) -> Option<&types::functions::Function<types::GenericType>> {
-        self.functions.get(&id)
-    }
-
-    pub(crate) fn get_instantiated_function(
-        &self,
-        instantiated_function_id: &types::functions::InstantiatedFunctionId,
-    ) -> Option<&types::functions::Function<types::InstantiatedType>> {
-        self.instantiated_functions.get(instantiated_function_id)
     }
 }
 

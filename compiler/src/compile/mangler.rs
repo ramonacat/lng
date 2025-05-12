@@ -1,4 +1,3 @@
-use super::scope::GlobalScope;
 use crate::types;
 use crate::{
     identifier::Identifier,
@@ -6,10 +5,7 @@ use crate::{
 };
 use std::fmt::Write;
 
-pub(super) fn mangle_type(
-    type_: &types::InstantiatedType,
-    global_scope: &GlobalScope,
-) -> MangledIdentifier {
+pub(super) fn mangle_type(type_: &types::InstantiatedType) -> MangledIdentifier {
     match type_.kind() {
         types::InstantiatedTypeKind::Unit => todo!(),
         types::InstantiatedTypeKind::Object { .. } => todo!(),
@@ -19,32 +15,23 @@ pub(super) fn mangle_type(
         types::InstantiatedTypeKind::U8 => todo!(),
         types::InstantiatedTypeKind::Pointer(_) => todo!(),
         types::InstantiatedTypeKind::Struct(_) => todo!(),
-        // TODO can we stop accessing global_scope here somehow? maybe let the compiler decide
-        // whether or not to mangle?
-        types::InstantiatedTypeKind::Function(instantiated_function_id) => global_scope
-            .structs
-            .get_function(instantiated_function_id.id())
-            .map(|function| match function.body {
-                types::functions::FunctionBody::Extern(identifier) => {
-                    nomangle_identifier(identifier)
-                }
-                types::functions::FunctionBody::Statements(_) => match function.id {
-                    types::functions::FunctionId::InModule(module_id, fqname) => mangle_item_name(
-                        module_id,
-                        fqname,
+        types::InstantiatedTypeKind::Function(instantiated_function_id) => {
+            match instantiated_function_id.id() {
+                types::functions::FunctionId::InModule(module_id, identifier) => mangle_item_name(
+                    module_id,
+                    identifier,
+                    instantiated_function_id.argument_values(),
+                    IdentifierKind::Function(instantiated_function_id.id()),
+                ),
+                types::functions::FunctionId::InStruct(struct_id, identifier) => {
+                    mangle_struct_item_name(
+                        struct_id,
+                        identifier,
                         instantiated_function_id.argument_values(),
-                        IdentifierKind::Function(function.id),
-                    ),
-                    types::functions::FunctionId::InStruct(struct_id, identifier) => {
-                        mangle_struct_item_name(
-                            struct_id,
-                            identifier,
-                            instantiated_function_id.argument_values(),
-                        )
-                    }
-                },
-            })
-            .unwrap(),
+                    )
+                }
+            }
+        }
         types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
         types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
     }
@@ -75,6 +62,13 @@ pub struct MangledIdentifier {
 impl MangledIdentifier {
     pub(crate) fn as_str(&self) -> &str {
         self.mangled.as_str()
+    }
+
+    pub(crate) fn new_raw(identifier: Identifier) -> Self {
+        Self {
+            mangled: identifier.raw(),
+            source: IdentifierKind::Identifier(identifier),
+        }
     }
 }
 
@@ -126,12 +120,5 @@ fn mangle_struct_id(
             tav,
             IdentifierKind::Struct(struct_id),
         ),
-    }
-}
-
-fn nomangle_identifier(identifier: Identifier) -> MangledIdentifier {
-    MangledIdentifier {
-        mangled: identifier.raw(),
-        source: IdentifierKind::Identifier(identifier),
     }
 }

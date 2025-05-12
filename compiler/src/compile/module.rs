@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{collections::HashSet, rc::Rc};
 
 use super::{
     CompiledFunction, Scope, Value, builtins,
@@ -29,6 +29,7 @@ impl types::functions::Function<types::InstantiatedType> {
 pub struct CompiledModule<'ctx> {
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
+    functions: HashSet<types::InstantiatedType>,
 }
 
 impl std::fmt::Debug for CompiledModule<'_> {
@@ -38,8 +39,12 @@ impl std::fmt::Debug for CompiledModule<'_> {
 }
 
 impl<'ctx> CompiledModule<'ctx> {
-    pub const fn new(scope: Rc<Scope<'ctx>>, llvm_module: Module<'ctx>) -> Self {
-        Self { llvm_module, scope }
+    pub fn new(scope: Rc<Scope<'ctx>>, llvm_module: Module<'ctx>) -> Self {
+        Self {
+            llvm_module,
+            scope,
+            functions: HashSet::new(),
+        }
     }
 
     pub fn to_ir(&self) -> String {
@@ -79,15 +84,17 @@ impl<'ctx> CompiledModule<'ctx> {
     }
 
     pub(crate) fn begin_compile_function(
-        &self,
+        &mut self,
         function: &types::functions::Function<types::InstantiatedType>,
         context: &CompilerContext<'ctx>,
         global_scope: &mut GlobalScope<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
+        self.functions.insert(function.type_.clone());
+
         let mut rcs = vec![];
         let scope = self.scope.child();
 
-        let llvm_function = self.get_or_create_function(function, context, global_scope);
+        let llvm_function = self.get_or_create_function(function, context);
 
         let entry_block = context
             .llvm_context
@@ -164,19 +171,21 @@ impl<'ctx> CompiledModule<'ctx> {
         self.llvm_module
     }
 
-    pub(crate) fn has_function(&self, name: &MangledIdentifier) -> bool {
-        self.llvm_module
-            .get_function(name.as_str())
-            .is_some_and(|x| x.count_basic_blocks() > 0)
+    pub(crate) fn has_function(&self, type_: &types::InstantiatedType) -> bool {
+        self.functions.contains(type_)
     }
 
     pub(crate) fn get_or_create_function(
         &self,
         handle: &types::functions::Function<types::InstantiatedType>,
         context: &CompilerContext<'ctx>,
-        global_scope: &GlobalScope<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let mangled_name = mangle_type(&handle.type_, global_scope);
+        let mangled_name = match &handle.body {
+            types::functions::FunctionBody::Extern(identifier) => {
+                MangledIdentifier::new_raw(*identifier)
+            }
+            types::functions::FunctionBody::Statements(_) => mangle_type(&handle.type_),
+        };
 
         self.llvm_module
             .get_function(mangled_name.as_str())

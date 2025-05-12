@@ -143,6 +143,13 @@ impl<'ctx> Modules<'ctx> {
         self.modules.get(&path)
     }
 
+    fn get_mut(
+        &mut self,
+        module_path: types::modules::ModuleId,
+    ) -> Option<&mut CompiledModule<'ctx>> {
+        self.modules.get_mut(&module_path)
+    }
+
     pub fn into_modules(self) -> impl Iterator<Item = CompiledModule<'ctx>> {
         self.modules.into_values()
     }
@@ -349,7 +356,7 @@ impl<'ctx> Compiler<'ctx> {
                 .unwrap()
                 .clone();
             self.compile_function(&main).unwrap();
-            let mangled_main = mangle_type(&main.type_, &self.global_scope);
+            let mangled_main = mangle_type(&main.type_);
 
             CompiledRootModule::App {
                 scope: self.global_scope,
@@ -388,7 +395,7 @@ impl<'ctx> Compiler<'ctx> {
 
         self.get_or_create_module(module_path);
 
-        let module = self.modules.get(module_path).unwrap();
+        let module = self.modules.get_mut(module_path).unwrap();
 
         let mut compiled_function =
             module.begin_compile_function(handle, &self.context, &mut self.global_scope);
@@ -620,16 +627,12 @@ impl<'ctx> Compiler<'ctx> {
             );
             self.global_scope
                 .structs
-                .get_or_instantiate_function(&instantiated_function_id);
-            self.global_scope
-                .structs
-                .get_instantiated_function(&instantiated_function_id)
+                .get_or_instantiate_function(&instantiated_function_id)
                 .map(|x| {
-                    self.modules.get(module_id).unwrap().get_or_create_function(
-                        x,
-                        &self.context,
-                        &self.global_scope,
-                    );
+                    self.modules
+                        .get_mut(module_id)
+                        .unwrap()
+                        .get_or_create_function(x, &self.context);
 
                     Value::Function(function_id)
                 })
@@ -721,16 +724,16 @@ impl<'ctx> Compiler<'ctx> {
             .modules
             .get(definition.module_name)
             .unwrap()
-            .has_function(&mangle_type(&definition.type_, &self.global_scope))
+            .has_function(&definition.type_)
         {
             self.compile_function(&definition).unwrap();
         }
 
         let function_value = self
             .modules
-            .get(module_path)
+            .get_mut(module_path)
             .unwrap()
-            .get_or_create_function(&definition, &self.context, &self.global_scope);
+            .get_or_create_function(&definition, &self.context);
 
         self.context
             .builder
