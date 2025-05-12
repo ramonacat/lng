@@ -259,7 +259,6 @@ impl<'root> ExpressionChecker<'root> {
                 }) = self
                     .root_module_declaration
                     .predeclared_functions
-                    .borrow()
                     .get(function_id)
                 {
                     (arguments.clone(), return_type.clone())

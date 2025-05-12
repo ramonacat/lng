@@ -45,7 +45,7 @@ impl DefinitionChecker {
 
         let mut functions = self.functions.take();
 
-        for (name, function) in predeclared_functions.take() {
+        for (name, function) in predeclared_functions {
             functions.insert(name, function);
         }
 

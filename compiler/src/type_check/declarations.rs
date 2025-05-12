@@ -31,9 +31,8 @@ pub(super) struct DeclaredRootModule {
     pub(super) structs:
         HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
     pub(super) functions: HashMap<types::functions::FunctionId, DeclaredFunction>,
-    pub(super) predeclared_functions: RefCell<
+    pub(super) predeclared_functions:
         HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
-    >,
     pub(super) modules: HashMap<types::modules::ModuleId, types::modules::Module>,
     pub(super) imports:
         HashMap<(types::modules::ModuleId, Identifier), (types::modules::ModuleId, Identifier)>,
@@ -58,7 +57,7 @@ impl std::fmt::Debug for DeclaredRootModule {
 
         writeln!(f, "predeclared_functions")?;
 
-        for function in self.predeclared_functions.borrow().keys() {
+        for function in self.predeclared_functions.keys() {
             writeln!(f, "    {function}")?;
         }
 
@@ -107,7 +106,7 @@ impl DeclaredRootModule {
             structs: HashMap::new(),
             functions: HashMap::new(),
 
-            predeclared_functions: RefCell::new(HashMap::new()),
+            predeclared_functions: HashMap::new(),
             modules: HashMap::new(),
             imports: HashMap::new(),
             interfaces: RefCell::new(HashMap::new()),
@@ -125,7 +124,7 @@ impl DeclaredRootModule {
         Self {
             structs,
             functions: HashMap::new(),
-            predeclared_functions: RefCell::new(functions),
+            predeclared_functions: functions,
             modules: modules.clone(),
             imports: HashMap::new(),
             interfaces: RefCell::new(HashMap::new()),
@@ -172,7 +171,6 @@ impl DeclaredRootModule {
             .map(|function| ItemKind::Function(function.clone()))
             .or_else(|| {
                 self.predeclared_functions
-                    .borrow()
                     .get(&types::functions::FunctionId::InModule(module_id, name))
                     .map(|predeclared_function| {
                         ItemKind::PredeclaredFunction(predeclared_function.clone())
