@@ -13,7 +13,7 @@ use functions::{FunctionId, InstantiatedFunctionId};
 use interfaces::InterfaceId;
 use itertools::Itertools;
 use modules::ModuleId;
-use structs::{InstantiatedStructId, Struct, StructId};
+use structs::{FieldValue, InstantiatedStructId, Struct, StructId};
 use thiserror::Error;
 
 use crate::{ast, identifier::Identifier};
@@ -301,7 +301,6 @@ impl GenericType {
         self.type_argument_values.set(argument, value);
     }
 
-    // TODO this potentially can return an error (if arguments are missing)!
     pub(crate) fn instantiate(
         &self,
         type_argument_values: &TypeArgumentValues<InstantiatedType>,
@@ -623,7 +622,7 @@ pub enum ExpressionKind<T: AnyType> {
     Literal(Literal),
     LocalVariableAccess(Identifier),
     GlobalVariableAccess(ModuleId, Identifier),
-    StructConstructor(Box<Expression<T>>),
+    StructConstructor(Box<Expression<T>>, Vec<FieldValue<T>>),
     FieldAccess {
         target: Box<Expression<T>>,
         field: Identifier,
@@ -660,10 +659,14 @@ impl Expression<GenericType> {
                 ExpressionKind::GlobalVariableAccess(module_id, identifier) => {
                     ExpressionKind::GlobalVariableAccess(*module_id, *identifier)
                 }
-                ExpressionKind::StructConstructor(instantiated_struct_id) => {
-                    ExpressionKind::StructConstructor(Box::new(
-                        instantiated_struct_id.instantiate(type_argument_values)?,
-                    ))
+                ExpressionKind::StructConstructor(instantiated_struct_id, field_values) => {
+                    ExpressionKind::StructConstructor(
+                        Box::new(instantiated_struct_id.instantiate(type_argument_values)?),
+                        field_values
+                            .iter()
+                            .map(|x| x.instantiate(type_argument_values))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    )
                 }
                 ExpressionKind::FieldAccess { target, field } => ExpressionKind::FieldAccess {
                     target: Box::new(target.instantiate(type_argument_values)?),

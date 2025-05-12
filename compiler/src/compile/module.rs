@@ -112,7 +112,7 @@ impl<'ctx> CompiledModule<'ctx> {
                                 *id,
                                 type_argument_values.clone(),
                             ),
-                            |x| x.unwrap().definition.type_.clone(),
+                            |x| x.unwrap().definition.instance_type(),
                         ),
                     );
                     rcs.push(rc.clone());

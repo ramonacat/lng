@@ -13,7 +13,7 @@ use crate::{
         value::{InstantiatedStructType, StructInstance},
     },
     identifier::Identifier,
-    types,
+    types::{self, structs::InstantiatedStructId},
 };
 
 #[derive(BuiltinStruct)]
@@ -30,6 +30,7 @@ pub struct BuiltinRc<TPointee> {
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
     value_type: types::InstantiatedType,
+    instantiated_struct_id: InstantiatedStructId,
 }
 
 static REFCOUNT_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("refcount"));
@@ -57,19 +58,25 @@ impl<'ctx> RcValue<'ctx> {
             types::TypeArgument::new(Identifier::parse("TPointee")),
             struct_instance.type_(),
         );
-        let rc = InstantiatedStructType::new(
-            context
-                .builtins
-                .rc_handle
-                .instantiate(&types::TypeArgumentValues::new(tav))
-                .unwrap(),
-            HashMap::new(),
-        )
-        .build_heap_instance(context, name, field_values);
+
+        let instantiated_struct_id = InstantiatedStructId::new(
+            types::structs::StructId::InModule(
+                types::modules::ModuleId::parse("std"),
+                Identifier::parse("rc"),
+            ),
+            types::TypeArgumentValues::new(tav),
+        );
+        let rc = context
+            .global_scope
+            .structs
+            .inspect_instantiated(&instantiated_struct_id, |s_| {
+                s_.unwrap().build_heap_instance(context, name, field_values)
+            });
 
         Self {
             pointer: rc,
             value_type: struct_instance.type_(),
+            instantiated_struct_id,
         }
     }
 
@@ -79,19 +86,45 @@ impl<'ctx> RcValue<'ctx> {
     }
 
     #[must_use]
-    pub const fn from_pointer(
-        pointer: PointerValue<'ctx>,
-        value_type: types::InstantiatedType,
-    ) -> Self {
+    pub fn from_pointer(pointer: PointerValue<'ctx>, value_type: types::InstantiatedType) -> Self {
+        let mut tav = HashMap::new();
+        tav.insert(
+            types::TypeArgument::new(Identifier::parse("TPointee")),
+            value_type.clone(),
+        );
+        let instantiated_struct_id = InstantiatedStructId::new(
+            types::structs::StructId::InModule(
+                types::modules::ModuleId::parse("std"),
+                Identifier::parse("rc"),
+            ),
+            types::TypeArgumentValues::new(tav),
+        );
         RcValue {
             pointer,
             value_type,
+            instantiated_struct_id,
         }
     }
 
     #[must_use]
     pub(crate) fn type_(&self) -> types::InstantiatedType {
         self.value_type.clone()
+    }
+
+    pub(crate) fn pointee(&self, context: &CompilerContext<'ctx>) -> PointerValue<'ctx> {
+        context
+            .global_scope
+            .structs
+            .inspect_instantiated(&self.instantiated_struct_id, |s_| {
+                s_.unwrap()
+                    .build_field_load(
+                        *POINTEE_FIELD,
+                        self.pointer,
+                        &unique_name(&["rc", "pointee"]),
+                        context,
+                    )
+                    .into_pointer_value()
+            })
     }
 }
 

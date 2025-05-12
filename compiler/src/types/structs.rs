@@ -4,8 +4,8 @@ use std::{
 };
 
 use super::{
-    AnyType, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues, TypeError,
-    interfaces::InterfaceId, modules::ModuleId,
+    AnyType, Expression, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues,
+    TypeError, interfaces::InterfaceId, modules::ModuleId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -13,6 +13,23 @@ pub struct StructDescriptorType<T: AnyType> {
     pub id: StructId,
     // the fields are a Vec<_>, so that the order is well defined
     pub fields: Vec<StructField<T>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldValue<T: AnyType> {
+    pub name: Identifier,
+    pub value: Expression<T>,
+}
+impl FieldValue<GenericType> {
+    pub(crate) fn instantiate(
+        &self,
+        type_argument_values: &TypeArgumentValues<InstantiatedType>,
+    ) -> Result<FieldValue<InstantiatedType>, TypeError> {
+        Ok(FieldValue {
+            name: self.name,
+            value: self.value.instantiate(type_argument_values)?,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -80,6 +97,7 @@ pub struct Struct<T: AnyType> {
     pub fields: Vec<StructField<T>>,
     pub impls: Vec<FunctionId>,
     pub type_: T,
+    pub instance_type: T,
     pub implemented_interfaces: HashMap<InterfaceId, HashMap<Identifier, FunctionId>>,
 }
 
@@ -95,6 +113,10 @@ impl<T: AnyType> Struct<T> {
 
     pub(crate) fn implements(&self, interface_id: InterfaceId) -> bool {
         self.implemented_interfaces.contains_key(&interface_id)
+    }
+
+    pub(crate) fn instance_type(&self) -> T {
+        self.instance_type.clone()
     }
 }
 
@@ -112,6 +134,7 @@ impl Struct<GenericType> {
                 .collect::<Result<Vec<_>, _>>()?,
             impls: self.impls.clone(),
             type_: self.type_.instantiate(type_argument_values)?,
+            instance_type: self.instance_type.instantiate(type_argument_values)?,
             // TODO these should be instantiated as well?
             implemented_interfaces: self.implemented_interfaces.clone(),
         })

@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::{identifier::Identifier, types};
 
-use super::{builtins::rc::RcValue, context::CompilerContext};
+use super::{builtins::rc::RcValue, context::CompilerContext, unique_name};
 
 pub struct InstantiatedStructType<'ctx> {
     pub(crate) definition: types::structs::Struct<types::InstantiatedType>,
@@ -105,8 +105,9 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     // TODO this should be integrated with build_field_load perhaps?
     pub(crate) fn read_field_value(
         &self,
-        _instance: Value<'ctx>,
+        instance: Value<'ctx>,
         name: Identifier,
+        context: &CompilerContext<'ctx>,
     ) -> Option<Value<'ctx>> {
         let field = self.definition.fields.iter().find(|f| f.name == name)?;
 
@@ -114,7 +115,39 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             return self.static_field_values.get(&name).cloned();
         }
 
-        todo!("support reading non-static fields!");
+        let instance_ptr = match instance {
+            Value::Empty => todo!(),
+            Value::Primitive(_, _) => todo!(),
+            Value::Reference(rc_value) => rc_value.pointee(context),
+            Value::Function(_) => todo!(),
+            Value::Struct(_) => todo!(),
+            Value::InstantiatedStruct(_) => todo!(),
+        };
+
+        let raw_result = self.build_field_load(
+            field.name,
+            instance_ptr,
+            &unique_name(&["field_read", &field.name.raw()]),
+            context,
+        );
+        let result = match field.type_.kind() {
+            types::InstantiatedTypeKind::Unit => todo!(),
+            types::InstantiatedTypeKind::Object { .. } => Value::Reference(RcValue::from_pointer(
+                raw_result.into_pointer_value(),
+                field.type_.clone(),
+            )),
+            types::InstantiatedTypeKind::Array { .. } => todo!(),
+            types::InstantiatedTypeKind::Callable(_) => todo!(),
+            types::InstantiatedTypeKind::U64 => todo!(),
+            types::InstantiatedTypeKind::U8 => todo!(),
+            types::InstantiatedTypeKind::Pointer(_) => todo!(),
+            types::InstantiatedTypeKind::Struct(_) => todo!(),
+            types::InstantiatedTypeKind::Function(_) => todo!(),
+            types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
+            types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
+        };
+
+        Some(result)
     }
 
     pub(crate) fn new(
@@ -184,12 +217,16 @@ impl<'ctx> Value<'ctx> {
         context: &CompilerContext<'ctx>,
     ) -> Option<Self> {
         match self {
-            Value::Primitive(struct_id, _) => context
-                .global_scope
-                .structs
-                .inspect_instantiated(struct_id, |struct_| {
-                    struct_.unwrap().read_field_value(self.clone(), field_path)
-                }),
+            Value::Primitive(struct_id, _) => {
+                context
+                    .global_scope
+                    .structs
+                    .inspect_instantiated(struct_id, |struct_| {
+                        struct_
+                            .unwrap()
+                            .read_field_value(self.clone(), field_path, context)
+                    })
+            }
             Value::Reference(ref_) => {
                 let ref_type = ref_.type_();
                 let (struct_id, type_argument_values) = match ref_type.kind() {
@@ -215,7 +252,11 @@ impl<'ctx> Value<'ctx> {
                         struct_id,
                         type_argument_values.clone(),
                     ),
-                    |struct_| struct_.unwrap().read_field_value(self.clone(), field_path),
+                    |struct_| {
+                        struct_
+                            .unwrap()
+                            .read_field_value(self.clone(), field_path, context)
+                    },
                 )
             }
             Value::Function(_) => todo!(),

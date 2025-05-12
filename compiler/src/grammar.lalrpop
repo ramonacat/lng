@@ -40,10 +40,30 @@ Visibility: ast::Visibility = {
     <e:(<"export">)?> => if e.is_some() { ast::Visibility::Export } else { ast::Visibility::Internal },
 }
 
-StructDeclaration: ast::Struct = {
-    <start:@L> <visibility:Visibility> "struct" <name:Identifier> "{" "}" <end:@R> => ast::Struct {
+StructField: ast::StructField = {
+    <start:@L> <name:Identifier> ":" <type_:Type> <end:@R> => ast::StructField {
         name,
-        fields: vec![],
+        type_,
+        position: ast::SourceSpan::new(filename, start, end)
+    }
+}
+
+StructFields: Vec<ast::StructField> = {
+    <mut l: StructFields> "," <r:StructField> => {
+        l.push(r);
+
+        l
+    },
+    <l:StructField> => vec![l]
+    
+}
+
+StructDeclaration: ast::Struct = {
+    <start:@L> <visibility:Visibility> "struct" <name:Identifier> "{" 
+        <fields:(<StructFields> ","?)?>
+    "}" <end:@R> => ast::Struct {
+        name,
+        fields: fields.unwrap_or_default(),
         visibility,
         position: ast::SourceSpan::new(filename, start, end)
     }
@@ -86,6 +106,22 @@ Literal: ast::Literal = {
     r#"[1-9][0-9]*"# => ast::Literal::UnsignedInteger(<>.parse().unwrap()),
 }
 
+FieldValue: ast::StructFieldValue = {
+    <name:Identifier> ":" <value:Expression> => ast::StructFieldValue {
+        name,
+        value
+    }
+}
+
+FieldValues: Vec<ast::StructFieldValue> = {
+    <mut l:FieldValues> "," <r:FieldValue> => {
+        l.push(r);
+
+        l
+    },
+    <l:FieldValue> => vec![l]
+}
+
 Expression: ast::Expression = {
     <start:@L> <literal:Literal> <end:@R> => ast::Expression {
         position: ast::SourceSpan::new(filename, start, end),
@@ -97,11 +133,11 @@ Expression: ast::Expression = {
     },
     <start:@L> <target:Expression> "(" <arguments:Expressions?> ")" <end:@R> => ast::Expression {
         position: ast::SourceSpan::new(filename, start, end),
-        kind: ast::ExpressionKind::Call{target: Box::new(target), arguments: arguments.unwrap_or_default() }
+        kind: ast::ExpressionKind::Call { target: Box::new(target), arguments: arguments.unwrap_or_default() }
     },
-    <start:@L> <target:Expression> "{" "}" <end:@R> => ast::Expression {
+    <start:@L> <target:Expression> "{" <field_values:FieldValues?> "}" <end:@R> => ast::Expression {
         position: ast::SourceSpan::new(filename, start, end),
-        kind: ast::ExpressionKind::StructConstructor(Box::new(target))
+        kind: ast::ExpressionKind::StructConstructor(Box::new(target), field_values.unwrap_or_default())
     },
     <start:@L> <target:Expression> "." <field_name:Identifier> <end:@R> => ast::Expression {
         position: ast::SourceSpan::new(filename, start, end),

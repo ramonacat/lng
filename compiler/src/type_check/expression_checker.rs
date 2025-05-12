@@ -82,7 +82,7 @@ impl<'root> ExpressionChecker<'root> {
             ast::ExpressionKind::VariableReference(name) => {
                 self.type_check_variable_reference(expression, locals, module_path, *name)
             }
-            ast::ExpressionKind::StructConstructor(target) => {
+            ast::ExpressionKind::StructConstructor(target, field_values) => {
                 let target = self.type_check_expression(target, locals, module_path)?;
 
                 let (type_, kind) = {
@@ -93,6 +93,16 @@ impl<'root> ExpressionChecker<'root> {
                         todo!();
                     };
 
+                    let field_values = field_values
+                        .iter()
+                        .map(|x| {
+                            Ok(types::structs::FieldValue {
+                                name: x.name,
+                                value: self.type_check_expression(&x.value, locals, module_path)?,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
                     (
                         types::GenericType::new(
                             types::GenericTypeKind::StructObject {
@@ -100,7 +110,7 @@ impl<'root> ExpressionChecker<'root> {
                             },
                             types::TypeArguments::new_empty(),
                         ),
-                        types::ExpressionKind::StructConstructor(Box::new(target)),
+                        types::ExpressionKind::StructConstructor(Box::new(target), field_values),
                     )
                 };
 
@@ -141,7 +151,7 @@ impl<'root> ExpressionChecker<'root> {
         let (mut callable_arguments, return_type) =
             self.retrieve_callable_info(&checked_target, target_type_kind);
 
-        let self_argument = callable_arguments
+        let self_argument = dbg!(&callable_arguments)
             .first()
             .and_then(|a| {
                 if a.name == Identifier::parse("self") {
@@ -151,6 +161,7 @@ impl<'root> ExpressionChecker<'root> {
                 }
             })
             .cloned();
+
         if passed_arguments.len() + usize::from(self_argument.is_some()) != callable_arguments.len()
         {
             return Err(TypeCheckErrorDescription::IncorrectNumberOfArgumentsPassed(
@@ -158,7 +169,9 @@ impl<'root> ExpressionChecker<'root> {
             )
             .at(position));
         }
+
         let mut checked_arguments = vec![];
+
         if let Some(self_argument) = self_argument {
             let mut callable_arguments_iter = callable_arguments.into_iter();
 
@@ -203,6 +216,7 @@ impl<'root> ExpressionChecker<'root> {
 
             checked_arguments.push(checked_argument);
         }
+
         let expression_type = types::Expression {
             position,
             type_: return_type,
@@ -211,6 +225,7 @@ impl<'root> ExpressionChecker<'root> {
                 arguments: checked_arguments,
             },
         };
+
         Ok(expression_type)
     }
 

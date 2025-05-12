@@ -1,5 +1,6 @@
-use std::{collections::HashMap, sync::RwLock};
+use std::collections::HashMap;
 
+use dashmap::DashMap;
 use inkwell::{
     AddressSpace,
     builder::Builder,
@@ -16,18 +17,17 @@ pub struct Builtins {
     pub rc_handle: types::structs::Struct<types::GenericType>,
 }
 
+// TODO do we really need DashMap here? this is single-threaded anyway
 pub struct AllItems<'ctx> {
     structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
     instantiated_structs:
-        RwLock<HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>>,
+        DashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>,
 
     functions:
         HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
-    instantiated_functions: RwLock<
-        HashMap<
-            types::functions::InstantiatedFunctionId,
-            types::functions::Function<types::InstantiatedType>,
-        >,
+    instantiated_functions: DashMap<
+        types::functions::InstantiatedFunctionId,
+        types::functions::Function<types::InstantiatedType>,
     >,
 }
 
@@ -41,9 +41,9 @@ impl<'ctx> AllItems<'ctx> {
     ) -> Self {
         Self {
             structs,
-            instantiated_structs: RwLock::new(HashMap::new()),
+            instantiated_structs: DashMap::new(),
             functions,
-            instantiated_functions: RwLock::new(HashMap::new()),
+            instantiated_functions: DashMap::new(),
         }
     }
 
@@ -54,14 +54,12 @@ impl<'ctx> AllItems<'ctx> {
     ) -> T {
         self.instantiate(handle);
 
-        inspect(self.instantiated_structs.read().unwrap().get(handle))
+        inspect(self.instantiated_structs.get(handle).as_deref())
     }
 
     // TODO deal with setting the static fields here
     fn instantiate(&self, id: &types::structs::InstantiatedStructId) {
         self.instantiated_structs
-            .write()
-            .unwrap()
             .entry(id.clone())
             .or_insert_with(|| {
                 let instantiated = self
@@ -86,13 +84,11 @@ impl<'ctx> AllItems<'ctx> {
 
         self.instantiate_function(id);
 
-        inspect(self.instantiated_functions.read().unwrap().get(id))
+        inspect(self.instantiated_functions.get(id).as_deref())
     }
 
     fn instantiate_function(&self, id: &types::functions::InstantiatedFunctionId) {
         self.instantiated_functions
-            .write()
-            .unwrap()
             .entry(id.clone())
             .or_insert_with(|| {
                 let instantiated = self
@@ -230,7 +226,7 @@ impl<'ctx> CompiledStruct<'ctx> {
                 self.llvm_type,
                 instance,
                 &[context.const_u32(0), context.const_u32(*index)],
-                &unique_name(&[&field.raw()]),
+                &unique_name(&[&field.raw(), "gep"]),
             )
         }
         .unwrap();

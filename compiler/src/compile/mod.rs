@@ -236,13 +236,10 @@ impl<'ctx> Compiler<'ctx> {
             // If there is no std, then we want to get in early and create the builtins, so that
             // the rest of the compilation can just add methods, etc. to them
 
-            let rc_struct_id =
-                types::structs::StructId::InModule(ModuleId::parse("std"), Identifier::parse("rc"));
-
             let mut structs = HashMap::new();
+
             structs.insert(*TYPE_NAME_STRING, string::describe_structure());
             structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
-            structs.insert(rc_struct_id, rc::describe_structure());
 
             let mut scope = GlobalScope::new(structs, HashMap::new());
 
@@ -255,7 +252,7 @@ impl<'ctx> Compiler<'ctx> {
                 Value::Struct(*TYPE_NAME_STRING),
             );
             std.set_variable(Identifier::parse("array"), Value::Struct(*TYPE_NAME_ARRAY));
-            std.set_variable(Identifier::parse("rc"), Value::Struct(rc_struct_id));
+
             scope
         });
 
@@ -284,6 +281,10 @@ impl<'ctx> Compiler<'ctx> {
 
         // TODO should the array struct be declared in stdlib, like string?
         structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
+
+        let rc_struct_id =
+            types::structs::StructId::InModule(ModuleId::parse("std"), Identifier::parse("rc"));
+        structs.insert(rc_struct_id, rc::describe_structure());
 
         self.context.global_scope.structs = AllItems::new(structs, functions);
 
@@ -345,7 +346,9 @@ impl<'ctx> Compiler<'ctx> {
         };
 
         let module_path = handle.module_name;
+
         self.get_or_create_module(module_path);
+
         let module = self.context.global_scope.get_module(module_path).unwrap();
 
         let mut compiled_function = module.begin_compile_function(handle, &self.context);
@@ -477,9 +480,9 @@ impl<'ctx> Compiler<'ctx> {
 
                 Ok((None, value.unwrap()))
             }
-            types::ExpressionKind::StructConstructor(target) => {
+            types::ExpressionKind::StructConstructor(target, field_values) => {
                 let target =
-                    self.compile_expression(target, self_, compiled_function, module_path)?;
+                    self.compile_expression(target, self_.clone(), compiled_function, module_path)?;
 
                 let (name, target_tav) = match &target.1 {
                     Value::Empty => todo!(),
@@ -495,9 +498,21 @@ impl<'ctx> Compiler<'ctx> {
                 };
                 // TODO ensure the struct is instantiated in the context
                 // TODO get the type argument values from the expression!
-                let field_values = HashMap::new();
-                // TODO actually set the field values!
-
+                let field_values = field_values
+                    .iter()
+                    .map(|x| {
+                        Ok((
+                            x.name,
+                            self.compile_expression(
+                                &x.value,
+                                self_.clone(),
+                                compiled_function,
+                                module_path,
+                            )
+                            .map(|y| y.1.as_basic_value())?,
+                        ))
+                    })
+                    .collect::<Result<HashMap<_, _>, _>>()?;
                 let value = self.context.global_scope.structs.inspect_instantiated(
                     &types::structs::InstantiatedStructId::new(name, target_tav.clone()),
                     |s| {
@@ -537,6 +552,7 @@ impl<'ctx> Compiler<'ctx> {
 
                 Ok((Some(target_value), access_result))
             }
+            // TODO do we still need this?
             types::ExpressionKind::SelfAccess => Ok((None, self_.unwrap())),
         }
     }
@@ -561,8 +577,7 @@ impl<'ctx> Compiler<'ctx> {
                         &types::functions::InstantiatedFunctionId::new(
                             function_id,
                             // TODO we need to ensure during typecheck that we won't get
-                            // here without the right TypeArgumentValues, we will need to
-                            // attach TypeArgumentValues to expressions
+                            // here without the right TypeArgumentValues
                             types::TypeArgumentValues::new_empty(),
                         ),
                         |f_| {

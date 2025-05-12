@@ -339,6 +339,12 @@ impl DeclarationChecker {
                 fields,
                 impls: vec![],
                 type_: struct_type,
+                instance_type: types::GenericType::new(
+                    types::GenericTypeKind::StructObject {
+                        type_name: struct_id,
+                    },
+                    types::TypeArguments::new_empty(),
+                ),
                 implemented_interfaces: HashMap::new(),
             },
         );

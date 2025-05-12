@@ -3,6 +3,7 @@ use std::{
     sync::{LazyLock, RwLock},
 };
 
+use itertools::Itertools;
 use string_interner::{StringInterner, backend::StringBackend, symbol::SymbolU32};
 
 use crate::identifier::{FQName, Identifier};
@@ -67,6 +68,18 @@ impl Display for Literal {
 }
 
 #[derive(Debug, Clone)]
+pub struct StructFieldValue {
+    pub name: Identifier,
+    pub value: Expression,
+}
+
+impl Display for StructFieldValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.name, self.value)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ExpressionKind {
     Call {
         target: Box<Expression>,
@@ -74,7 +87,7 @@ pub enum ExpressionKind {
     },
     Literal(Literal),
     VariableReference(Identifier),
-    StructConstructor(Box<Expression>),
+    StructConstructor(Box<Expression>, Vec<StructFieldValue>),
     FieldAccess {
         target: Box<Expression>,
         field_name: Identifier,
@@ -101,7 +114,11 @@ impl Display for Expression {
             ),
             ExpressionKind::Literal(literal) => write!(f, "{literal}"),
             ExpressionKind::VariableReference(name) => write!(f, "{name}"),
-            ExpressionKind::StructConstructor(name) => write!(f, "{name} {{}}"),
+            ExpressionKind::StructConstructor(name, field_values) => write!(
+                f,
+                "{name} {{ {} }}",
+                field_values.iter().map(ToString::to_string).join(", ")
+            ),
             ExpressionKind::FieldAccess { target, field_name } => {
                 write!(f, "{target}.{field_name}")
             }
