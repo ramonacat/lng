@@ -63,7 +63,7 @@ impl DefinitionChecker {
     fn type_check_definitions(&mut self) -> Result<(), TypeCheckError> {
         let mut impls = self.type_check_associated_function_definitions()?;
 
-        for (function_id, function) in self.root_module_declaration.functions.borrow().iter() {
+        for (function_id, function) in &self.root_module_declaration.functions {
             let function = self.type_check_function(function)?;
 
             self.functions
@@ -99,7 +99,7 @@ impl DefinitionChecker {
         > = HashMap::new();
         for (struct_id, declared_impls) in &self.declared_impls {
             for function_id in declared_impls {
-                let functions = self.root_module_declaration.functions.borrow();
+                let functions = &self.root_module_declaration.functions;
                 let function = functions.get(function_id).unwrap();
                 let function = self.type_check_function(function)?;
 

@@ -239,7 +239,7 @@ impl<'root> ExpressionChecker<'root> {
     ) {
         let (callable_arguments, return_type) = {
             if let types::GenericTypeKind::Callable(function_id) = target_type_kind {
-                let root_module = self.root_module_declaration.functions.borrow();
+                let root_module = &self.root_module_declaration.functions;
                 if let Some(DeclaredFunction {
                     arguments: callable_arguments,
                     return_type,

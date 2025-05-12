@@ -126,7 +126,6 @@ impl DeclarationChecker {
 
                             self.root_module_declaration
                                 .functions
-                                .borrow_mut()
                                 .insert(function.id, function.clone());
                         }
 
@@ -233,7 +232,6 @@ impl DeclarationChecker {
 
                         self.root_module_declaration
                             .functions
-                            .borrow_mut()
                             .insert(function_id, function_declaration.clone());
                     }
                     ast::DeclarationKind::Struct(_)

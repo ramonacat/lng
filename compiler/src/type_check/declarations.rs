@@ -30,7 +30,7 @@ pub(super) struct DeclaredRootModule {
     // TODO make the fields private
     pub(super) structs:
         HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
-    pub(super) functions: RefCell<HashMap<types::functions::FunctionId, DeclaredFunction>>,
+    pub(super) functions: HashMap<types::functions::FunctionId, DeclaredFunction>,
     pub(super) predeclared_functions: RefCell<
         HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
     >,
@@ -52,7 +52,7 @@ impl std::fmt::Debug for DeclaredRootModule {
 
         writeln!(f, "functions")?;
 
-        for function in self.functions.borrow().keys() {
+        for function in self.functions.keys() {
             writeln!(f, "    {function}")?;
         }
 
@@ -105,7 +105,8 @@ impl DeclaredRootModule {
     pub(crate) fn new() -> Self {
         Self {
             structs: HashMap::new(),
-            functions: RefCell::new(HashMap::new()),
+            functions: HashMap::new(),
+
             predeclared_functions: RefCell::new(HashMap::new()),
             modules: HashMap::new(),
             imports: HashMap::new(),
@@ -123,7 +124,7 @@ impl DeclaredRootModule {
     ) -> Self {
         Self {
             structs,
-            functions: RefCell::new(HashMap::new()),
+            functions: HashMap::new(),
             predeclared_functions: RefCell::new(functions),
             modules: modules.clone(),
             imports: HashMap::new(),
@@ -167,7 +168,6 @@ impl DeclaredRootModule {
         name: Identifier,
     ) -> Option<ItemKind> {
         self.functions
-            .borrow()
             .get(&types::functions::FunctionId::InModule(module_id, name))
             .map(|function| ItemKind::Function(function.clone()))
             .or_else(|| {
