@@ -11,7 +11,7 @@ use crate::{
 
 use super::{
     DeclaredFunction, DeclaredStructField,
-    declarations::{DeclaredRootModule, ItemKind, resolve_type},
+    declarations::{DeclaredItemKind, DeclaredRootModule, resolve_type},
     definition_checker::DefinitionChecker,
     errors::{TypeCheckError, TypeCheckErrorDescription},
 };
@@ -134,7 +134,7 @@ impl DeclarationChecker {
                                 .root_module_declaration
                                 .resolve_import(module_path, interface_name);
 
-                            let ItemKind::Interface(interface) = self
+                            let DeclaredItemKind::Interface(interface) = self
                                 .root_module_declaration
                                 .get_item(module_path, interface_name)
                                 .unwrap()

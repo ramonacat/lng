@@ -63,16 +63,14 @@ impl std::fmt::Debug for DeclaredRootModule {
     }
 }
 
-// TODO this should take refs instead of clones, but we need to get rid of RefCells in
-// DeclaredRootModule first
-pub enum ItemKind {
-    Struct(types::structs::Struct<GenericType>),
-    Function(DeclaredFunction),
-    PredeclaredFunction(types::functions::Function<GenericType>),
-    Interface(types::interfaces::Interface<GenericType>),
+pub enum DeclaredItemKind<'item> {
+    Struct(&'item types::structs::Struct<GenericType>),
+    Function(&'item DeclaredFunction),
+    PredeclaredFunction(&'item types::functions::Function<GenericType>),
+    Interface(&'item types::interfaces::Interface<GenericType>),
 }
 
-impl ItemKind {
+impl DeclaredItemKind<'_> {
     pub(crate) fn type_(&self) -> types::GenericType {
         match self {
             // TODO handle generics
@@ -158,31 +156,28 @@ impl DeclaredRootModule {
             .unwrap_or((module_id, name))
     }
 
-    // TODO we should probably take the TypeArguments as an argument here or something?
     pub fn get_item(
         &self,
         module_id: types::modules::ModuleId,
         name: Identifier,
-    ) -> Option<ItemKind> {
+    ) -> Option<DeclaredItemKind> {
         self.functions
             .get(&types::functions::FunctionId::InModule(module_id, name))
-            .map(|function| ItemKind::Function(function.clone()))
+            .map(DeclaredItemKind::Function)
             .or_else(|| {
                 self.predeclared_functions
                     .get(&types::functions::FunctionId::InModule(module_id, name))
-                    .map(|predeclared_function| {
-                        ItemKind::PredeclaredFunction(predeclared_function.clone())
-                    })
+                    .map(DeclaredItemKind::PredeclaredFunction)
             })
             .or_else(|| {
                 self.structs
                     .get(&types::structs::StructId::InModule(module_id, name))
-                    .map(|struct_| ItemKind::Struct(struct_.clone()))
+                    .map(DeclaredItemKind::Struct)
             })
             .or_else(|| {
                 self.interfaces
                     .get(&types::interfaces::InterfaceId::InModule(module_id, name))
-                    .map(|interface| ItemKind::Interface(interface.clone()))
+                    .map(DeclaredItemKind::Interface)
             })
     }
 }
