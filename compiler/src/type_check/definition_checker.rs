@@ -4,7 +4,7 @@ use crate::{
     type_check::declarations::DeclaredRootModule,
     types::{GenericType, TypeArguments},
 };
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{ast, types};
 
@@ -18,8 +18,7 @@ use super::{
 pub(super) struct DefinitionChecker {
     root_module_declaration: DeclaredRootModule,
     declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
-    functions:
-        RefCell<HashMap<types::functions::FunctionId, types::functions::Function<GenericType>>>,
+    functions: HashMap<types::functions::FunctionId, types::functions::Function<GenericType>>,
     main: Option<types::functions::FunctionId>,
 }
 
@@ -43,7 +42,7 @@ impl DefinitionChecker {
             interfaces: _,
         } = root_module_declaration;
 
-        let mut functions = self.functions.take();
+        let mut functions = self.functions;
 
         for (name, function) in predeclared_functions {
             functions.insert(name, function);
@@ -66,9 +65,7 @@ impl DefinitionChecker {
         for (function_id, function) in &self.root_module_declaration.functions {
             let function = self.type_check_function(function)?;
 
-            self.functions
-                .borrow_mut()
-                .insert(*function_id, function.clone());
+            self.functions.insert(*function_id, function.clone());
         }
 
         let struct_ids = {
@@ -85,7 +82,7 @@ impl DefinitionChecker {
     }
 
     fn type_check_associated_function_definitions(
-        &self,
+        &mut self,
     ) -> Result<
         HashMap<
             types::structs::StructId,
@@ -108,9 +105,7 @@ impl DefinitionChecker {
                     .or_default()
                     .insert(*function_id, function.clone());
 
-                self.functions
-                    .borrow_mut()
-                    .insert(*function_id, function.clone());
+                self.functions.insert(*function_id, function.clone());
             }
         }
         Ok(impls)
@@ -269,7 +264,7 @@ impl DefinitionChecker {
             root_module_declaration,
             declared_impls,
             main,
-            functions: RefCell::new(HashMap::new()),
+            functions: HashMap::new(),
         }
     }
 }
