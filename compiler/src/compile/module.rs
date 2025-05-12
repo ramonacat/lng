@@ -6,6 +6,7 @@ use super::{
     mangle_type,
     mangler::MangledIdentifier,
     rc::{self, RcValue},
+    scope::GlobalScope,
 };
 use crate::{identifier::Identifier, types};
 use inkwell::{
@@ -85,11 +86,12 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         function: &types::functions::Function<types::InstantiatedType>,
         context: &CompilerContext<'ctx>,
+        global_scope: &GlobalScope<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
         let mut rcs = vec![];
         let scope = self.scope.child();
 
-        let llvm_function = self.get_or_create_function(function, context);
+        let llvm_function = self.get_or_create_function(function, context, global_scope);
 
         let entry_block = context
             .llvm_context
@@ -107,7 +109,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 } => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        context.global_scope.structs.inspect_instantiated(
+                        global_scope.structs.inspect_instantiated(
                             &types::structs::InstantiatedStructId::new(
                                 *id,
                                 type_argument_values.clone(),
@@ -120,7 +122,7 @@ impl<'ctx> CompiledModule<'ctx> {
                     Value::Reference(rc)
                 }
                 types::InstantiatedTypeKind::Array { element_type: a } => Value::Reference(
-                    builtins::array::ArrayValue::build_instance(a.as_ref(), context),
+                    builtins::array::ArrayValue::build_instance(a.as_ref(), context, global_scope),
                 ),
                 types::InstantiatedTypeKind::Callable { .. } => todo!(),
                 types::InstantiatedTypeKind::U64 => Value::Primitive(
@@ -174,8 +176,9 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         handle: &types::functions::Function<types::InstantiatedType>,
         context: &CompilerContext<'ctx>,
+        global_scope: &GlobalScope<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let mangled_name = mangle_type(&handle.type_, context);
+        let mangled_name = mangle_type(&handle.type_, global_scope);
 
         self.llvm_module
             .get_function(mangled_name.as_str())

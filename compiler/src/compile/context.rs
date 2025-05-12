@@ -11,7 +11,7 @@ use inkwell::{
 
 use crate::{identifier::Identifier, types};
 
-use super::{scope::GlobalScope, unique_name, value::InstantiatedStructType};
+use super::{unique_name, value::InstantiatedStructType};
 
 pub struct Builtins {
     pub rc_handle: types::structs::Struct<types::GenericType>,
@@ -121,7 +121,6 @@ pub struct CompilerContext<'ctx> {
     pub llvm_context: &'ctx Context,
     pub builder: Builder<'ctx>,
     pub builtins: Builtins,
-    pub global_scope: GlobalScope<'ctx>,
 }
 
 impl<'ctx> CompilerContext<'ctx> {

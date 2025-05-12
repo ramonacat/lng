@@ -118,6 +118,7 @@ type RegisterGlobalMappings = Option<Box<dyn FnOnce(&ExecutionEngine, &Module)>>
 
 pub(crate) struct Compiler<'ctx> {
     context: CompilerContext<'ctx>,
+    global_scope: GlobalScope<'ctx>,
 }
 
 #[derive(Debug)]
@@ -260,9 +261,9 @@ impl<'ctx> Compiler<'ctx> {
             context: CompilerContext {
                 llvm_context: context,
                 builder: context.create_builder(),
-                global_scope,
                 builtins,
             },
+            global_scope,
         }
     }
 
@@ -286,40 +287,36 @@ impl<'ctx> Compiler<'ctx> {
             types::structs::StructId::InModule(ModuleId::parse("std"), Identifier::parse("rc"));
         structs.insert(rc_struct_id, rc::describe_structure());
 
-        self.context.global_scope.structs = AllItems::new(structs, functions);
+        self.global_scope.structs = AllItems::new(structs, functions);
 
         for module in program.modules().keys() {
             self.get_or_create_module(*module);
         }
 
         if let Some(main) = main {
-            let main = self
-                .context
-                .global_scope
-                .structs
-                .inspect_instantiated_function(
-                    &types::functions::InstantiatedFunctionId::new(
-                        main,
-                        types::TypeArgumentValues::new_empty(),
-                    ),
-                    |function| {
-                        let function = function.unwrap();
+            let main = self.global_scope.structs.inspect_instantiated_function(
+                &types::functions::InstantiatedFunctionId::new(
+                    main,
+                    types::TypeArgumentValues::new_empty(),
+                ),
+                |function| {
+                    let function = function.unwrap();
 
-                        // TODO verify in type_check that main has no generic arguments
-                        // TODO can we get rid of this clone?
-                        function.clone()
-                    },
-                );
+                    // TODO verify in type_check that main has no generic arguments
+                    // TODO can we get rid of this clone?
+                    function.clone()
+                },
+            );
             self.compile_function(&main).unwrap();
-            let mangled_main = mangle_type(&main.type_, &self.context);
+            let mangled_main = mangle_type(&main.type_, &self.global_scope);
 
             CompiledRootModule::App {
-                scope: self.context.global_scope,
+                scope: self.global_scope,
                 main: mangled_main,
             }
         } else {
             CompiledRootModule::Library {
-                scope: self.context.global_scope,
+                scope: self.global_scope,
             }
         }
     }
@@ -328,13 +325,11 @@ impl<'ctx> Compiler<'ctx> {
         &mut self,
         module_path: types::modules::ModuleId,
     ) -> &mut CompiledModule<'ctx> {
-        self.context
-            .global_scope
-            .get_or_create_module(module_path, || {
-                self.context
-                    .llvm_context
-                    .create_module(mangle_module_id(module_path).as_str())
-            })
+        self.global_scope.get_or_create_module(module_path, || {
+            self.context
+                .llvm_context
+                .create_module(mangle_module_id(module_path).as_str())
+        })
     }
 
     fn compile_function(
@@ -349,9 +344,10 @@ impl<'ctx> Compiler<'ctx> {
 
         self.get_or_create_module(module_path);
 
-        let module = self.context.global_scope.get_module(module_path).unwrap();
+        let module = self.global_scope.get_module(module_path).unwrap();
 
-        let mut compiled_function = module.begin_compile_function(handle, &self.context);
+        let mut compiled_function =
+            module.begin_compile_function(handle, &self.context, &self.global_scope);
 
         self.compile_statements(statements, module_path, &mut compiled_function)?;
 
@@ -513,7 +509,7 @@ impl<'ctx> Compiler<'ctx> {
                         ))
                     })
                     .collect::<Result<HashMap<_, _>, _>>()?;
-                let value = self.context.global_scope.structs.inspect_instantiated(
+                let value = self.global_scope.structs.inspect_instantiated(
                     &types::structs::InstantiatedStructId::new(name, target_tav.clone()),
                     |s| {
                         s.unwrap().build_heap_instance(
@@ -534,6 +530,7 @@ impl<'ctx> Compiler<'ctx> {
                         }),
                     ),
                     &self.context,
+                    &self.global_scope,
                 );
                 compiled_function.rcs.push(rc.clone());
 
@@ -547,7 +544,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.compile_expression(target, self_, compiled_function, module_path)?;
 
                 let access_result = target_value
-                    .read_field_value(*field_name, &self.context)
+                    .read_field_value(*field_name, &self.context, &self.global_scope)
                     .unwrap();
 
                 Ok((Some(target_value), access_result))
@@ -564,39 +561,34 @@ impl<'ctx> Compiler<'ctx> {
     ) -> Option<Value<'ctx>> {
         // TODO there should be something on the global_scope to receive a value by FQN
         let value = self
-            .context
             .global_scope
             .get_value(module_id, name)
             .or_else(|| {
                 let function_id = types::functions::FunctionId::InModule(module_id, name);
 
-                self.context
-                    .global_scope
-                    .structs
-                    .inspect_instantiated_function(
-                        &types::functions::InstantiatedFunctionId::new(
-                            function_id,
-                            // TODO we need to ensure during typecheck that we won't get
-                            // here without the right TypeArgumentValues
-                            types::TypeArgumentValues::new_empty(),
-                        ),
-                        |f_| {
-                            f_.map(|x| {
-                                self.context
-                                    .global_scope
-                                    .get_module(module_id)
-                                    .unwrap()
-                                    .get_or_create_function(x, &self.context);
+                self.global_scope.structs.inspect_instantiated_function(
+                    &types::functions::InstantiatedFunctionId::new(
+                        function_id,
+                        // TODO we need to ensure during typecheck that we won't get
+                        // here without the right TypeArgumentValues
+                        types::TypeArgumentValues::new_empty(),
+                    ),
+                    |f_| {
+                        f_.map(|x| {
+                            self.global_scope
+                                .get_module(module_id)
+                                .unwrap()
+                                .get_or_create_function(x, &self.context, &self.global_scope);
 
-                                Value::Function(function_id)
-                            })
-                        },
-                    )
+                            Value::Function(function_id)
+                        })
+                    },
+                )
             })
             .or_else(|| {
                 let struct_id = types::structs::StructId::InModule(module_id, name);
 
-                self.context.global_scope.structs.inspect_instantiated(
+                self.global_scope.structs.inspect_instantiated(
                     &types::structs::InstantiatedStructId::new(
                         struct_id,
                         types::TypeArgumentValues::new_empty(),
@@ -621,7 +613,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_literal(
-        &self,
+        &mut self,
         compiled_function: &mut CompiledFunction<'ctx>,
         literal: &types::Literal,
     ) -> (Option<Value<'ctx>>, Value<'ctx>) {
@@ -629,7 +621,7 @@ impl<'ctx> Compiler<'ctx> {
             types::Literal::String(s) => {
                 let value = StringValue::new_literal(s.clone());
                 let name = &unique_name(&["literal", "string"]);
-                let rc = value.build_instance(name, &self.context);
+                let rc = value.build_instance(name, &self.context, &mut self.global_scope);
                 compiled_function.rcs.push(rc.clone());
 
                 (None, Value::Reference(rc))
@@ -674,7 +666,6 @@ impl<'ctx> Compiler<'ctx> {
             types::TypeArgumentValues::new_empty(),
         );
         let definition = self
-            .context
             .global_scope
             .structs
             .inspect_instantiated_function(&instantiated_function_id, |function| {
@@ -682,21 +673,19 @@ impl<'ctx> Compiler<'ctx> {
             });
 
         if !self
-            .context
             .global_scope
             .get_module(definition.module_name)
             .unwrap()
-            .has_function(&mangle_type(&definition.type_, &self.context))
+            .has_function(&mangle_type(&definition.type_, &self.global_scope))
         {
             self.compile_function(&definition).unwrap();
         }
 
         let function_value = self
-            .context
             .global_scope
             .get_module(module_path)
             .unwrap()
-            .get_or_create_function(&definition, &self.context);
+            .get_or_create_function(&definition, &self.context, &self.global_scope);
 
         self.context
             .builder
@@ -741,7 +730,7 @@ impl<'ctx> Compiler<'ctx> {
                 type_argument_values,
             } => Value::Reference(RcValue::from_pointer(
                 call_result.into_pointer_value(),
-                self.context.global_scope.structs.inspect_instantiated(
+                self.global_scope.structs.inspect_instantiated(
                     &types::structs::InstantiatedStructId::new(*id, type_argument_values.clone()),
                     |x| x.unwrap().definition.type_.clone(),
                 ),

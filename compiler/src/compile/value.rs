@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 use crate::{identifier::Identifier, types};
 
-use super::{builtins::rc::RcValue, context::CompilerContext, unique_name};
+use super::{builtins::rc::RcValue, context::CompilerContext, scope::GlobalScope, unique_name};
 
 pub struct InstantiatedStructType<'ctx> {
     pub(crate) definition: types::structs::Struct<types::InstantiatedType>,
@@ -108,6 +108,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         instance: Value<'ctx>,
         name: Identifier,
         context: &CompilerContext<'ctx>,
+        global_scope: &GlobalScope<'ctx>,
     ) -> Option<Value<'ctx>> {
         let field = self.definition.fields.iter().find(|f| f.name == name)?;
 
@@ -118,7 +119,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         let instance_ptr = match instance {
             Value::Empty => todo!(),
             Value::Primitive(_, _) => todo!(),
-            Value::Reference(rc_value) => rc_value.pointee(context),
+            Value::Reference(rc_value) => rc_value.pointee(context, global_scope),
             Value::Function(_) => todo!(),
             Value::Struct(_) => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
@@ -215,16 +216,19 @@ impl<'ctx> Value<'ctx> {
         &self,
         field_path: Identifier,
         context: &CompilerContext<'ctx>,
+        global_scope: &GlobalScope<'ctx>,
     ) -> Option<Self> {
         match self {
             Value::Primitive(struct_id, _) => {
-                context
-                    .global_scope
+                global_scope
                     .structs
                     .inspect_instantiated(struct_id, |struct_| {
-                        struct_
-                            .unwrap()
-                            .read_field_value(self.clone(), field_path, context)
+                        struct_.unwrap().read_field_value(
+                            self.clone(),
+                            field_path,
+                            context,
+                            global_scope,
+                        )
                     })
             }
             Value::Reference(ref_) => {
@@ -247,15 +251,18 @@ impl<'ctx> Value<'ctx> {
                     }
                     types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
                 };
-                context.global_scope.structs.inspect_instantiated(
+                global_scope.structs.inspect_instantiated(
                     &types::structs::InstantiatedStructId::new(
                         struct_id,
                         type_argument_values.clone(),
                     ),
                     |struct_| {
-                        struct_
-                            .unwrap()
-                            .read_field_value(self.clone(), field_path, context)
+                        struct_.unwrap().read_field_value(
+                            self.clone(),
+                            field_path,
+                            context,
+                            global_scope,
+                        )
                     },
                 )
             }

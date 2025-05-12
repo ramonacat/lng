@@ -1,4 +1,4 @@
-use super::context::CompilerContext;
+use super::scope::GlobalScope;
 use crate::types;
 use crate::{
     identifier::Identifier,
@@ -8,7 +8,7 @@ use std::fmt::Write;
 
 pub(super) fn mangle_type(
     type_: &types::InstantiatedType,
-    context: &CompilerContext,
+    global_scope: &GlobalScope,
 ) -> MangledIdentifier {
     match type_.kind() {
         types::InstantiatedTypeKind::Unit => todo!(),
@@ -19,8 +19,7 @@ pub(super) fn mangle_type(
         types::InstantiatedTypeKind::U8 => todo!(),
         types::InstantiatedTypeKind::Pointer(_) => todo!(),
         types::InstantiatedTypeKind::Struct(_) => todo!(),
-        types::InstantiatedTypeKind::Function(instantiated_function_id) => context
-            .global_scope
+        types::InstantiatedTypeKind::Function(instantiated_function_id) => global_scope
             .structs
             .get_function(instantiated_function_id.id())
             .map(|function| match function.body {
