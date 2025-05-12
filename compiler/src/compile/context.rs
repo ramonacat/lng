@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use dashmap::DashMap;
 use inkwell::{
     AddressSpace,
     builder::Builder,
@@ -17,15 +16,14 @@ pub struct Builtins {
     pub rc_handle: types::structs::Struct<types::GenericType>,
 }
 
-// TODO do we really need DashMap here? this is single-threaded anyway
 pub struct AllItems<'ctx> {
     structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
     instantiated_structs:
-        DashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>,
+        HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>,
 
     functions:
         HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
-    instantiated_functions: DashMap<
+    instantiated_functions: HashMap<
         types::functions::InstantiatedFunctionId,
         types::functions::Function<types::InstantiatedType>,
     >,
@@ -41,24 +39,31 @@ impl<'ctx> AllItems<'ctx> {
     ) -> Self {
         Self {
             structs,
-            instantiated_structs: DashMap::new(),
+            instantiated_structs: HashMap::new(),
             functions,
-            instantiated_functions: DashMap::new(),
+            instantiated_functions: HashMap::new(),
         }
     }
 
-    pub(crate) fn inspect_instantiated<T>(
+    // TODO rename all the methods of this struct to sensible things
+    pub(crate) fn get_struct(
         &self,
         handle: &types::structs::InstantiatedStructId,
-        inspect: impl FnOnce(Option<&InstantiatedStructType<'ctx>>) -> T,
-    ) -> T {
-        self.instantiate(handle);
+    ) -> Option<&InstantiatedStructType<'ctx>> {
+        self.instantiated_structs.get(handle)
+    }
 
-        inspect(self.instantiated_structs.get(handle).as_deref())
+    pub(crate) fn get_or_instantiate_struct(
+        &mut self,
+        handle: &types::structs::InstantiatedStructId,
+    ) -> Option<&InstantiatedStructType<'ctx>> {
+        self.instantiate_struct(handle);
+
+        self.instantiated_structs.get(handle)
     }
 
     // TODO deal with setting the static fields here
-    fn instantiate(&self, id: &types::structs::InstantiatedStructId) {
+    fn instantiate_struct(&mut self, id: &types::structs::InstantiatedStructId) {
         self.instantiated_structs
             .entry(id.clone())
             .or_insert_with(|| {
@@ -73,21 +78,20 @@ impl<'ctx> AllItems<'ctx> {
             });
     }
 
-    pub(crate) fn inspect_instantiated_function<T>(
-        &self,
+    pub(crate) fn get_or_instantiate_function(
+        &mut self,
         id: &types::functions::InstantiatedFunctionId,
-        inspect: impl FnOnce(Option<&types::functions::Function<types::InstantiatedType>>) -> T,
-    ) -> T {
+    ) -> Option<&types::functions::Function<types::InstantiatedType>> {
         if !self.functions.contains_key(&id.id()) {
-            return inspect(None);
+            return None;
         }
 
         self.instantiate_function(id);
 
-        inspect(self.instantiated_functions.get(id).as_deref())
+        self.instantiated_functions.get(id)
     }
 
-    fn instantiate_function(&self, id: &types::functions::InstantiatedFunctionId) {
+    fn instantiate_function(&mut self, id: &types::functions::InstantiatedFunctionId) {
         self.instantiated_functions
             .entry(id.clone())
             .or_insert_with(|| {
@@ -107,6 +111,13 @@ impl<'ctx> AllItems<'ctx> {
         id: types::functions::FunctionId,
     ) -> Option<&types::functions::Function<types::GenericType>> {
         self.functions.get(&id)
+    }
+
+    pub(crate) fn get_instantiated_function(
+        &self,
+        instantiated_function_id: &types::functions::InstantiatedFunctionId,
+    ) -> Option<&types::functions::Function<types::InstantiatedType>> {
+        self.instantiated_functions.get(instantiated_function_id)
     }
 }
 

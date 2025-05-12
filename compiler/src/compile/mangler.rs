@@ -19,6 +19,8 @@ pub(super) fn mangle_type(
         types::InstantiatedTypeKind::U8 => todo!(),
         types::InstantiatedTypeKind::Pointer(_) => todo!(),
         types::InstantiatedTypeKind::Struct(_) => todo!(),
+        // TODO can we stop accessing global_scope here somehow? maybe let the compiler decide
+        // whether or not to mangle?
         types::InstantiatedTypeKind::Function(instantiated_function_id) => global_scope
             .structs
             .get_function(instantiated_function_id.id())

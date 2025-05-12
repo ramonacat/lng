@@ -43,7 +43,7 @@ impl<'ctx> RcValue<'ctx> {
         name: &str,
         struct_instance: &StructInstance<'ctx>,
         context: &CompilerContext<'ctx>,
-        global_scope: &GlobalScope<'ctx>,
+        global_scope: &mut GlobalScope<'ctx>,
     ) -> Self
     where
         'src: 'ctx,
@@ -70,9 +70,9 @@ impl<'ctx> RcValue<'ctx> {
         );
         let rc = global_scope
             .structs
-            .inspect_instantiated(&instantiated_struct_id, |s_| {
-                s_.unwrap().build_heap_instance(context, name, field_values)
-            });
+            .get_or_instantiate_struct(&instantiated_struct_id)
+            .unwrap()
+            .build_heap_instance(context, name, field_values);
 
         Self {
             pointer: rc,
@@ -119,16 +119,15 @@ impl<'ctx> RcValue<'ctx> {
     ) -> PointerValue<'ctx> {
         global_scope
             .structs
-            .inspect_instantiated(&self.instantiated_struct_id, |s_| {
-                s_.unwrap()
-                    .build_field_load(
-                        *POINTEE_FIELD,
-                        self.pointer,
-                        &unique_name(&["rc", "pointee"]),
-                        context,
-                    )
-                    .into_pointer_value()
-            })
+            .get_struct(&self.instantiated_struct_id)
+            .unwrap()
+            .build_field_load(
+                *POINTEE_FIELD,
+                self.pointer,
+                &unique_name(&["rc", "pointee"]),
+                context,
+            )
+            .into_pointer_value()
     }
 }
 

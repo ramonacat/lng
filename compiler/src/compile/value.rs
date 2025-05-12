@@ -215,18 +215,11 @@ impl<'ctx> Value<'ctx> {
         global_scope: &GlobalScope<'ctx>,
     ) -> Option<Self> {
         match self {
-            Value::Primitive(struct_id, _) => {
-                global_scope
-                    .structs
-                    .inspect_instantiated(struct_id, |struct_| {
-                        struct_.unwrap().read_field_value(
-                            self.clone(),
-                            field_path,
-                            context,
-                            global_scope,
-                        )
-                    })
-            }
+            Value::Primitive(struct_id, _) => global_scope
+                .structs
+                .get_struct(struct_id)
+                .unwrap()
+                .read_field_value(self.clone(), field_path, context, global_scope),
             Value::Reference(ref_) => {
                 let ref_type = ref_.type_();
                 let (struct_id, type_argument_values) = match ref_type.kind() {
@@ -247,20 +240,14 @@ impl<'ctx> Value<'ctx> {
                     }
                     types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
                 };
-                global_scope.structs.inspect_instantiated(
-                    &types::structs::InstantiatedStructId::new(
+                global_scope
+                    .structs
+                    .get_struct(&types::structs::InstantiatedStructId::new(
                         struct_id,
                         type_argument_values.clone(),
-                    ),
-                    |struct_| {
-                        struct_.unwrap().read_field_value(
-                            self.clone(),
-                            field_path,
-                            context,
-                            global_scope,
-                        )
-                    },
-                )
+                    ))
+                    .unwrap()
+                    .read_field_value(self.clone(), field_path, context, global_scope)
             }
             Value::Function(_) => todo!(),
             Value::Empty => todo!(),

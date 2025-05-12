@@ -39,7 +39,7 @@ impl ArrayValue {
     pub fn build_instance<'ctx>(
         item_type: &types::InstantiatedType,
         context: &CompilerContext<'ctx>,
-        global_scope: &GlobalScope<'ctx>,
+        global_scope: &mut GlobalScope<'ctx>,
     ) -> RcValue<'ctx> {
         let items_type = context.make_object_type(item_type);
         // TODO add freeing of this array once destructors are in place
@@ -64,16 +64,14 @@ impl ArrayValue {
         );
         let id = *TYPE_NAME_ARRAY;
 
-        let array_value = global_scope.structs.inspect_instantiated(
-            &types::structs::InstantiatedStructId::new(
+        let array_value = global_scope
+            .structs
+            .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                 id,
                 types::TypeArgumentValues::new(tav.clone()),
-            ),
-            |a| {
-                a.unwrap()
-                    .build_heap_instance(context, &unique_name(&["string"]), field_values)
-            },
-        );
+            ))
+            .unwrap()
+            .build_heap_instance(context, &unique_name(&["string"]), field_values);
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),

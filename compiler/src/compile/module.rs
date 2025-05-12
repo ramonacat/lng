@@ -82,7 +82,7 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         function: &types::functions::Function<types::InstantiatedType>,
         context: &CompilerContext<'ctx>,
-        global_scope: &GlobalScope<'ctx>,
+        global_scope: &mut GlobalScope<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
         let mut rcs = vec![];
         let scope = self.scope.child();
@@ -105,13 +105,15 @@ impl<'ctx> CompiledModule<'ctx> {
                 } => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        global_scope.structs.inspect_instantiated(
-                            &types::structs::InstantiatedStructId::new(
+                        global_scope
+                            .structs
+                            .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                                 *id,
                                 type_argument_values.clone(),
-                            ),
-                            |x| x.unwrap().definition.instance_type(),
-                        ),
+                            ))
+                            .unwrap()
+                            .definition
+                            .instance_type(),
                     );
                     rcs.push(rc.clone());
 

@@ -58,16 +58,14 @@ impl StringValue {
 
         let id = *TYPE_NAME_STRING;
 
-        let literal_value = global_scope.structs.inspect_instantiated(
-            &types::structs::InstantiatedStructId::new(id, types::TypeArgumentValues::new_empty()),
-            |string_handle| {
-                string_handle.unwrap().build_heap_instance(
-                    context,
-                    &(name.to_string() + "_value"),
-                    field_values,
-                )
-            },
-        );
+        let literal_value = global_scope
+            .structs
+            .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
+                id,
+                types::TypeArgumentValues::new_empty(),
+            ))
+            .unwrap()
+            .build_heap_instance(context, &(name.to_string() + "_value"), field_values);
 
         RcValue::build_init(
             name,
