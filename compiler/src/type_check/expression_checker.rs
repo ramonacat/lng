@@ -337,7 +337,6 @@ impl<'root> ExpressionChecker<'root> {
             types::GenericTypeKind::StructObject { type_name } => self
                 .root_module_declaration
                 .structs
-                .borrow()
                 .get(type_name)
                 .map(|x| x.field_type(field_name))
                 .unwrap(),
@@ -346,7 +345,6 @@ impl<'root> ExpressionChecker<'root> {
             types::GenericTypeKind::U64 => self
                 .root_module_declaration
                 .structs
-                .borrow()
                 .get(&*TYPE_NAME_U64)
                 .map(|x| x.field_type(field_name))
                 .unwrap(),
@@ -355,7 +353,6 @@ impl<'root> ExpressionChecker<'root> {
             types::GenericTypeKind::Struct(struct_id) => self
                 .root_module_declaration
                 .structs
-                .borrow()
                 .get(struct_id)
                 .map(|x| x.field_type(field_name))
                 .unwrap(),

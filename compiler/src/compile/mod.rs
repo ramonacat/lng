@@ -599,7 +599,6 @@ impl<'ctx> Compiler<'ctx> {
 
                 Ok((Some(target_value), access_result))
             }
-            // TODO do we still need this?
             types::ExpressionKind::SelfAccess => Ok((None, self_.unwrap())),
         }
     }

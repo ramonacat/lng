@@ -146,7 +146,7 @@ impl DeclarationChecker {
                             interface.id
                         });
 
-                        let mut structs = self.root_module_declaration.structs.borrow_mut();
+                        let structs = &mut self.root_module_declaration.structs;
 
                         let Some(struct_to_modify) = structs.get_mut(&struct_id) else {
                             return Err(TypeCheckErrorDescription::ItemDoesNotExist(
@@ -311,7 +311,7 @@ impl DeclarationChecker {
     }
 
     fn type_check_struct(
-        &self,
+        &mut self,
         module_path: types::modules::ModuleId,
         struct_: &ast::Struct,
     ) -> Result<(), TypeCheckError> {
@@ -332,7 +332,7 @@ impl DeclarationChecker {
             });
         }
 
-        self.root_module_declaration.structs.borrow_mut().insert(
+        self.root_module_declaration.structs.insert(
             struct_id,
             types::structs::Struct {
                 id: struct_id,

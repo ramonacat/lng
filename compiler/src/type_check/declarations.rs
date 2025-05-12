@@ -29,7 +29,7 @@ pub(super) struct DeclaredStructField {
 pub(super) struct DeclaredRootModule {
     // TODO make the fields private
     pub(super) structs:
-        RefCell<HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>>,
+        HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
     pub(super) functions: RefCell<HashMap<types::functions::FunctionId, DeclaredFunction>>,
     pub(super) predeclared_functions: RefCell<
         HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
@@ -46,7 +46,7 @@ impl std::fmt::Debug for DeclaredRootModule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "structs")?;
 
-        for struct_ in self.structs.borrow().keys() {
+        for struct_ in self.structs.keys() {
             writeln!(f, "    {struct_}")?;
         }
 
@@ -104,7 +104,7 @@ impl ItemKind {
 impl DeclaredRootModule {
     pub(crate) fn new() -> Self {
         Self {
-            structs: RefCell::new(HashMap::new()),
+            structs: HashMap::new(),
             functions: RefCell::new(HashMap::new()),
             predeclared_functions: RefCell::new(HashMap::new()),
             modules: HashMap::new(),
@@ -122,7 +122,7 @@ impl DeclaredRootModule {
         >,
     ) -> Self {
         Self {
-            structs: RefCell::new(structs),
+            structs,
             functions: RefCell::new(HashMap::new()),
             predeclared_functions: RefCell::new(functions),
             modules: modules.clone(),
@@ -180,7 +180,6 @@ impl DeclaredRootModule {
             })
             .or_else(|| {
                 self.structs
-                    .borrow()
                     .get(&types::structs::StructId::InModule(module_id, name))
                     .map(|struct_| ItemKind::Struct(struct_.clone()))
             })

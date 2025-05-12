@@ -24,7 +24,7 @@ pub(super) struct DefinitionChecker {
 }
 
 impl DefinitionChecker {
-    pub(super) fn check(self) -> Result<types::modules::RootModule, TypeCheckError> {
+    pub(super) fn check(mut self) -> Result<types::modules::RootModule, TypeCheckError> {
         self.type_check_definitions()?;
 
         let Self {
@@ -51,21 +51,16 @@ impl DefinitionChecker {
 
         if let Some(main) = main {
             return Ok(types::modules::RootModule::new_app(
-                main,
-                modules,
-                structs.into_inner(),
-                functions,
+                main, modules, structs, functions,
             ));
         }
 
         Ok(types::modules::RootModule::new_library(
-            modules,
-            structs.into_inner(),
-            functions,
+            modules, structs, functions,
         ))
     }
 
-    fn type_check_definitions(&self) -> Result<(), TypeCheckError> {
+    fn type_check_definitions(&mut self) -> Result<(), TypeCheckError> {
         let mut impls = self.type_check_associated_function_definitions()?;
 
         for (function_id, function) in self.root_module_declaration.functions.borrow().iter() {
@@ -77,7 +72,7 @@ impl DefinitionChecker {
         }
 
         let struct_ids = {
-            let binding = self.root_module_declaration.structs.borrow();
+            let binding = &self.root_module_declaration.structs;
 
             binding.keys().copied().collect_vec()
         };
@@ -122,11 +117,11 @@ impl DefinitionChecker {
     }
 
     fn type_check_struct(
-        &self,
+        &mut self,
         impls: HashMap<types::functions::FunctionId, types::functions::Function<GenericType>>,
         struct_id: types::structs::StructId,
     ) {
-        let all_structs = &mut self.root_module_declaration.structs.borrow_mut();
+        let all_structs = &mut self.root_module_declaration.structs;
         let struct_ = all_structs.get_mut(&struct_id).unwrap();
 
         for (name, impl_) in impls {
@@ -227,11 +222,7 @@ impl DefinitionChecker {
                 )?;
 
                 if !type_.can_assign_to(&checked_expression.type_, |id| {
-                    self.root_module_declaration
-                        .structs
-                        .borrow()
-                        .get(&id)
-                        .cloned()
+                    self.root_module_declaration.structs.get(&id).cloned()
                 }) {
                     return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
                         target_variable: *name,
