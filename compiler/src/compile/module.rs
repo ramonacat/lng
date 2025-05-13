@@ -2,11 +2,10 @@ use std::{collections::HashSet, rc::Rc};
 
 use super::{
     CompiledFunction, Scope, Value, builtins,
-    context::CompilerContext,
+    context::{AllItems, CompilerContext},
     mangle_type,
     mangler::MangledIdentifier,
     rc::{self, RcValue},
-    scope::GlobalScope,
 };
 use crate::{identifier::Identifier, types};
 use inkwell::{
@@ -87,7 +86,7 @@ impl<'ctx> CompiledModule<'ctx> {
         &mut self,
         function: &types::functions::Function<types::InstantiatedType>,
         context: &CompilerContext<'ctx>,
-        global_scope: &mut GlobalScope<'ctx>,
+        structs: &mut AllItems<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
         self.functions.insert(function.type_.clone());
 
@@ -112,8 +111,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 } => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        global_scope
-                            .structs
+                        structs
                             .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                                 *id,
                                 type_argument_values.clone(),
@@ -127,7 +125,7 @@ impl<'ctx> CompiledModule<'ctx> {
                     Value::Reference(rc)
                 }
                 types::InstantiatedTypeKind::Array { element_type: a } => Value::Reference(
-                    builtins::array::ArrayValue::build_instance(a.as_ref(), context, global_scope),
+                    builtins::array::ArrayValue::build_instance(a.as_ref(), context, structs),
                 ),
                 types::InstantiatedTypeKind::Callable { .. } => todo!(),
                 types::InstantiatedTypeKind::U64 => Value::Primitive(

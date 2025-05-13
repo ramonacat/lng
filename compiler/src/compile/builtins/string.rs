@@ -4,7 +4,10 @@ use compiler_derive::BuiltinStruct;
 use inkwell::values::BasicValue as _;
 
 use crate::{
-    compile::{context::CompilerContext, scope::GlobalScope, value::StructInstance},
+    compile::{
+        context::{AllItems, CompilerContext},
+        value::StructInstance,
+    },
     identifier::Identifier,
     std::TYPE_NAME_STRING,
     types::{self, structs::InstantiatedStructId},
@@ -37,7 +40,7 @@ impl StringValue {
         &self,
         name: &str,
         context: &CompilerContext<'ctx>,
-        global_scope: &mut GlobalScope<'ctx>,
+        structs: &mut AllItems<'ctx>,
     ) -> RcValue<'ctx> {
         let characters_value = context
             .builder
@@ -58,8 +61,7 @@ impl StringValue {
 
         let id = *TYPE_NAME_STRING;
 
-        let literal_value = global_scope
-            .structs
+        let literal_value = structs
             .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                 id,
                 types::TypeArgumentValues::new_empty(),
@@ -76,7 +78,7 @@ impl StringValue {
                 )),
             ),
             context,
-            global_scope,
+            structs,
         )
     }
 }

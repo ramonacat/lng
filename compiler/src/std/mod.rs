@@ -39,7 +39,7 @@ pub fn compile_std<'ctx>(
     program: &types::modules::RootModule,
     context: &'ctx Context,
 ) -> Result<CompiledRootModule<'ctx>, CompileError> {
-    let compiler = Compiler::new(context, None, None);
+    let compiler = Compiler::new(context, None, None, None);
 
     Ok(compiler.compile(program))
 }

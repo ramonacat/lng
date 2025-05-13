@@ -4,7 +4,11 @@ use compiler_derive::BuiltinStruct;
 use inkwell::values::BasicValue;
 
 use crate::{
-    compile::{context::CompilerContext, scope::GlobalScope, unique_name, value::StructInstance},
+    compile::{
+        context::{AllItems, CompilerContext},
+        unique_name,
+        value::StructInstance,
+    },
     identifier::Identifier,
     types,
 };
@@ -39,7 +43,7 @@ impl ArrayValue {
     pub fn build_instance<'ctx>(
         item_type: &types::InstantiatedType,
         context: &CompilerContext<'ctx>,
-        global_scope: &mut GlobalScope<'ctx>,
+        structs: &mut AllItems<'ctx>,
     ) -> RcValue<'ctx> {
         let items_type = context.make_object_type(item_type);
         // TODO add freeing of this array once destructors are in place
@@ -64,8 +68,7 @@ impl ArrayValue {
         );
         let id = *TYPE_NAME_ARRAY;
 
-        let array_value = global_scope
-            .structs
+        let array_value = structs
             .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                 id,
                 types::TypeArgumentValues::new(tav.clone()),
@@ -85,7 +88,7 @@ impl ArrayValue {
                 )),
             ),
             context,
-            global_scope,
+            structs,
         )
     }
 }

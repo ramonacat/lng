@@ -62,12 +62,18 @@ pub fn compile(
     let CompiledRootModule::Library {
         scope: std_scope,
         modules: std_modules,
+        items: std_items,
     } = std
     else {
         todo!();
     };
 
-    let compiler = Compiler::new(&context, Some(std_scope), Some(std_modules));
+    let compiler = Compiler::new(
+        &context,
+        Some(std_scope),
+        Some(std_modules),
+        Some(std_items),
+    );
 
     let compiled_root_module = compiler.compile(program);
     let root_module = context.create_module("root");
@@ -76,6 +82,7 @@ pub fn compile(
         scope: _,
         main,
         modules,
+        items: _,
     } = compiled_root_module
     else {
         todo!();
@@ -165,6 +172,7 @@ impl<'ctx> Modules<'ctx> {
 pub(crate) struct Compiler<'ctx> {
     context: CompilerContext<'ctx>,
     global_scope: GlobalScope<'ctx>,
+    items: AllItems<'ctx>,
     modules: Modules<'ctx>,
 }
 
@@ -268,10 +276,12 @@ pub enum CompiledRootModule<'ctx> {
     App {
         scope: GlobalScope<'ctx>,
         modules: Modules<'ctx>,
+        items: AllItems<'ctx>,
         main: MangledIdentifier,
     },
     Library {
         scope: GlobalScope<'ctx>,
+        items: AllItems<'ctx>,
         modules: Modules<'ctx>,
     },
 }
@@ -279,14 +289,17 @@ pub enum CompiledRootModule<'ctx> {
 impl<'ctx> Compiler<'ctx> {
     pub fn new(
         context: &'ctx Context,
-        std: Option<GlobalScope<'ctx>>,
-        modules: Option<Modules<'ctx>>,
+        std_scope: Option<GlobalScope<'ctx>>,
+        std_modules: Option<Modules<'ctx>>,
+        std_items: Option<AllItems<'ctx>>,
     ) -> Self {
         let builtins = Builtins {
             rc_handle: rc::describe_structure(),
         };
 
-        let global_scope = std.unwrap_or_else(|| {
+        let global_scope = std_scope.unwrap_or_else(GlobalScope::new);
+        let modules = std_modules.unwrap_or_else(Modules::new);
+        let items = std_items.unwrap_or_else(|| {
             // If there is no std, then we want to get in early and create the builtins, so that
             // the rest of the compilation can just add methods, etc. to them
 
@@ -295,10 +308,8 @@ impl<'ctx> Compiler<'ctx> {
             structs.insert(*TYPE_NAME_STRING, string::describe_structure());
             structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
 
-            GlobalScope::new(structs, HashMap::new())
+            AllItems::new(structs, HashMap::new())
         });
-
-        let modules = modules.unwrap_or_else(Modules::new);
 
         Self {
             context: CompilerContext {
@@ -308,6 +319,7 @@ impl<'ctx> Compiler<'ctx> {
             },
             global_scope,
             modules,
+            items,
         }
     }
 
@@ -333,9 +345,8 @@ impl<'ctx> Compiler<'ctx> {
         );
         structs.insert(rc_struct_id, rc::describe_structure());
 
-        self.global_scope.structs = AllItems::new(structs, functions);
-        self.global_scope
-            .structs
+        self.items = AllItems::new(structs, functions);
+        self.items
             .get_or_instantiate_struct(&InstantiatedStructId::new(
                 *TYPE_NAME_U64,
                 types::TypeArgumentValues::new_empty(),
@@ -347,8 +358,7 @@ impl<'ctx> Compiler<'ctx> {
 
         if let Some(main) = main {
             let main = self
-                .global_scope
-                .structs
+                .items
                 .get_or_instantiate_function(&types::functions::InstantiatedFunctionId::new(
                     main,
                     types::TypeArgumentValues::new_empty(),
@@ -361,12 +371,14 @@ impl<'ctx> Compiler<'ctx> {
             CompiledRootModule::App {
                 scope: self.global_scope,
                 modules: self.modules,
+                items: self.items,
                 main: mangled_main,
             }
         } else {
             CompiledRootModule::Library {
                 modules: self.modules,
                 scope: self.global_scope,
+                items: self.items,
             }
         }
     }
@@ -398,7 +410,7 @@ impl<'ctx> Compiler<'ctx> {
         let module = self.modules.get_mut(module_path).unwrap();
 
         let mut compiled_function =
-            module.begin_compile_function(handle, &self.context, &mut self.global_scope);
+            module.begin_compile_function(handle, &self.context, &mut self.items);
 
         self.compile_statements(statements, module_path, &mut compiled_function)?;
 
@@ -557,8 +569,7 @@ impl<'ctx> Compiler<'ctx> {
                     })
                     .collect::<Result<HashMap<_, _>, _>>()?;
                 let value = self
-                    .global_scope
-                    .structs
+                    .items
                     .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                         name,
                         target_tav.clone(),
@@ -580,7 +591,7 @@ impl<'ctx> Compiler<'ctx> {
                         }),
                     ),
                     &self.context,
-                    &mut self.global_scope,
+                    &mut self.items,
                 );
                 compiled_function.rcs.push(rc.clone());
 
@@ -594,7 +605,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.compile_expression(target, self_, compiled_function, module_path)?;
 
                 let access_result = target_value
-                    .read_field_value(*field_name, &self.context, &self.global_scope)
+                    .read_field_value(*field_name, &self.context, &self.items)
                     .unwrap();
 
                 Ok((Some(target_value), access_result))
@@ -624,8 +635,7 @@ impl<'ctx> Compiler<'ctx> {
                 // here without the right TypeArgumentValues
                 types::TypeArgumentValues::new_empty(),
             );
-            self.global_scope
-                .structs
+            self.items
                 .get_or_instantiate_function(&instantiated_function_id)
                 .map(|x| {
                     self.modules
@@ -639,8 +649,7 @@ impl<'ctx> Compiler<'ctx> {
         .or_else(|| {
             let struct_id = types::structs::StructId::InModule(module_id, name);
 
-            self.global_scope
-                .structs
+            self.items
                 .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                     struct_id,
                     types::TypeArgumentValues::new_empty(),
@@ -669,7 +678,7 @@ impl<'ctx> Compiler<'ctx> {
             types::Literal::String(s) => {
                 let value = StringValue::new_literal(s.clone());
                 let name = &unique_name(&["literal", "string"]);
-                let rc = value.build_instance(name, &self.context, &mut self.global_scope);
+                let rc = value.build_instance(name, &self.context, &mut self.items);
                 compiled_function.rcs.push(rc.clone());
 
                 (None, Value::Reference(rc))
@@ -713,8 +722,7 @@ impl<'ctx> Compiler<'ctx> {
             types::TypeArgumentValues::new_empty(),
         );
         let definition = self
-            .global_scope
-            .structs
+            .items
             .get_or_instantiate_function(&instantiated_function_id)
             .unwrap()
             .clone();
@@ -774,8 +782,7 @@ impl<'ctx> Compiler<'ctx> {
                 type_argument_values,
             } => Value::Reference(RcValue::from_pointer(
                 call_result.into_pointer_value(),
-                self.global_scope
-                    .structs
+                self.items
                     .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                         *id,
                         type_argument_values.clone(),

@@ -8,8 +8,7 @@ use inkwell::{
 
 use crate::{
     compile::{
-        context::CompilerContext,
-        scope::GlobalScope,
+        context::{AllItems, CompilerContext},
         unique_name,
         value::{InstantiatedStructType, StructInstance},
     },
@@ -43,7 +42,7 @@ impl<'ctx> RcValue<'ctx> {
         name: &str,
         struct_instance: &StructInstance<'ctx>,
         context: &CompilerContext<'ctx>,
-        global_scope: &mut GlobalScope<'ctx>,
+        structs: &mut AllItems<'ctx>,
     ) -> Self
     where
         'src: 'ctx,
@@ -68,8 +67,7 @@ impl<'ctx> RcValue<'ctx> {
             ),
             types::TypeArgumentValues::new(tav),
         );
-        let rc = global_scope
-            .structs
+        let rc = structs
             .get_or_instantiate_struct(&instantiated_struct_id)
             .unwrap()
             .build_heap_instance(context, name, field_values);
@@ -115,10 +113,9 @@ impl<'ctx> RcValue<'ctx> {
     pub(crate) fn pointee(
         &self,
         context: &CompilerContext<'ctx>,
-        global_scope: &GlobalScope<'ctx>,
+        structs: &AllItems<'ctx>,
     ) -> PointerValue<'ctx> {
-        global_scope
-            .structs
+        structs
             .get_struct(&self.instantiated_struct_id)
             .unwrap()
             .build_field_load(

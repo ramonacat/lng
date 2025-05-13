@@ -5,7 +5,11 @@ use itertools::Itertools;
 
 use crate::{identifier::Identifier, types};
 
-use super::{builtins::rc::RcValue, context::CompilerContext, scope::GlobalScope, unique_name};
+use super::{
+    builtins::rc::RcValue,
+    context::{AllItems, CompilerContext},
+    unique_name,
+};
 
 pub struct InstantiatedStructType<'ctx> {
     pub(crate) definition: types::structs::Struct<types::InstantiatedType>,
@@ -108,7 +112,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         instance: Value<'ctx>,
         name: Identifier,
         context: &CompilerContext<'ctx>,
-        global_scope: &GlobalScope<'ctx>,
+        structs: &AllItems<'ctx>,
     ) -> Option<Value<'ctx>> {
         let field = self.definition.fields.iter().find(|f| f.name == name)?;
 
@@ -119,7 +123,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         let instance_ptr = match instance {
             Value::Empty => todo!(),
             Value::Primitive(_, _) => todo!(),
-            Value::Reference(rc_value) => rc_value.pointee(context, global_scope),
+            Value::Reference(rc_value) => rc_value.pointee(context, structs),
             Value::Function(_) => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
         };
@@ -212,14 +216,13 @@ impl<'ctx> Value<'ctx> {
         &self,
         field_path: Identifier,
         context: &CompilerContext<'ctx>,
-        global_scope: &GlobalScope<'ctx>,
+        structs: &AllItems<'ctx>,
     ) -> Option<Self> {
         match self {
-            Value::Primitive(struct_id, _) => global_scope
-                .structs
+            Value::Primitive(struct_id, _) => structs
                 .get_struct(struct_id)
                 .unwrap()
-                .read_field_value(self.clone(), field_path, context, global_scope),
+                .read_field_value(self.clone(), field_path, context, structs),
             Value::Reference(ref_) => {
                 let ref_type = ref_.type_();
                 let (struct_id, type_argument_values) = match ref_type.kind() {
@@ -240,14 +243,13 @@ impl<'ctx> Value<'ctx> {
                     }
                     types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
                 };
-                global_scope
-                    .structs
+                structs
                     .get_struct(&types::structs::InstantiatedStructId::new(
                         struct_id,
                         type_argument_values.clone(),
                     ))
                     .unwrap()
-                    .read_field_value(self.clone(), field_path, context, global_scope)
+                    .read_field_value(self.clone(), field_path, context, structs)
             }
             Value::Function(_) => todo!(),
             Value::Empty => todo!(),

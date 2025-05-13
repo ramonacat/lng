@@ -1,8 +1,8 @@
 use std::{collections::HashMap, fmt::Debug, rc::Rc, sync::RwLock};
 
-use crate::{identifier::Identifier, types};
+use crate::identifier::Identifier;
 
-use super::{Value, context::AllItems};
+use super::Value;
 
 pub struct Scope<'ctx> {
     locals: RwLock<HashMap<Identifier, Value<'ctx>>>,
@@ -76,17 +76,11 @@ impl<'ctx> Scope<'ctx> {
 
 pub struct GlobalScope<'ctx> {
     scope: Rc<Scope<'ctx>>,
-    // TODO should it be made private?
-    pub structs: AllItems<'ctx>,
 }
 
 impl Debug for GlobalScope<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{")?;
-
-        writeln!(f, "---STRUCTS---")?;
-
-        writeln!(f, "{:?}", &self.structs)?;
 
         writeln!(f, "===SCOPE===")?;
 
@@ -99,16 +93,9 @@ impl Debug for GlobalScope<'_> {
 }
 
 impl<'ctx> GlobalScope<'ctx> {
-    pub(crate) fn new(
-        structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
-        functions: HashMap<
-            types::functions::FunctionId,
-            types::functions::Function<types::GenericType>,
-        >,
-    ) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             scope: Scope::root(),
-            structs: AllItems::new(structs, functions),
         }
     }
 
