@@ -85,12 +85,15 @@ impl<'ctx> RcValue<'ctx> {
     }
 
     #[must_use]
+    // TODO we need a vtable for the object!
     pub fn from_pointer(pointer: PointerValue<'ctx>, value_type: types::InstantiatedType) -> Self {
         let mut tav = HashMap::new();
+
         tav.insert(
             types::TypeArgument::new(Identifier::parse("TPointee")),
             value_type.clone(),
         );
+
         let instantiated_struct_id = InstantiatedStructId::new(
             types::structs::StructId::InModule(
                 types::modules::ModuleId::parse("std"),
@@ -98,6 +101,7 @@ impl<'ctx> RcValue<'ctx> {
             ),
             types::TypeArgumentValues::new(tav),
         );
+
         RcValue {
             pointer,
             value_type,
