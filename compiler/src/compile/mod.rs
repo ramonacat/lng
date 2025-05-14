@@ -1,12 +1,13 @@
 pub mod builtins;
 mod compilers;
 mod context;
+pub(crate) mod errors;
 pub(crate) mod mangler;
 mod module;
 pub(crate) mod scope;
 mod value;
 
-use std::{collections::HashMap, error::Error, fmt::Display, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
 use builtins::{
     array,
@@ -15,9 +16,9 @@ use builtins::{
 };
 use compilers::expression::ExpressionCompiler;
 use context::{AllItems, Builtins, CompilerContext};
+use errors::CompileError;
 use inkwell::{
-    basic_block::BasicBlock, builder::BuilderError, context::Context,
-    execution_engine::ExecutionEngine, module::Module,
+    basic_block::BasicBlock, context::Context, execution_engine::ExecutionEngine, module::Module,
 };
 use mangler::{MangledIdentifier, mangle_module_id, mangle_type};
 use module::CompiledModule;
@@ -26,8 +27,7 @@ use scope::{GlobalScope, Scope};
 use value::Value;
 
 use crate::{
-    ast,
-    identifier::{FQName, Identifier},
+    identifier::Identifier,
     std::{TYPE_NAME_STRING, TYPE_NAME_U64, compile_std, runtime::register_mappings},
     types::{self, structs::InstantiatedStructId},
 };
@@ -172,87 +172,6 @@ pub(crate) struct Compiler<'ctx> {
     global_scope: GlobalScope<'ctx>,
     items: AllItems<'ctx>,
     modules: Modules<'ctx>,
-}
-
-#[derive(Debug)]
-pub struct CompileError {
-    description: CompileErrorDescription,
-    position: ast::SourceSpan,
-}
-
-#[derive(Debug)]
-pub enum CompileErrorDescription {
-    ModuleNotFound(types::modules::ModuleId),
-    FunctionNotFound {
-        module_name: FQName,
-        function_name: Identifier,
-    },
-    InternalError(String),
-    StructNotFound {
-        module_name: FQName,
-        struct_name: Identifier,
-    },
-    FieldNotFound(FQName, Identifier),
-    MissingGenericArguments(FQName, types::TypeArguments),
-}
-
-impl Display for CompileErrorDescription {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ModuleNotFound(name) => write!(f, "Module {name} not found"),
-            Self::FunctionNotFound {
-                module_name,
-                function_name,
-            } => write!(
-                f,
-                "Function {function_name} was not found in module {module_name}"
-            ),
-            Self::InternalError(message) => {
-                write!(f, "Internal error: {message}")
-            }
-            Self::StructNotFound {
-                module_name,
-                struct_name: function_name,
-            } => write!(f, "Struct {function_name} not found in {module_name}"),
-            Self::FieldNotFound(struct_name, field_name) => {
-                write!(f, "Field {field_name} not found on struct {struct_name}")
-            }
-            Self::MissingGenericArguments(fqname, type_arguments) => write!(
-                f,
-                "missing generic arguments {type_arguments} in a call to {fqname}"
-            ),
-        }
-    }
-}
-
-impl Error for CompileError {}
-impl Display for CompileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "compile error: {} at {}",
-            self.description, self.position
-        )
-    }
-}
-
-impl From<BuilderError> for CompileErrorDescription {
-    fn from(value: BuilderError) -> Self {
-        Self::InternalError(format!("{value}"))
-    }
-}
-
-trait IntoCompileError {
-    fn at(self, position: ast::SourceSpan) -> CompileError;
-}
-
-impl IntoCompileError for BuilderError {
-    fn at(self, position: ast::SourceSpan) -> CompileError {
-        CompileError {
-            description: self.into(),
-            position,
-        }
-    }
 }
 
 pub(crate) struct CompiledFunction<'ctx> {

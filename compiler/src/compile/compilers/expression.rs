@@ -5,9 +5,10 @@ use inkwell::values::{AnyValue as _, BasicMetadataValueEnum, BasicValue as _};
 use crate::{
     ast,
     compile::{
-        CompileError, CompiledFunction, Compiler, IntoCompileError as _,
+        CompiledFunction, Compiler,
         builtins::{rc::RcValue, string::StringValue},
         context::CompilerContext,
+        errors::{CompileError, IntoCompileError as _},
         unique_name,
         value::{StructInstance, Value},
     },

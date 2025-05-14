@@ -6,7 +6,7 @@ use inkwell::context::Context;
 
 use crate::{
     ast,
-    compile::{CompileError, CompiledRootModule, Compiler},
+    compile::{CompiledRootModule, Compiler, errors::CompileError},
     identifier::Identifier,
     type_check::{errors::TypeCheckError, type_check},
     types,
