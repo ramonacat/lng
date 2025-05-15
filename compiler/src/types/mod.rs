@@ -43,11 +43,7 @@ impl Display for ItemId {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum InstantiatedTypeKind {
     Unit,
-    // TODO should be InstantiatedStructId
-    Object {
-        type_name: StructId,
-        type_argument_values: TypeArgumentValues,
-    },
+    Object(InstantiatedStructId),
     Array {
         element_type: Box<InstantiatedType>,
     },
@@ -136,16 +132,11 @@ impl InstantiatedType {
         lookup_struct: impl Fn(StructId) -> Option<Struct>,
     ) -> bool {
         match (&self.kind, &type_.kind) {
-            (
-                InstantiatedTypeKind::Object {
-                    type_name: l_name,
-                    type_argument_values: l_args,
-                },
-                InstantiatedTypeKind::Object {
-                    type_name: r_name,
-                    type_argument_values: r_args,
-                },
-            ) => l_name == r_name && l_args == r_args,
+            (InstantiatedTypeKind::Object(l_name), InstantiatedTypeKind::Object(r_name)) =>
+            // TODO check if the generic types have the same values
+            {
+                l_name == r_name
+            }
             (
                 InstantiatedTypeKind::InterfaceObject {
                     interface_id: l_id,
@@ -161,12 +152,9 @@ impl InstantiatedType {
                     interface_id: l_id,
                     type_argument_values: _,
                 },
-                InstantiatedTypeKind::Object {
-                    type_name: r_name,
-                    type_argument_values: _,
-                },
+                InstantiatedTypeKind::Object(r_name),
             ) => {
-                let struct_ = lookup_struct(*r_name).unwrap();
+                let struct_ = lookup_struct(r_name.id()).unwrap();
 
                 // TODO check if it implements the interface with the right type args
                 struct_.implements(*l_id)
@@ -180,10 +168,12 @@ impl Display for InstantiatedType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             InstantiatedTypeKind::Unit => write!(f, "()"),
-            InstantiatedTypeKind::Object {
-                type_name,
-                type_argument_values,
-            } => write!(f, "{type_name}<{type_argument_values}>"),
+            InstantiatedTypeKind::Object(instantiated_struct_id) => write!(
+                f,
+                "{}<{}>",
+                instantiated_struct_id.id(),
+                instantiated_struct_id.argument_values()
+            ),
             InstantiatedTypeKind::Array { element_type } => write!(f, "{element_type}[]"),
             InstantiatedTypeKind::Callable(function_id) => write!(f, "callable<{function_id}>"),
             InstantiatedTypeKind::U64 => write!(f, "u64"),

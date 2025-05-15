@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::{ast, identifier::Identifier, types};
+use crate::{
+    ast,
+    identifier::Identifier,
+    types::{self, structs::InstantiatedStructId},
+};
 
 use super::errors::TypeCheckError;
 
@@ -69,10 +73,10 @@ impl DeclaredItemKind<'_> {
         match self {
             // TODO handle generics
             Self::Struct(struct_) => types::InstantiatedType::new_generic(
-                types::InstantiatedTypeKind::Object {
-                    type_name: struct_.id,
-                    type_argument_values: types::generics::TypeArgumentValues::new_empty(),
-                },
+                types::InstantiatedTypeKind::Object(InstantiatedStructId::new(
+                    struct_.id,
+                    types::generics::TypeArgumentValues::new_empty(),
+                )),
                 struct_.type_.arguments().clone(),
                 types::generics::TypeArgumentValues::new_empty(),
             ),

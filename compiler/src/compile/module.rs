@@ -105,17 +105,11 @@ impl<'ctx> CompiledModule<'ctx> {
         {
             let value = match argument.type_.kind() {
                 types::InstantiatedTypeKind::Unit => todo!(),
-                types::InstantiatedTypeKind::Object {
-                    type_name: id,
-                    type_argument_values,
-                } => {
+                types::InstantiatedTypeKind::Object(instantiated_struct_id) => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
                         structs
-                            .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
-                                *id,
-                                type_argument_values.clone(),
-                            ))
+                            .get_or_instantiate_struct(instantiated_struct_id)
                             .unwrap()
                             .definition
                             .instance_type(),

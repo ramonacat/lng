@@ -109,10 +109,9 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
                     crate::types::generics::TypeArgumentValues::new_empty()
                 ),
                 instance_type: crate::types::InstantiatedType::new_generic(
-                    crate::types::InstantiatedTypeKind::Object{
-                        type_name: struct_id,
-                        type_argument_values: crate::types::generics::TypeArgumentValues::new_empty()
-                    },
+                    crate::types::InstantiatedTypeKind::Object(
+                        crate::types::structs::InstantiatedStructId::new(struct_id, types::generics::TypeArgumentValues::new_empty())
+                    ),
                     type_argument_names, types::generics::TypeArgumentValues::new_empty()
                 ),
                 fields: vec![#(#fields_gen),*],

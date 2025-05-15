@@ -332,10 +332,12 @@ impl DeclarationChecker {
                 fields,
                 impls: vec![],
                 type_: struct_type,
-                instance_type: types::InstantiatedType::new(types::InstantiatedTypeKind::Object {
-                    type_name: struct_id,
-                    type_argument_values: types::generics::TypeArgumentValues::new_empty(),
-                }),
+                instance_type: types::InstantiatedType::new(types::InstantiatedTypeKind::Object(
+                    types::structs::InstantiatedStructId::new(
+                        struct_id,
+                        types::generics::TypeArgumentValues::new_empty(),
+                    ),
+                )),
                 implemented_interfaces: HashMap::new(),
             },
         );
@@ -356,12 +358,10 @@ impl DeclarationChecker {
                         element_type: array_item_type,
                     } = argument.type_.kind()
                     {
-                        if let types::InstantiatedTypeKind::Object {
-                            type_name: id,
-                            type_argument_values: _,
-                        } = array_item_type.kind()
+                        if let types::InstantiatedTypeKind::Object(instantiated_struct_id) =
+                            array_item_type.kind()
                         {
-                            if *id == *TYPE_NAME_STRING {
+                            if instantiated_struct_id.id() == *TYPE_NAME_STRING {
                                 if self.main.is_some() {
                                     todo!("show a nice error here, main is already defined");
                                 }

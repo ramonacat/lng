@@ -227,12 +227,11 @@ impl<'ctx> Value<'ctx> {
                 .read_field_value(self.clone(), field_path, context, structs),
             Value::Reference(ref_) => {
                 let ref_type = ref_.type_();
-                let (struct_id, type_argument_values) = match ref_type.kind() {
+                let instantiated_struct_id = match ref_type.kind() {
                     types::InstantiatedTypeKind::Unit => todo!(),
-                    types::InstantiatedTypeKind::Object {
-                        type_name,
-                        type_argument_values,
-                    } => (*type_name, type_argument_values),
+                    types::InstantiatedTypeKind::Object(instantiated_struct_id) => {
+                        instantiated_struct_id
+                    }
                     types::InstantiatedTypeKind::Array { .. } => todo!(),
                     types::InstantiatedTypeKind::Callable(_) => todo!(),
                     types::InstantiatedTypeKind::U64 => todo!(),
@@ -248,10 +247,7 @@ impl<'ctx> Value<'ctx> {
                     types::InstantiatedTypeKind::Interface(_) => todo!(),
                 };
                 structs
-                    .get_struct(&types::structs::InstantiatedStructId::new(
-                        struct_id,
-                        type_argument_values.clone(),
-                    ))
+                    .get_struct(instantiated_struct_id)
                     .unwrap()
                     .read_field_value(self.clone(), field_path, context, structs)
             }

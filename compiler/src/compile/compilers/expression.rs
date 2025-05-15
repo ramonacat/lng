@@ -84,13 +84,11 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                         ))
                     })
                     .collect::<Result<HashMap<_, _>, _>>()?;
+                let value_struct_id = types::structs::InstantiatedStructId::new(name, target_tav);
                 let value = self
                     .compiler
                     .items
-                    .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
-                        name,
-                        target_tav.clone(),
-                    ))
+                    .get_or_instantiate_struct(&value_struct_id)
                     .unwrap()
                     .build_heap_instance(
                         &self.compiler.context,
@@ -102,10 +100,9 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                     &unique_name(&[&name.to_string(), "rc"]),
                     &StructInstance::new(
                         value,
-                        types::InstantiatedType::new(types::InstantiatedTypeKind::Object {
-                            type_name: name,
-                            type_argument_values: target_tav,
-                        }),
+                        types::InstantiatedType::new(types::InstantiatedTypeKind::Object(
+                            value_struct_id,
+                        )),
                     ),
                     &self.compiler.context,
                     &mut self.compiler.items,
@@ -275,22 +272,18 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
         let call_result = call_result.as_any_value_enum();
         let value = match definition.return_type.kind() {
             types::InstantiatedTypeKind::Unit => Value::Empty,
-            types::InstantiatedTypeKind::Object {
-                type_name: id,
-                type_argument_values,
-            } => Value::Reference(RcValue::from_pointer(
-                call_result.into_pointer_value(),
-                self.compiler
-                    .items
-                    .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
-                        *id,
-                        type_argument_values.clone(),
-                    ))
-                    .unwrap()
-                    .definition
-                    .type_
-                    .clone(),
-            )),
+            types::InstantiatedTypeKind::Object(instantiated_struct_id) => {
+                Value::Reference(RcValue::from_pointer(
+                    call_result.into_pointer_value(),
+                    self.compiler
+                        .items
+                        .get_or_instantiate_struct(instantiated_struct_id)
+                        .unwrap()
+                        .definition
+                        .type_
+                        .clone(),
+                ))
+            }
             types::InstantiatedTypeKind::Array { .. } => todo!(),
             types::InstantiatedTypeKind::Callable { .. } => todo!(),
             types::InstantiatedTypeKind::U64 => todo!(),

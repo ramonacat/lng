@@ -62,10 +62,12 @@ impl<'root> ExpressionChecker<'root> {
             ast::ExpressionKind::Literal(literal) => match literal {
                 ast::Literal::String(value, _) => Ok(types::Expression {
                     position,
-                    type_: types::InstantiatedType::new(types::InstantiatedTypeKind::Object {
-                        type_name: *TYPE_NAME_STRING,
-                        type_argument_values: types::generics::TypeArgumentValues::new_empty(),
-                    }),
+                    type_: types::InstantiatedType::new(types::InstantiatedTypeKind::Object(
+                        types::structs::InstantiatedStructId::new(
+                            *TYPE_NAME_STRING,
+                            types::generics::TypeArgumentValues::new_empty(),
+                        ),
+                    )),
                     kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
                 }),
                 ast::Literal::UnsignedInteger(value) => Ok(types::Expression {
@@ -81,10 +83,8 @@ impl<'root> ExpressionChecker<'root> {
                 let target = self.type_check_expression(target, locals, module_path)?;
 
                 let (type_, kind) = {
-                    let types::InstantiatedTypeKind::Object {
-                        type_name: instantiated_struct_id,
-                        type_argument_values: _,
-                    } = target.type_.kind()
+                    let types::InstantiatedTypeKind::Object(instantiated_struct_id) =
+                        target.type_.kind()
                     else {
                         todo!();
                     };
@@ -100,10 +100,9 @@ impl<'root> ExpressionChecker<'root> {
                         .collect::<Result<Vec<_>, _>>()?;
 
                     (
-                        types::InstantiatedType::new(types::InstantiatedTypeKind::Object {
-                            type_name: *instantiated_struct_id,
-                            type_argument_values: types::generics::TypeArgumentValues::new_empty(),
-                        }),
+                        types::InstantiatedType::new(types::InstantiatedTypeKind::Object(
+                            instantiated_struct_id.clone(),
+                        )),
                         types::ExpressionKind::StructConstructor(Box::new(target), field_values),
                     )
                 };
@@ -326,13 +325,10 @@ impl<'root> ExpressionChecker<'root> {
         match r#type.kind() {
             types::InstantiatedTypeKind::Generic(_) => todo!(),
             types::InstantiatedTypeKind::Unit => todo!(),
-            types::InstantiatedTypeKind::Object {
-                type_name,
-                type_argument_values: _,
-            } => self
+            types::InstantiatedTypeKind::Object(instantiated_struct_id) => self
                 .root_module_declaration
                 .structs
-                .get(type_name)
+                .get(&instantiated_struct_id.id())
                 .map(|x| x.field_type(field_name))
                 .unwrap(),
             types::InstantiatedTypeKind::Array { .. } => todo!(),
