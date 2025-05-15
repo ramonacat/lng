@@ -11,7 +11,7 @@ use super::{
 };
 
 pub(super) struct Locals {
-    values: HashMap<Identifier, types::InstantiatedType>,
+    values: HashMap<Identifier, types::Type>,
 }
 
 impl Locals {
@@ -27,11 +27,11 @@ impl Locals {
         }
     }
 
-    pub(super) fn push_variable(&mut self, name: Identifier, r#type: types::InstantiatedType) {
+    pub(super) fn push_variable(&mut self, name: Identifier, r#type: types::Type) {
         self.values.insert(name, r#type);
     }
 
-    pub(super) fn get(&self, id: Identifier) -> Option<types::InstantiatedType> {
+    pub(super) fn get(&self, id: Identifier) -> Option<types::Type> {
         self.values.get(&id).cloned()
     }
 }
@@ -62,7 +62,7 @@ impl<'root> ExpressionChecker<'root> {
             ast::ExpressionKind::Literal(literal) => match literal {
                 ast::Literal::String(value, _) => Ok(types::Expression {
                     position,
-                    type_: types::InstantiatedType::new(types::InstantiatedTypeKind::Object(
+                    type_: types::Type::new(types::TypeKind::Object(
                         types::structs::InstantiatedStructId::new(
                             *TYPE_NAME_STRING,
                             types::generics::TypeArgumentValues::new_empty(),
@@ -72,7 +72,7 @@ impl<'root> ExpressionChecker<'root> {
                 }),
                 ast::Literal::UnsignedInteger(value) => Ok(types::Expression {
                     position,
-                    type_: types::InstantiatedType::u64(),
+                    type_: types::Type::u64(),
                     kind: types::ExpressionKind::Literal(types::Literal::UnsignedInteger(*value)),
                 }),
             },
@@ -83,8 +83,7 @@ impl<'root> ExpressionChecker<'root> {
                 let target = self.type_check_expression(target, locals, module_path)?;
 
                 let (type_, kind) = {
-                    let types::InstantiatedTypeKind::Object(instantiated_struct_id) =
-                        target.type_.kind()
+                    let types::TypeKind::Object(instantiated_struct_id) = target.type_.kind()
                     else {
                         todo!();
                     };
@@ -100,9 +99,7 @@ impl<'root> ExpressionChecker<'root> {
                         .collect::<Result<Vec<_>, _>>()?;
 
                     (
-                        types::InstantiatedType::new(types::InstantiatedTypeKind::Object(
-                            instantiated_struct_id.clone(),
-                        )),
+                        types::Type::new(types::TypeKind::Object(instantiated_struct_id.clone())),
                         types::ExpressionKind::StructConstructor(Box::new(target), field_values),
                     )
                 };
@@ -225,10 +222,10 @@ impl<'root> ExpressionChecker<'root> {
     fn retrieve_callable_info(
         &self,
         checked_target: &types::Expression,
-        target_type_kind: &types::InstantiatedTypeKind,
-    ) -> (Vec<types::functions::Argument>, types::InstantiatedType) {
+        target_type_kind: &types::TypeKind,
+    ) -> (Vec<types::functions::Argument>, types::Type) {
         let (callable_arguments, return_type) = {
-            if let types::InstantiatedTypeKind::Callable(function_id) = target_type_kind {
+            if let types::TypeKind::Callable(function_id) = target_type_kind {
                 let root_module = &self.root_module_declaration.functions;
                 if let Some(DeclaredFunction {
                     arguments: callable_arguments,
@@ -255,10 +252,8 @@ impl<'root> ExpressionChecker<'root> {
                 } else {
                     panic!("calling unknown function: {function_id}");
                 }
-            } else if let types::InstantiatedTypeKind::IndirectCallable(
-                interface_id,
-                function_name,
-            ) = checked_target.type_.kind()
+            } else if let types::TypeKind::IndirectCallable(interface_id, function_name) =
+                checked_target.type_.kind()
             {
                 let interfaces = &self.root_module_declaration.interfaces;
 
@@ -317,46 +312,42 @@ impl<'root> ExpressionChecker<'root> {
         }
     }
 
-    fn field_type(
-        &self,
-        r#type: &types::InstantiatedType,
-        field_name: Identifier,
-    ) -> types::InstantiatedType {
+    fn field_type(&self, r#type: &types::Type, field_name: Identifier) -> types::Type {
         match r#type.kind() {
-            types::InstantiatedTypeKind::Generic(_) => todo!(),
-            types::InstantiatedTypeKind::Unit => todo!(),
-            types::InstantiatedTypeKind::Object(instantiated_struct_id) => self
+            types::TypeKind::Generic(_) => todo!(),
+            types::TypeKind::Unit => todo!(),
+            types::TypeKind::Object(instantiated_struct_id) => self
                 .root_module_declaration
                 .structs
                 .get(&instantiated_struct_id.id())
                 .map(|x| x.field_type(field_name))
                 .unwrap(),
-            types::InstantiatedTypeKind::Array { .. } => todo!(),
-            types::InstantiatedTypeKind::Callable(_) => todo!(),
-            types::InstantiatedTypeKind::U64 => self
+            types::TypeKind::Array { .. } => todo!(),
+            types::TypeKind::Callable(_) => todo!(),
+            types::TypeKind::U64 => self
                 .root_module_declaration
                 .structs
                 .get(&*TYPE_NAME_U64)
                 .map(|x| x.field_type(field_name))
                 .unwrap(),
-            types::InstantiatedTypeKind::U8 => todo!(),
-            types::InstantiatedTypeKind::Pointer(_) => todo!(),
-            types::InstantiatedTypeKind::Struct(struct_id) => self
+            types::TypeKind::U8 => todo!(),
+            types::TypeKind::Pointer(_) => todo!(),
+            types::TypeKind::Struct(struct_id) => self
                 .root_module_declaration
                 .structs
                 .get(&struct_id.id())
                 .map(|x| x.field_type(field_name))
                 .unwrap(),
-            types::InstantiatedTypeKind::Function(_) => todo!(),
-            types::InstantiatedTypeKind::Interface(_) => todo!(),
-            types::InstantiatedTypeKind::InterfaceObject(instantiated_inteface_id) => self
+            types::TypeKind::Function(_) => todo!(),
+            types::TypeKind::Interface(_) => todo!(),
+            types::TypeKind::InterfaceObject(instantiated_inteface_id) => self
                 .root_module_declaration
                 .interfaces
                 .get(&instantiated_inteface_id.id())
                 .map(|i| i.functions.get(&field_name).unwrap())
                 .map(|_| {
-                    types::InstantiatedType::new_generic(
-                        types::InstantiatedTypeKind::IndirectCallable(
+                    types::Type::new_generic(
+                        types::TypeKind::IndirectCallable(
                             instantiated_inteface_id.clone(),
                             field_name,
                         ),
@@ -365,7 +356,7 @@ impl<'root> ExpressionChecker<'root> {
                     )
                 })
                 .unwrap(),
-            types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
+            types::TypeKind::IndirectCallable(_, _) => todo!(),
         }
     }
 }

@@ -2,9 +2,7 @@ use std::collections::HashMap;
 
 use crate::identifier::Identifier;
 
-use super::{
-    InstantiatedType, functions::Argument, generics::TypeArgumentValues, modules::ModuleId,
-};
+use super::{Type, functions::Argument, generics::TypeArgumentValues, modules::ModuleId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InterfaceId {
@@ -25,13 +23,13 @@ impl InstantiatedInterfaceId {
 
 #[derive(Clone)]
 pub struct FunctionDeclaration {
-    pub return_type: InstantiatedType,
+    pub return_type: Type,
     pub arguments: Vec<Argument>,
 }
 
 #[derive(Clone)]
 pub struct Interface {
     pub id: InterfaceId,
-    pub type_: InstantiatedType,
+    pub type_: Type,
     pub functions: HashMap<Identifier, FunctionDeclaration>,
 }

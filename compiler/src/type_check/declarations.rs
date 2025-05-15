@@ -13,7 +13,7 @@ pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
     pub(super) module_name: types::modules::ModuleId,
     pub(super) arguments: Vec<types::functions::Argument>,
-    pub(super) return_type: types::InstantiatedType,
+    pub(super) return_type: types::Type,
     pub(super) ast: ast::Function,
     pub(super) position: ast::SourceSpan,
     pub(super) visibility: types::Visibility,
@@ -21,7 +21,7 @@ pub(super) struct DeclaredFunction {
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredStructField {
-    pub(super) type_: types::InstantiatedType,
+    pub(super) type_: types::Type,
     pub(super) static_: bool,
 }
 
@@ -69,28 +69,28 @@ pub enum DeclaredItemKind<'item> {
 }
 
 impl DeclaredItemKind<'_> {
-    pub(crate) fn type_(&self) -> types::InstantiatedType {
+    pub(crate) fn type_(&self) -> types::Type {
         match self {
             // TODO handle generics
-            Self::Struct(struct_) => types::InstantiatedType::new_generic(
-                types::InstantiatedTypeKind::Object(InstantiatedStructId::new(
+            Self::Struct(struct_) => types::Type::new_generic(
+                types::TypeKind::Object(InstantiatedStructId::new(
                     struct_.id,
                     types::generics::TypeArgumentValues::new_empty(),
                 )),
                 struct_.type_.arguments().clone(),
                 types::generics::TypeArgumentValues::new_empty(),
             ),
-            Self::Function(declared_function) => types::InstantiatedType::new(
-                types::InstantiatedTypeKind::Callable(declared_function.id),
-            ),
-            Self::PredeclaredFunction(function) => types::InstantiatedType::new_generic(
-                types::InstantiatedTypeKind::Callable(function.id),
+            Self::Function(declared_function) => {
+                types::Type::new(types::TypeKind::Callable(declared_function.id))
+            }
+            Self::PredeclaredFunction(function) => types::Type::new_generic(
+                types::TypeKind::Callable(function.id),
                 function.type_.arguments().clone(),
                 types::generics::TypeArgumentValues::new_empty(),
             ),
-            Self::Interface(interface) => types::InstantiatedType::new_generic(
+            Self::Interface(interface) => types::Type::new_generic(
                 // TODO handle generic interfaces here
-                types::InstantiatedTypeKind::InterfaceObject(InstantiatedInterfaceId::new(
+                types::TypeKind::InterfaceObject(InstantiatedInterfaceId::new(
                     interface.id,
                     types::generics::TypeArgumentValues::new_empty(),
                 )),
@@ -188,18 +188,16 @@ pub(super) fn resolve_type(
     root_module: &DeclaredRootModule,
     current_module: types::modules::ModuleId,
     r#type: &ast::TypeDescription,
-) -> Result<types::InstantiatedType, TypeCheckError> {
+) -> Result<types::Type, TypeCheckError> {
     // TODO handle generics here
     match r#type {
-        ast::TypeDescription::Array(type_description) => Ok(types::InstantiatedType::new(
-            types::InstantiatedTypeKind::Array(Box::new(resolve_type(
-                root_module,
-                current_module,
-                type_description,
-            )?)),
-        )),
-        ast::TypeDescription::Named(name) if name == "()" => Ok(types::InstantiatedType::unit()),
-        ast::TypeDescription::Named(name) if name == "u64" => Ok(types::InstantiatedType::u64()),
+        ast::TypeDescription::Array(type_description) => {
+            Ok(types::Type::new(types::TypeKind::Array(Box::new(
+                resolve_type(root_module, current_module, type_description)?,
+            ))))
+        }
+        ast::TypeDescription::Named(name) if name == "()" => Ok(types::Type::unit()),
+        ast::TypeDescription::Named(name) if name == "u64" => Ok(types::Type::u64()),
         ast::TypeDescription::Named(name) => {
             let (current_module, name) = root_module.resolve_import(current_module, *name);
 

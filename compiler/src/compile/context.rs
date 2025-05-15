@@ -129,31 +129,29 @@ impl<'ctx> CompilerContext<'ctx> {
         )
     }
 
-    fn type_to_llvm(&self, type_: &types::InstantiatedType) -> Box<dyn BasicType<'ctx> + 'ctx> {
+    fn type_to_llvm(&self, type_: &types::Type) -> Box<dyn BasicType<'ctx> + 'ctx> {
         match &type_.kind() {
-            types::InstantiatedTypeKind::Unit | types::InstantiatedTypeKind::U8 => {
-                Box::new(self.llvm_context.i8_type())
-            }
-            types::InstantiatedTypeKind::U64 => Box::new(self.llvm_context.i64_type()),
-            types::InstantiatedTypeKind::Callable { .. }
-            | types::InstantiatedTypeKind::Pointer(_)
-            | types::InstantiatedTypeKind::Array { .. }
-            | types::InstantiatedTypeKind::Object { .. } => {
+            types::TypeKind::Unit | types::TypeKind::U8 => Box::new(self.llvm_context.i8_type()),
+            types::TypeKind::U64 => Box::new(self.llvm_context.i64_type()),
+            types::TypeKind::Callable { .. }
+            | types::TypeKind::Pointer(_)
+            | types::TypeKind::Array { .. }
+            | types::TypeKind::Object { .. } => {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
-            types::InstantiatedTypeKind::Struct(_) => todo!(),
-            types::InstantiatedTypeKind::Function(_) => todo!(),
-            types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
-            types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
-            types::InstantiatedTypeKind::Generic(_) => todo!(),
-            types::InstantiatedTypeKind::Interface(_) => todo!(),
+            types::TypeKind::Struct(_) => todo!(),
+            types::TypeKind::Function(_) => todo!(),
+            types::TypeKind::IndirectCallable(_, _) => todo!(),
+            types::TypeKind::InterfaceObject { .. } => todo!(),
+            types::TypeKind::Generic(_) => todo!(),
+            types::TypeKind::Interface(_) => todo!(),
         }
     }
 
     pub fn make_function_type(
         &self,
         arguments: &[types::functions::Argument],
-        return_type: &types::InstantiatedType,
+        return_type: &types::Type,
     ) -> FunctionType<'ctx> {
         let arguments = arguments
             .iter()
@@ -161,9 +159,7 @@ impl<'ctx> CompilerContext<'ctx> {
             .collect::<Vec<_>>();
 
         match return_type.kind() {
-            types::InstantiatedTypeKind::Unit => {
-                self.llvm_context.void_type().fn_type(&arguments[..], false)
-            }
+            types::TypeKind::Unit => self.llvm_context.void_type().fn_type(&arguments[..], false),
             _ => self
                 .type_to_llvm(return_type)
                 .fn_type(&arguments[..], false),
@@ -185,10 +181,7 @@ impl<'ctx> CompilerContext<'ctx> {
         }
     }
 
-    pub(crate) fn make_object_type(
-        &self,
-        item_type: &types::InstantiatedType,
-    ) -> BasicTypeEnum<'ctx> {
+    pub(crate) fn make_object_type(&self, item_type: &types::Type) -> BasicTypeEnum<'ctx> {
         self.type_to_llvm(item_type).as_basic_type_enum()
     }
 }

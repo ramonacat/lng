@@ -4,7 +4,7 @@ use itertools::Itertools as _;
 
 use crate::identifier::Identifier;
 
-use super::InstantiatedType;
+use super::Type;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeArguments(Vec<TypeArgument>);
@@ -44,7 +44,7 @@ impl std::fmt::Display for TypeArgument {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeArgumentValues(pub(crate) HashMap<TypeArgument, InstantiatedType>);
+pub struct TypeArgumentValues(pub(crate) HashMap<TypeArgument, Type>);
 
 impl std::hash::Hash for TypeArgumentValues {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -61,7 +61,7 @@ impl TypeArgumentValues {
         Self(HashMap::new())
     }
 
-    pub(crate) const fn new(tav: HashMap<TypeArgument, InstantiatedType>) -> Self {
+    pub(crate) const fn new(tav: HashMap<TypeArgument, Type>) -> Self {
         Self(tav)
     }
 

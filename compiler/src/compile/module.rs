@@ -28,7 +28,7 @@ impl types::functions::Function {
 pub struct CompiledModule<'ctx> {
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
-    functions: HashSet<types::InstantiatedType>,
+    functions: HashSet<types::Type>,
 }
 
 impl std::fmt::Debug for CompiledModule<'_> {
@@ -57,7 +57,7 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         name: &MangledIdentifier,
         arguments: &[types::functions::Argument],
-        return_type: &types::InstantiatedType,
+        return_type: &types::Type,
         linkage: Linkage,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
@@ -72,7 +72,7 @@ impl<'ctx> CompiledModule<'ctx> {
         linkage: Linkage,
         name: &MangledIdentifier,
         arguments: &[types::functions::Argument],
-        return_type: &types::InstantiatedType,
+        return_type: &types::Type,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         self.declare_function_inner(name, arguments, return_type, linkage, context)
@@ -104,8 +104,8 @@ impl<'ctx> CompiledModule<'ctx> {
         for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
         {
             let value = match argument.type_.kind() {
-                types::InstantiatedTypeKind::Unit => todo!(),
-                types::InstantiatedTypeKind::Object(instantiated_struct_id) => {
+                types::TypeKind::Unit => todo!(),
+                types::TypeKind::Object(instantiated_struct_id) => {
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
                         structs
@@ -118,25 +118,25 @@ impl<'ctx> CompiledModule<'ctx> {
 
                     Value::Reference(rc)
                 }
-                types::InstantiatedTypeKind::Array(a) => Value::Reference(
+                types::TypeKind::Array(a) => Value::Reference(
                     builtins::array::ArrayValue::build_instance(a.as_ref(), context, structs),
                 ),
-                types::InstantiatedTypeKind::Callable { .. } => todo!(),
-                types::InstantiatedTypeKind::U64 => Value::Primitive(
+                types::TypeKind::Callable { .. } => todo!(),
+                types::TypeKind::U64 => Value::Primitive(
                     types::structs::InstantiatedStructId::new(
                         CompilerContext::get_std_type("u64"),
                         types::generics::TypeArgumentValues::new_empty(),
                     ),
                     argument_value,
                 ),
-                types::InstantiatedTypeKind::Pointer(_) => todo!(),
-                types::InstantiatedTypeKind::U8 => todo!(),
-                types::InstantiatedTypeKind::Struct(_) => todo!(),
-                types::InstantiatedTypeKind::Function(_) => todo!(),
-                types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
-                types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
-                types::InstantiatedTypeKind::Generic(_) => todo!(),
-                types::InstantiatedTypeKind::Interface(_) => todo!(),
+                types::TypeKind::Pointer(_) => todo!(),
+                types::TypeKind::U8 => todo!(),
+                types::TypeKind::Struct(_) => todo!(),
+                types::TypeKind::Function(_) => todo!(),
+                types::TypeKind::IndirectCallable(_, _) => todo!(),
+                types::TypeKind::InterfaceObject { .. } => todo!(),
+                types::TypeKind::Generic(_) => todo!(),
+                types::TypeKind::Interface(_) => todo!(),
             };
 
             scope.set_value(argument.name, value);
@@ -165,7 +165,7 @@ impl<'ctx> CompiledModule<'ctx> {
         self.llvm_module
     }
 
-    pub(crate) fn has_function(&self, type_: &types::InstantiatedType) -> bool {
+    pub(crate) fn has_function(&self, type_: &types::Type) -> bool {
         self.functions.contains(type_)
     }
 

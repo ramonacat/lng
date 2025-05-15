@@ -42,10 +42,10 @@ impl Display for ItemId {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum InstantiatedTypeKind {
+pub enum TypeKind {
     Unit,
     Object(InstantiatedStructId),
-    Array(Box<InstantiatedType>),
+    Array(Box<Type>),
     // TODO this should be an object with special properties
     Callable(FunctionId),
     // TODO add u128,u32,u16,u8 and signed counterparts
@@ -53,7 +53,7 @@ pub enum InstantiatedTypeKind {
     // TODO add float
     U64,
     U8,
-    Pointer(Box<InstantiatedType>),
+    Pointer(Box<Type>),
     Struct(InstantiatedStructId),
     Function(InstantiatedFunctionId),
     IndirectCallable(InstantiatedInterfaceId, Identifier),
@@ -64,61 +64,61 @@ pub enum InstantiatedTypeKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InstantiatedType {
-    kind: InstantiatedTypeKind,
+pub struct Type {
+    kind: TypeKind,
     // TODO type_arguments and type_argument_values should be a single collection!
-    type_arguments: TypeArguments,
-    type_argument_values: TypeArgumentValues,
+    arguments: TypeArguments,
+    argument_values: TypeArgumentValues,
 }
 
-impl InstantiatedType {
-    pub(crate) fn new(kind: InstantiatedTypeKind) -> Self {
+impl Type {
+    pub(crate) fn new(kind: TypeKind) -> Self {
         Self {
             kind,
-            type_arguments: TypeArguments::new_empty(),
-            type_argument_values: TypeArgumentValues::new_empty(),
+            arguments: TypeArguments::new_empty(),
+            argument_values: TypeArgumentValues::new_empty(),
         }
     }
 
     pub(crate) fn unit() -> Self {
-        Self::new(InstantiatedTypeKind::Unit)
+        Self::new(TypeKind::Unit)
     }
 
     pub(crate) fn u8() -> Self {
-        Self::new(InstantiatedTypeKind::U8)
+        Self::new(TypeKind::U8)
     }
 
     pub(crate) fn u64() -> Self {
-        Self::new(InstantiatedTypeKind::U64)
+        Self::new(TypeKind::U64)
     }
 
     pub(crate) const fn new_generic(
-        kind: InstantiatedTypeKind,
+        kind: TypeKind,
         type_arguments: TypeArguments,
         type_argument_values: TypeArgumentValues,
     ) -> Self {
         Self {
             kind,
-            type_arguments,
-            type_argument_values,
+            arguments: type_arguments,
+            argument_values: type_argument_values,
         }
     }
 
-    pub(crate) const fn kind(&self) -> &InstantiatedTypeKind {
+    pub(crate) const fn kind(&self) -> &TypeKind {
         &self.kind
     }
 
     fn with_type_arguments(&self, argument_values: &TypeArgumentValues) -> Self {
-        let type_argument_values = self.type_argument_values.clone();
+        let type_argument_values = self.argument_values.clone();
         Self {
             kind: self.kind.clone(),
-            type_arguments: self.type_arguments.clone(),
-            type_argument_values: type_argument_values.merge(argument_values.clone()),
+            arguments: self.arguments.clone(),
+            argument_values: type_argument_values.merge(argument_values.clone()),
         }
     }
 
     pub(crate) const fn arguments(&self) -> &TypeArguments {
-        &self.type_arguments
+        &self.arguments
     }
 
     pub(crate) fn can_assign_to(
@@ -127,14 +127,9 @@ impl InstantiatedType {
         lookup_struct: impl Fn(StructId) -> Option<Struct>,
     ) -> bool {
         match (&self.kind, &type_.kind) {
-            (InstantiatedTypeKind::Object(l_name), InstantiatedTypeKind::Object(r_name)) => {
-                l_name == r_name
-            }
-            (
-                InstantiatedTypeKind::InterfaceObject(l_id),
-                InstantiatedTypeKind::InterfaceObject(r_id),
-            ) => l_id == r_id,
-            (InstantiatedTypeKind::InterfaceObject(l_id), InstantiatedTypeKind::Object(r_name)) => {
+            (TypeKind::Object(l_name), TypeKind::Object(r_name)) => l_name == r_name,
+            (TypeKind::InterfaceObject(l_id), TypeKind::InterfaceObject(r_id)) => l_id == r_id,
+            (TypeKind::InterfaceObject(l_id), TypeKind::Object(r_name)) => {
                 let struct_ = lookup_struct(r_name.id()).unwrap();
 
                 // TODO check if it implements the interface with the right type args
@@ -145,27 +140,27 @@ impl InstantiatedType {
     }
 }
 
-impl Display for InstantiatedType {
+impl Display for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            InstantiatedTypeKind::Unit => write!(f, "()"),
-            InstantiatedTypeKind::Object(instantiated_struct_id) => write!(
+            TypeKind::Unit => write!(f, "()"),
+            TypeKind::Object(instantiated_struct_id) => write!(
                 f,
                 "{}<{}>",
                 instantiated_struct_id.id(),
                 instantiated_struct_id.argument_values()
             ),
-            InstantiatedTypeKind::Array(element_type) => write!(f, "{element_type}[]"),
-            InstantiatedTypeKind::Callable(function_id) => write!(f, "callable<{function_id}>"),
-            InstantiatedTypeKind::U64 => write!(f, "u64"),
-            InstantiatedTypeKind::U8 => write!(f, "u8"),
-            InstantiatedTypeKind::Pointer(instantiated_type) => write!(f, "{instantiated_type}*"),
-            InstantiatedTypeKind::Struct(struct_id) => write!(f, "{struct_id}"),
-            InstantiatedTypeKind::Function(function_id) => write!(f, "{function_id}"),
-            InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
-            InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
-            InstantiatedTypeKind::Generic(_) => todo!(),
-            InstantiatedTypeKind::Interface(_) => todo!(),
+            TypeKind::Array(element_type) => write!(f, "{element_type}[]"),
+            TypeKind::Callable(function_id) => write!(f, "callable<{function_id}>"),
+            TypeKind::U64 => write!(f, "u64"),
+            TypeKind::U8 => write!(f, "u8"),
+            TypeKind::Pointer(instantiated_type) => write!(f, "{instantiated_type}*"),
+            TypeKind::Struct(struct_id) => write!(f, "{struct_id}"),
+            TypeKind::Function(function_id) => write!(f, "{function_id}"),
+            TypeKind::IndirectCallable(_, _) => todo!(),
+            TypeKind::InterfaceObject { .. } => todo!(),
+            TypeKind::Generic(_) => todo!(),
+            TypeKind::Interface(_) => todo!(),
         }
     }
 }
@@ -203,7 +198,7 @@ pub enum ExpressionKind {
 #[derive(Debug, Clone)]
 pub struct Expression {
     pub position: ast::SourceSpan,
-    pub type_: InstantiatedType,
+    pub type_: Type,
     pub kind: ExpressionKind,
 }
 

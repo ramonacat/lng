@@ -2,17 +2,17 @@ use crate::identifier::Identifier;
 use crate::types;
 use std::fmt::Write;
 
-pub(super) fn mangle_type(type_: &types::InstantiatedType) -> MangledIdentifier {
+pub(super) fn mangle_type(type_: &types::Type) -> MangledIdentifier {
     match type_.kind() {
-        types::InstantiatedTypeKind::Unit => todo!(),
-        types::InstantiatedTypeKind::Object { .. } => todo!(),
-        types::InstantiatedTypeKind::Array { .. } => todo!(),
-        types::InstantiatedTypeKind::Callable(_) => todo!(),
-        types::InstantiatedTypeKind::U64 => todo!(),
-        types::InstantiatedTypeKind::U8 => todo!(),
-        types::InstantiatedTypeKind::Pointer(_) => todo!(),
-        types::InstantiatedTypeKind::Struct(_) => todo!(),
-        types::InstantiatedTypeKind::Function(instantiated_function_id) => {
+        types::TypeKind::Unit => todo!(),
+        types::TypeKind::Object { .. } => todo!(),
+        types::TypeKind::Array { .. } => todo!(),
+        types::TypeKind::Callable(_) => todo!(),
+        types::TypeKind::U64 => todo!(),
+        types::TypeKind::U8 => todo!(),
+        types::TypeKind::Pointer(_) => todo!(),
+        types::TypeKind::Struct(_) => todo!(),
+        types::TypeKind::Function(instantiated_function_id) => {
             match instantiated_function_id.id() {
                 types::functions::FunctionId::InModule(module_id, identifier) => mangle_item_name(
                     module_id,
@@ -29,10 +29,10 @@ pub(super) fn mangle_type(type_: &types::InstantiatedType) -> MangledIdentifier 
                 }
             }
         }
-        types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
-        types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
-        types::InstantiatedTypeKind::Generic(_) => todo!(),
-        types::InstantiatedTypeKind::Interface(_) => todo!(),
+        types::TypeKind::IndirectCallable(_, _) => todo!(),
+        types::TypeKind::InterfaceObject { .. } => todo!(),
+        types::TypeKind::Generic(_) => todo!(),
+        types::TypeKind::Interface(_) => todo!(),
     }
 }
 

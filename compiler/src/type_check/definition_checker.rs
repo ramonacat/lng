@@ -161,7 +161,7 @@ impl DefinitionChecker {
 
         Ok(types::functions::Function {
             id: declared_function.id,
-            type_: types::InstantiatedType::new(types::InstantiatedTypeKind::Function(
+            type_: types::Type::new(types::TypeKind::Function(
                 types::functions::InstantiatedFunctionId::new(
                     declared_function.id,
                     types::generics::TypeArgumentValues::new_empty(),

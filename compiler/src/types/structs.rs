@@ -4,8 +4,8 @@ use std::{
 };
 
 use super::{
-    Expression, FunctionId, Identifier, InstantiatedType, TypeArgumentValues,
-    interfaces::InterfaceId, modules::ModuleId,
+    Expression, FunctionId, Identifier, Type, TypeArgumentValues, interfaces::InterfaceId,
+    modules::ModuleId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -25,7 +25,7 @@ pub struct FieldValue {
 pub struct StructField {
     pub struct_id: StructId,
     pub name: Identifier,
-    pub type_: InstantiatedType,
+    pub type_: Type,
     pub static_: bool,
 }
 
@@ -71,13 +71,13 @@ pub struct Struct {
     pub id: StructId,
     pub fields: Vec<StructField>,
     pub impls: Vec<FunctionId>,
-    pub type_: InstantiatedType,
-    pub instance_type: InstantiatedType,
+    pub type_: Type,
+    pub instance_type: Type,
     pub implemented_interfaces: HashMap<InterfaceId, HashMap<Identifier, FunctionId>>,
 }
 
 impl Struct {
-    pub(crate) fn field_type(&self, field_name: Identifier) -> InstantiatedType {
+    pub(crate) fn field_type(&self, field_name: Identifier) -> Type {
         self.fields
             .iter()
             .find(|x| x.name == field_name)
@@ -90,7 +90,7 @@ impl Struct {
         self.implemented_interfaces.contains_key(&interface_id)
     }
 
-    pub(crate) fn instance_type(&self) -> InstantiatedType {
+    pub(crate) fn instance_type(&self) -> Type {
         self.instance_type.clone()
     }
 

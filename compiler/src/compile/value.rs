@@ -16,18 +16,18 @@ pub struct InstantiatedStructType<'ctx> {
     static_field_values: HashMap<Identifier, Value<'ctx>>,
 }
 
-pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::InstantiatedType);
+pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::Type);
 
 impl<'ctx> StructInstance<'ctx> {
     pub(crate) const fn value(&self) -> PointerValue<'ctx> {
         self.0
     }
 
-    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: types::InstantiatedType) -> Self {
+    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: types::Type) -> Self {
         Self(pointer, type_)
     }
 
-    pub(crate) fn type_(&self) -> types::InstantiatedType {
+    pub(crate) fn type_(&self) -> types::Type {
         self.1.clone()
     }
 }
@@ -135,22 +135,22 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             context,
         );
         let result = match field.type_.kind() {
-            types::InstantiatedTypeKind::Unit => todo!(),
-            types::InstantiatedTypeKind::Object { .. } => Value::Reference(RcValue::from_pointer(
+            types::TypeKind::Unit => todo!(),
+            types::TypeKind::Object { .. } => Value::Reference(RcValue::from_pointer(
                 raw_result.into_pointer_value(),
                 field.type_.clone(),
             )),
-            types::InstantiatedTypeKind::Array { .. } => todo!(),
-            types::InstantiatedTypeKind::Callable(_) => todo!(),
-            types::InstantiatedTypeKind::U64 => todo!(),
-            types::InstantiatedTypeKind::U8 => todo!(),
-            types::InstantiatedTypeKind::Pointer(_) => todo!(),
-            types::InstantiatedTypeKind::Struct(_) => todo!(),
-            types::InstantiatedTypeKind::Function(_) => todo!(),
-            types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
-            types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
-            types::InstantiatedTypeKind::Generic(_) => todo!(),
-            types::InstantiatedTypeKind::Interface(_) => todo!(),
+            types::TypeKind::Array { .. } => todo!(),
+            types::TypeKind::Callable(_) => todo!(),
+            types::TypeKind::U64 => todo!(),
+            types::TypeKind::U8 => todo!(),
+            types::TypeKind::Pointer(_) => todo!(),
+            types::TypeKind::Struct(_) => todo!(),
+            types::TypeKind::Function(_) => todo!(),
+            types::TypeKind::IndirectCallable(_, _) => todo!(),
+            types::TypeKind::InterfaceObject { .. } => todo!(),
+            types::TypeKind::Generic(_) => todo!(),
+            types::TypeKind::Interface(_) => todo!(),
         };
 
         Some(result)
@@ -228,23 +228,21 @@ impl<'ctx> Value<'ctx> {
             Value::Reference(ref_) => {
                 let ref_type = ref_.type_();
                 let instantiated_struct_id = match ref_type.kind() {
-                    types::InstantiatedTypeKind::Unit => todo!(),
-                    types::InstantiatedTypeKind::Object(instantiated_struct_id) => {
-                        instantiated_struct_id
-                    }
-                    types::InstantiatedTypeKind::Array { .. } => todo!(),
-                    types::InstantiatedTypeKind::Callable(_) => todo!(),
-                    types::InstantiatedTypeKind::U64 => todo!(),
-                    types::InstantiatedTypeKind::U8 => todo!(),
-                    types::InstantiatedTypeKind::Pointer(_) => todo!(),
-                    types::InstantiatedTypeKind::Struct(_) => todo!(),
-                    types::InstantiatedTypeKind::Function(_) => todo!(),
-                    types::InstantiatedTypeKind::IndirectCallable(_, _) => {
+                    types::TypeKind::Unit => todo!(),
+                    types::TypeKind::Object(instantiated_struct_id) => instantiated_struct_id,
+                    types::TypeKind::Array { .. } => todo!(),
+                    types::TypeKind::Callable(_) => todo!(),
+                    types::TypeKind::U64 => todo!(),
+                    types::TypeKind::U8 => todo!(),
+                    types::TypeKind::Pointer(_) => todo!(),
+                    types::TypeKind::Struct(_) => todo!(),
+                    types::TypeKind::Function(_) => todo!(),
+                    types::TypeKind::IndirectCallable(_, _) => {
                         todo!()
                     }
-                    types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
-                    types::InstantiatedTypeKind::Generic(_) => todo!(),
-                    types::InstantiatedTypeKind::Interface(_) => todo!(),
+                    types::TypeKind::InterfaceObject { .. } => todo!(),
+                    types::TypeKind::Generic(_) => todo!(),
+                    types::TypeKind::Interface(_) => todo!(),
                 };
                 structs
                     .get_struct(instantiated_struct_id)

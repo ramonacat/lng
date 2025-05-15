@@ -100,9 +100,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                     &unique_name(&[&name.to_string(), "rc"]),
                     &StructInstance::new(
                         value,
-                        types::InstantiatedType::new(types::InstantiatedTypeKind::Object(
-                            value_struct_id,
-                        )),
+                        types::Type::new(types::TypeKind::Object(value_struct_id)),
                     ),
                     &self.compiler.context,
                     &mut self.compiler.items,
@@ -172,7 +170,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                     types::generics::TypeArgumentValues::new_empty(),
                 ))
                 .map(|x| {
-                    let types::InstantiatedTypeKind::Struct(x) = x.definition.type_.kind() else {
+                    let types::TypeKind::Struct(x) = x.definition.type_.kind() else {
                         todo!();
                     };
                     let instantiated_struct_id = types::structs::InstantiatedStructId::new(
@@ -271,8 +269,8 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             .map_err(|e| e.at(position))?;
         let call_result = call_result.as_any_value_enum();
         let value = match definition.return_type.kind() {
-            types::InstantiatedTypeKind::Unit => Value::Empty,
-            types::InstantiatedTypeKind::Object(instantiated_struct_id) => {
+            types::TypeKind::Unit => Value::Empty,
+            types::TypeKind::Object(instantiated_struct_id) => {
                 Value::Reference(RcValue::from_pointer(
                     call_result.into_pointer_value(),
                     self.compiler
@@ -284,17 +282,17 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                         .clone(),
                 ))
             }
-            types::InstantiatedTypeKind::Array { .. } => todo!(),
-            types::InstantiatedTypeKind::Callable { .. } => todo!(),
-            types::InstantiatedTypeKind::U64 => todo!(),
-            types::InstantiatedTypeKind::U8 => todo!(),
-            types::InstantiatedTypeKind::Pointer(_) => todo!(),
-            types::InstantiatedTypeKind::Struct(_) => todo!(),
-            types::InstantiatedTypeKind::Function(_) => todo!(),
-            types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
-            types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
-            types::InstantiatedTypeKind::Generic(_) => todo!(),
-            types::InstantiatedTypeKind::Interface(_) => todo!(),
+            types::TypeKind::Array { .. } => todo!(),
+            types::TypeKind::Callable { .. } => todo!(),
+            types::TypeKind::U64 => todo!(),
+            types::TypeKind::U8 => todo!(),
+            types::TypeKind::Pointer(_) => todo!(),
+            types::TypeKind::Struct(_) => todo!(),
+            types::TypeKind::Function(_) => todo!(),
+            types::TypeKind::IndirectCallable(_, _) => todo!(),
+            types::TypeKind::InterfaceObject { .. } => todo!(),
+            types::TypeKind::Generic(_) => todo!(),
+            types::TypeKind::Interface(_) => todo!(),
         };
         Ok(value)
     }

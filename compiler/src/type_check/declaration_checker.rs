@@ -106,9 +106,7 @@ impl DeclarationChecker {
                                 DeclaredStructField {
                                     // TODO we should here handle the case of the type actually
                                     // being generic
-                                    type_: types::InstantiatedType::new(
-                                        types::InstantiatedTypeKind::Callable(function.id),
-                                    ),
+                                    type_: types::Type::new(types::TypeKind::Callable(function.id)),
                                     static_: true,
                                 },
                             );
@@ -291,9 +289,7 @@ impl DeclarationChecker {
             interface_id,
             types::interfaces::Interface {
                 id: interface_id,
-                type_: types::InstantiatedType::new(types::InstantiatedTypeKind::Interface(
-                    interface_id,
-                )),
+                type_: types::Type::new(types::TypeKind::Interface(interface_id)),
                 functions,
             },
         );
@@ -308,7 +304,7 @@ impl DeclarationChecker {
     ) -> Result<(), TypeCheckError> {
         let mut fields = vec![];
         let struct_id = types::structs::StructId::InModule(module_path, struct_.name);
-        let struct_type = types::InstantiatedType::new(types::InstantiatedTypeKind::Struct(
+        let struct_type = types::Type::new(types::TypeKind::Struct(
             types::structs::InstantiatedStructId::new(
                 struct_id,
                 types::generics::TypeArgumentValues::new_empty(),
@@ -332,7 +328,7 @@ impl DeclarationChecker {
                 fields,
                 impls: vec![],
                 type_: struct_type,
-                instance_type: types::InstantiatedType::new(types::InstantiatedTypeKind::Object(
+                instance_type: types::Type::new(types::TypeKind::Object(
                     types::structs::InstantiatedStructId::new(
                         struct_id,
                         types::generics::TypeArgumentValues::new_empty(),
@@ -354,10 +350,8 @@ impl DeclarationChecker {
         if function_declaration.ast.name == *"main" && visibility == ast::Visibility::Export {
             if function_declaration.arguments.len() == 1 {
                 if let Some(argument) = function_declaration.arguments.first() {
-                    if let types::InstantiatedTypeKind::Array(array_item_type) =
-                        argument.type_.kind()
-                    {
-                        if let types::InstantiatedTypeKind::Object(instantiated_struct_id) =
+                    if let types::TypeKind::Array(array_item_type) = argument.type_.kind() {
+                        if let types::TypeKind::Object(instantiated_struct_id) =
                             array_item_type.kind()
                         {
                             if instantiated_struct_id.id() == *TYPE_NAME_STRING {

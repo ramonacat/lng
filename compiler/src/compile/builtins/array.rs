@@ -41,7 +41,7 @@ pub struct ArrayValue {}
 
 impl ArrayValue {
     pub fn build_instance<'ctx>(
-        item_type: &types::InstantiatedType,
+        item_type: &types::Type,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
     ) -> RcValue<'ctx> {
@@ -80,7 +80,7 @@ impl ArrayValue {
             &unique_name(&["rc_array"]),
             &StructInstance::new(
                 array_value,
-                types::InstantiatedType::new(types::InstantiatedTypeKind::Struct(
+                types::Type::new(types::TypeKind::Struct(
                     types::structs::InstantiatedStructId::new(
                         id,
                         types::generics::TypeArgumentValues::new(tav.clone()),

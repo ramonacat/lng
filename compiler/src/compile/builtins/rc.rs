@@ -29,7 +29,7 @@ pub struct BuiltinRc<TPointee> {
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
-    value_type: types::InstantiatedType,
+    value_type: types::Type,
     instantiated_struct_id: InstantiatedStructId,
 }
 
@@ -86,7 +86,7 @@ impl<'ctx> RcValue<'ctx> {
 
     #[must_use]
     // TODO we need a vtable for the object!
-    pub fn from_pointer(pointer: PointerValue<'ctx>, value_type: types::InstantiatedType) -> Self {
+    pub fn from_pointer(pointer: PointerValue<'ctx>, value_type: types::Type) -> Self {
         let mut tav = HashMap::new();
 
         tav.insert(
@@ -110,7 +110,7 @@ impl<'ctx> RcValue<'ctx> {
     }
 
     #[must_use]
-    pub(crate) fn type_(&self) -> types::InstantiatedType {
+    pub(crate) fn type_(&self) -> types::Type {
         self.value_type.clone()
     }
 

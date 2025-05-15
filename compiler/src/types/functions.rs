@@ -3,8 +3,7 @@ use std::fmt::{Display, Formatter};
 use crate::{ast, identifier::Identifier};
 
 use super::{
-    InstantiatedType, Statement, TypeArgumentValues, Visibility, modules::ModuleId,
-    structs::StructId,
+    Statement, Type, TypeArgumentValues, Visibility, modules::ModuleId, structs::StructId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -62,15 +61,15 @@ pub struct Function {
     pub id: FunctionId,
     pub module_name: ModuleId,
     pub arguments: Vec<Argument>,
-    pub return_type: InstantiatedType,
+    pub return_type: Type,
     pub body: FunctionBody,
     pub position: ast::SourceSpan,
     pub visibility: Visibility,
-    pub type_: InstantiatedType,
+    pub type_: Type,
 }
 
 impl Function {
-    pub(crate) fn type_(&self) -> InstantiatedType {
+    pub(crate) fn type_(&self) -> Type {
         self.type_.clone()
     }
 
@@ -97,7 +96,7 @@ pub enum FunctionBody {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Argument {
     pub name: Identifier,
-    pub type_: InstantiatedType,
+    pub type_: Type,
     pub position: ast::SourceSpan,
 }
 
