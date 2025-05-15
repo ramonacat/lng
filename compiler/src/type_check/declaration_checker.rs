@@ -140,10 +140,8 @@ impl DeclarationChecker {
                         let structs = &mut self.root_module_declaration.structs;
 
                         let Some(struct_to_modify) = structs.get_mut(&struct_id) else {
-                            return Err(TypeCheckErrorDescription::ItemDoesNotExist(
-                                types::ItemId::Struct(struct_id),
-                            )
-                            .at(position));
+                            return Err(TypeCheckErrorDescription::StructDoesNotExist(struct_id)
+                                .at(position));
                         };
 
                         for (field_name, field) in fields_to_add {

@@ -32,7 +32,7 @@ pub enum TypeCheckErrorDescription {
         argument_name: Identifier,
     },
     ModuleDoesNotExist(FQName),
-    ItemDoesNotExist(types::ItemId),
+    StructDoesNotExist(types::structs::StructId),
     ItemNotExported(FQName, Identifier),
     UndeclaredVariable(Identifier),
     ImplNotOnStruct(FQName),
@@ -78,7 +78,7 @@ impl Display for TypeCheckErrorDescription {
             Self::ModuleDoesNotExist(module_path) => {
                 write!(f, "Module {module_path} does not exist")
             }
-            Self::ItemDoesNotExist(item_path) => write!(f, "Item {item_path} does not exist"),
+            Self::StructDoesNotExist(item_path) => write!(f, "Item {item_path} does not exist"),
             Self::ItemNotExported(module_path, identifier) => write!(
                 f,
                 "Item {identifier} exists in module {module_path}, but is not exported"

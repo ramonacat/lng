@@ -23,23 +23,6 @@ use crate::{ast, identifier::Identifier};
 #[derive(Debug, Error)]
 pub enum TypeError {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ItemId {
-    Struct(StructId),
-    Function(FunctionId),
-    Module(ModuleId),
-}
-
-impl Display for ItemId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Struct(struct_id) => write!(f, "{struct_id}"),
-            Self::Function(function_id) => write!(f, "{function_id}"),
-            Self::Module(module_id) => write!(f, "{module_id}"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeKind {
     Unit,
@@ -77,6 +60,13 @@ impl Type {
         }
     }
 
+    pub(crate) const fn new_generic(kind: TypeKind, type_arguments: TypeArguments) -> Self {
+        Self {
+            kind,
+            arguments: type_arguments,
+        }
+    }
+
     pub(crate) const fn unit() -> Self {
         Self::new(TypeKind::Unit)
     }
@@ -87,13 +77,6 @@ impl Type {
 
     pub(crate) const fn u64() -> Self {
         Self::new(TypeKind::U64)
-    }
-
-    pub(crate) const fn new_generic(kind: TypeKind, type_arguments: TypeArguments) -> Self {
-        Self {
-            kind,
-            arguments: type_arguments,
-        }
     }
 
     pub(crate) const fn kind(&self) -> &TypeKind {
