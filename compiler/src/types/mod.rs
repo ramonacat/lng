@@ -43,7 +43,6 @@ pub enum TypeKind {
     IndirectCallable(InstantiatedInterfaceId, Identifier),
     // TODO this should be the same as object
     InterfaceObject(InstantiatedInterfaceId),
-    // TODO make this TypeId
     Generic(TypeArgument),
     Interface(InterfaceId),
 }

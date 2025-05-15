@@ -41,12 +41,12 @@ pub struct ArrayValue {}
 
 impl ArrayValue {
     pub fn build_instance<'ctx>(
-        item_type: &types::Type,
+        item_type_id: types::store::TypeId,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
         types: &mut dyn types::store::TypeStore,
     ) -> RcValue<'ctx> {
-        let items_type = context.make_object_type(item_type);
+        let items_type = context.make_object_type(types.get(item_type_id));
         // TODO add freeing of this array once destructors are in place
         let items = context
             .builder
@@ -63,7 +63,6 @@ impl ArrayValue {
         field_values.insert(*CAPACITY_FIELD, context.const_u64(1).as_basic_value_enum());
 
         let id = *TYPE_NAME_ARRAY;
-        let item_type_id = types.add(item_type.clone());
 
         let array_value = structs
             .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
