@@ -4,7 +4,7 @@ use itertools::Itertools as _;
 
 use crate::identifier::Identifier;
 
-use super::AnyType;
+use super::InstantiatedType;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeArguments(Vec<TypeArgument>);
@@ -44,9 +44,9 @@ impl std::fmt::Display for TypeArgument {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeArgumentValues<TType: AnyType>(pub(crate) HashMap<TypeArgument, TType>);
+pub struct TypeArgumentValues(pub(crate) HashMap<TypeArgument, InstantiatedType>);
 
-impl<TType: AnyType> std::hash::Hash for TypeArgumentValues<TType> {
+impl std::hash::Hash for TypeArgumentValues {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0
             .iter()
@@ -56,12 +56,12 @@ impl<TType: AnyType> std::hash::Hash for TypeArgumentValues<TType> {
     }
 }
 
-impl<TType: AnyType> TypeArgumentValues<TType> {
+impl TypeArgumentValues {
     pub(crate) fn new_empty() -> Self {
         Self(HashMap::new())
     }
 
-    pub(crate) const fn new(tav: HashMap<TypeArgument, TType>) -> Self {
+    pub(crate) const fn new(tav: HashMap<TypeArgument, InstantiatedType>) -> Self {
         Self(tav)
     }
 
@@ -76,7 +76,7 @@ impl<TType: AnyType> TypeArgumentValues<TType> {
     }
 }
 
-impl<TType: AnyType> std::fmt::Display for TypeArgumentValues<TType> {
+impl std::fmt::Display for TypeArgumentValues {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.0.is_empty() {
             return Ok(());

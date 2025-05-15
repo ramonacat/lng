@@ -314,7 +314,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_function(
         &mut self,
-        handle: &types::functions::Function<types::InstantiatedType>,
+        handle: &types::functions::Function,
     ) -> Result<(), CompileError> {
         let types::functions::FunctionBody::Statements(statements) = &handle.body else {
             return Ok(());
@@ -380,7 +380,7 @@ impl<'ctx> Compiler<'ctx> {
 
     fn compile_statements(
         &mut self,
-        statements: &Vec<types::Statement<types::InstantiatedType>>,
+        statements: &Vec<types::Statement>,
         module_path: types::modules::ModuleId,
         compiled_function: &mut CompiledFunction<'ctx>,
     ) -> Result<(), CompileError> {

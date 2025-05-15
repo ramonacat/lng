@@ -5,7 +5,6 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use super::InstantiatedType;
 use super::{functions::Function, structs::StructId};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -38,14 +37,14 @@ impl ModuleId {
 pub struct AppModule {
     main: FunctionId,
     modules: HashMap<ModuleId, Module>,
-    structs: HashMap<StructId, Struct<InstantiatedType>>,
-    functions: HashMap<FunctionId, Function<InstantiatedType>>,
+    structs: HashMap<StructId, Struct>,
+    functions: HashMap<FunctionId, Function>,
 }
 
 pub struct LibraryModule {
     modules: HashMap<ModuleId, Module>,
-    structs: HashMap<StructId, Struct<InstantiatedType>>,
-    functions: HashMap<FunctionId, Function<InstantiatedType>>,
+    structs: HashMap<StructId, Struct>,
+    functions: HashMap<FunctionId, Function>,
 }
 
 pub enum RootModule {
@@ -61,14 +60,14 @@ impl RootModule {
         }
     }
 
-    pub(crate) const fn structs(&self) -> &HashMap<StructId, Struct<InstantiatedType>> {
+    pub(crate) const fn structs(&self) -> &HashMap<StructId, Struct> {
         match self {
             Self::App(app_module) => &app_module.structs,
             Self::Library(library_module) => &library_module.structs,
         }
     }
 
-    pub(crate) const fn functions(&self) -> &HashMap<FunctionId, Function<InstantiatedType>> {
+    pub(crate) const fn functions(&self) -> &HashMap<FunctionId, Function> {
         match self {
             Self::App(app_module) => &app_module.functions,
             Self::Library(library_module) => &library_module.functions,
@@ -85,8 +84,8 @@ impl RootModule {
     pub(crate) const fn new_app(
         main: FunctionId,
         modules: HashMap<ModuleId, Module>,
-        structs: HashMap<StructId, Struct<InstantiatedType>>,
-        functions: HashMap<FunctionId, Function<InstantiatedType>>,
+        structs: HashMap<StructId, Struct>,
+        functions: HashMap<FunctionId, Function>,
     ) -> Self {
         Self::App(AppModule {
             main,
@@ -98,8 +97,8 @@ impl RootModule {
 
     pub(crate) const fn new_library(
         modules: HashMap<ModuleId, Module>,
-        structs: HashMap<StructId, Struct<InstantiatedType>>,
-        functions: HashMap<FunctionId, Function<InstantiatedType>>,
+        structs: HashMap<StructId, Struct>,
+        functions: HashMap<FunctionId, Function>,
     ) -> Self {
         Self::Library(LibraryModule {
             modules,

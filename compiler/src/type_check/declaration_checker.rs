@@ -388,7 +388,7 @@ impl DeclarationChecker {
         &self,
         argument: &ast::Argument,
         current_module: types::modules::ModuleId,
-    ) -> Result<types::functions::Argument<types::InstantiatedType>, TypeCheckError> {
+    ) -> Result<types::functions::Argument, TypeCheckError> {
         Ok(types::functions::Argument {
             name: argument.name,
             type_: resolve_type(

@@ -89,7 +89,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
     let struct_name_lit = Literal::string(&struct_name);
 
     quote::quote! {
-        pub fn describe_structure() -> crate::types::structs::Struct<crate::types::InstantiatedType> {
+        pub fn describe_structure() -> crate::types::structs::Struct {
             #generics
 
             let module_id = crate::types::modules::ModuleId::parse(#module_id_lit);

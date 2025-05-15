@@ -3,12 +3,12 @@ use std::fmt::{Display, Formatter};
 use crate::{ast, identifier::Identifier};
 
 use super::{
-    AnyType, InstantiatedType, Statement, TypeArgumentValues, Visibility, modules::ModuleId,
+    InstantiatedType, Statement, TypeArgumentValues, Visibility, modules::ModuleId,
     structs::StructId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InstantiatedFunctionId(FunctionId, TypeArgumentValues<InstantiatedType>);
+pub struct InstantiatedFunctionId(FunctionId, TypeArgumentValues);
 
 impl Display for InstantiatedFunctionId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -21,11 +21,11 @@ impl InstantiatedFunctionId {
         self.0
     }
 
-    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues<InstantiatedType> {
+    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues {
         &self.1
     }
 
-    pub(crate) const fn new(id: FunctionId, tav: TypeArgumentValues<InstantiatedType>) -> Self {
+    pub(crate) const fn new(id: FunctionId, tav: TypeArgumentValues) -> Self {
         Self(id, tav)
     }
 }
@@ -58,26 +58,23 @@ impl FunctionId {
 }
 
 #[derive(Debug, Clone)]
-pub struct Function<T: AnyType> {
+pub struct Function {
     pub id: FunctionId,
     pub module_name: ModuleId,
-    pub arguments: Vec<Argument<T>>,
-    pub return_type: T,
-    pub body: FunctionBody<T>,
+    pub arguments: Vec<Argument>,
+    pub return_type: InstantiatedType,
+    pub body: FunctionBody,
     pub position: ast::SourceSpan,
     pub visibility: Visibility,
-    pub type_: T,
+    pub type_: InstantiatedType,
 }
 
-impl Function<InstantiatedType> {
+impl Function {
     pub(crate) fn type_(&self) -> InstantiatedType {
         self.type_.clone()
     }
 
-    pub(crate) fn with_type_arguments(
-        &self,
-        argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Self {
+    pub(crate) fn with_type_arguments(&self, argument_values: &TypeArgumentValues) -> Self {
         Self {
             id: self.id,
             module_name: self.module_name,
@@ -92,19 +89,19 @@ impl Function<InstantiatedType> {
 }
 
 #[derive(Debug, Clone)]
-pub enum FunctionBody<T: AnyType> {
+pub enum FunctionBody {
     Extern(Identifier),
-    Statements(Vec<Statement<T>>),
+    Statements(Vec<Statement>),
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct Argument<T: AnyType> {
+pub struct Argument {
     pub name: Identifier,
-    pub type_: T,
+    pub type_: InstantiatedType,
     pub position: ast::SourceSpan,
 }
 
-impl<T: AnyType> Display for Argument<T> {
+impl Display for Argument {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.name, self.type_)
     }

@@ -12,7 +12,7 @@ use super::{
 };
 
 pub struct InstantiatedStructType<'ctx> {
-    pub(crate) definition: types::structs::Struct<types::InstantiatedType>,
+    pub(crate) definition: types::structs::Struct,
     static_field_values: HashMap<Identifier, Value<'ctx>>,
 }
 
@@ -157,7 +157,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     }
 
     pub(crate) fn new(
-        description: types::structs::Struct<types::InstantiatedType>,
+        description: types::structs::Struct,
         mut static_fields: HashMap<Identifier, Value<'ctx>>,
     ) -> Self {
         let default_static_fields: Vec<_> = description

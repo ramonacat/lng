@@ -13,29 +13,23 @@ use crate::{identifier::Identifier, types};
 use super::{unique_name, value::InstantiatedStructType};
 
 pub struct Builtins {
-    pub rc_handle: types::structs::Struct<types::InstantiatedType>,
+    pub rc_handle: types::structs::Struct,
 }
 
 pub struct AllItems<'ctx> {
-    structs: HashMap<types::structs::StructId, types::structs::Struct<types::InstantiatedType>>,
+    structs: HashMap<types::structs::StructId, types::structs::Struct>,
     instantiated_structs:
         HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>,
 
-    functions:
-        HashMap<types::functions::FunctionId, types::functions::Function<types::InstantiatedType>>,
-    instantiated_functions: HashMap<
-        types::functions::InstantiatedFunctionId,
-        types::functions::Function<types::InstantiatedType>,
-    >,
+    functions: HashMap<types::functions::FunctionId, types::functions::Function>,
+    instantiated_functions:
+        HashMap<types::functions::InstantiatedFunctionId, types::functions::Function>,
 }
 
 impl<'ctx> AllItems<'ctx> {
     pub(crate) fn new(
-        structs: HashMap<types::structs::StructId, types::structs::Struct<types::InstantiatedType>>,
-        functions: HashMap<
-            types::functions::FunctionId,
-            types::functions::Function<types::InstantiatedType>,
-        >,
+        structs: HashMap<types::structs::StructId, types::structs::Struct>,
+        functions: HashMap<types::functions::FunctionId, types::functions::Function>,
     ) -> Self {
         Self {
             structs,
@@ -79,7 +73,7 @@ impl<'ctx> AllItems<'ctx> {
     pub(crate) fn get_or_instantiate_function(
         &mut self,
         id: &types::functions::InstantiatedFunctionId,
-    ) -> Option<&types::functions::Function<types::InstantiatedType>> {
+    ) -> Option<&types::functions::Function> {
         if !self.functions.contains_key(&id.id()) {
             return None;
         }
@@ -158,7 +152,7 @@ impl<'ctx> CompilerContext<'ctx> {
 
     pub fn make_function_type(
         &self,
-        arguments: &[types::functions::Argument<types::InstantiatedType>],
+        arguments: &[types::functions::Argument],
         return_type: &types::InstantiatedType,
     ) -> FunctionType<'ctx> {
         let arguments = arguments
@@ -176,10 +170,7 @@ impl<'ctx> CompilerContext<'ctx> {
         }
     }
 
-    pub fn make_struct_type(
-        &self,
-        fields: &[types::structs::StructField<types::InstantiatedType>],
-    ) -> CompiledStruct<'ctx> {
+    pub fn make_struct_type(&self, fields: &[types::structs::StructField]) -> CompiledStruct<'ctx> {
         let mut field_types = vec![];
         let mut field_indices = HashMap::new();
 

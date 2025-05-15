@@ -20,9 +20,6 @@ use thiserror::Error;
 
 use crate::{ast, identifier::Identifier};
 
-pub trait AnyType: Display + Clone + Debug + Hash + Eq + PartialEq {}
-impl AnyType for InstantiatedType {}
-
 #[derive(Debug, Error)]
 pub enum TypeError {}
 
@@ -49,7 +46,7 @@ pub enum InstantiatedTypeKind {
     // TODO should be InstantiatedStructId
     Object {
         type_name: StructId,
-        type_argument_values: TypeArgumentValues<InstantiatedType>,
+        type_argument_values: TypeArgumentValues,
     },
     Array {
         element_type: Box<InstantiatedType>,
@@ -68,7 +65,7 @@ pub enum InstantiatedTypeKind {
     InterfaceObject {
         // TODO should be InstantiatedInterfaceId
         interface_id: InterfaceId,
-        type_argument_values: TypeArgumentValues<InstantiatedType>,
+        type_argument_values: TypeArgumentValues,
     },
     // TODO make this TypeId
     Generic(TypeArgument),
@@ -80,7 +77,7 @@ pub struct InstantiatedType {
     kind: InstantiatedTypeKind,
     // TODO type_arguments and type_argument_values should be a single collection!
     type_arguments: TypeArguments,
-    type_argument_values: TypeArgumentValues<InstantiatedType>,
+    type_argument_values: TypeArgumentValues,
 }
 
 impl InstantiatedType {
@@ -107,7 +104,7 @@ impl InstantiatedType {
     pub(crate) const fn new_generic(
         kind: InstantiatedTypeKind,
         type_arguments: TypeArguments,
-        type_argument_values: TypeArgumentValues<Self>,
+        type_argument_values: TypeArgumentValues,
     ) -> Self {
         Self {
             kind,
@@ -120,7 +117,7 @@ impl InstantiatedType {
         &self.kind
     }
 
-    fn with_type_arguments(&self, argument_values: &TypeArgumentValues<Self>) -> Self {
+    fn with_type_arguments(&self, argument_values: &TypeArgumentValues) -> Self {
         let type_argument_values = self.type_argument_values.clone();
         Self {
             kind: self.kind.clone(),
@@ -136,7 +133,7 @@ impl InstantiatedType {
     pub(crate) fn can_assign_to(
         &self,
         type_: &Self,
-        lookup_struct: impl Fn(StructId) -> Option<Struct<Self>>,
+        lookup_struct: impl Fn(StructId) -> Option<Struct>,
     ) -> bool {
         match (&self.kind, &type_.kind) {
             (
@@ -203,10 +200,10 @@ impl Display for InstantiatedType {
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement<T: AnyType> {
-    Expression(Expression<T>),
-    Let(LetStatement<T>),
-    Return(Expression<T>),
+pub enum Statement {
+    Expression(Expression),
+    Let(LetStatement),
+    Return(Expression),
 }
 
 #[derive(Debug, Clone)]
@@ -216,33 +213,33 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExpressionKind<T: AnyType> {
+pub enum ExpressionKind {
     Call {
-        target: Box<Expression<T>>,
-        arguments: Vec<Expression<T>>,
+        target: Box<Expression>,
+        arguments: Vec<Expression>,
     },
     Literal(Literal),
     LocalVariableAccess(Identifier),
     GlobalVariableAccess(ModuleId, Identifier),
-    StructConstructor(Box<Expression<T>>, Vec<FieldValue<T>>),
+    StructConstructor(Box<Expression>, Vec<FieldValue>),
     FieldAccess {
-        target: Box<Expression<T>>,
+        target: Box<Expression>,
         field: Identifier,
     },
     SelfAccess,
 }
 
 #[derive(Debug, Clone)]
-pub struct Expression<T: AnyType> {
+pub struct Expression {
     pub position: ast::SourceSpan,
-    pub type_: T,
-    pub kind: ExpressionKind<T>,
+    pub type_: InstantiatedType,
+    pub kind: ExpressionKind,
 }
 
 #[derive(Debug, Clone)]
-pub struct LetStatement<T: AnyType> {
+pub struct LetStatement {
     pub binding: Identifier,
-    pub value: Expression<T>,
+    pub value: Expression,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

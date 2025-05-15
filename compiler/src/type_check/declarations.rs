@@ -8,7 +8,7 @@ use super::errors::TypeCheckError;
 pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
     pub(super) module_name: types::modules::ModuleId,
-    pub(super) arguments: Vec<types::functions::Argument<types::InstantiatedType>>,
+    pub(super) arguments: Vec<types::functions::Argument>,
     pub(super) return_type: types::InstantiatedType,
     pub(super) ast: ast::Function,
     pub(super) position: ast::SourceSpan,
@@ -23,18 +23,14 @@ pub(super) struct DeclaredStructField {
 
 pub(super) struct DeclaredRootModule {
     // TODO make the fields private
-    pub(super) structs:
-        HashMap<types::structs::StructId, types::structs::Struct<types::InstantiatedType>>,
+    pub(super) structs: HashMap<types::structs::StructId, types::structs::Struct>,
     pub(super) functions: HashMap<types::functions::FunctionId, DeclaredFunction>,
     pub(super) predeclared_functions:
-        HashMap<types::functions::FunctionId, types::functions::Function<types::InstantiatedType>>,
+        HashMap<types::functions::FunctionId, types::functions::Function>,
     pub(super) modules: HashMap<types::modules::ModuleId, types::modules::Module>,
     pub(super) imports:
         HashMap<(types::modules::ModuleId, Identifier), (types::modules::ModuleId, Identifier)>,
-    pub(super) interfaces: HashMap<
-        types::interfaces::InterfaceId,
-        types::interfaces::Interface<types::InstantiatedType>,
-    >,
+    pub(super) interfaces: HashMap<types::interfaces::InterfaceId, types::interfaces::Interface>,
 }
 
 impl std::fmt::Debug for DeclaredRootModule {
@@ -62,10 +58,10 @@ impl std::fmt::Debug for DeclaredRootModule {
 }
 
 pub enum DeclaredItemKind<'item> {
-    Struct(&'item types::structs::Struct<types::InstantiatedType>),
+    Struct(&'item types::structs::Struct),
     Function(&'item DeclaredFunction),
-    PredeclaredFunction(&'item types::functions::Function<types::InstantiatedType>),
-    Interface(&'item types::interfaces::Interface<types::InstantiatedType>),
+    PredeclaredFunction(&'item types::functions::Function),
+    Interface(&'item types::interfaces::Interface),
 }
 
 impl DeclaredItemKind<'_> {
@@ -115,11 +111,8 @@ impl DeclaredRootModule {
 
     pub(crate) fn from_predeclared(
         modules: &HashMap<types::modules::ModuleId, types::modules::Module>,
-        structs: HashMap<types::structs::StructId, types::structs::Struct<types::InstantiatedType>>,
-        functions: HashMap<
-            types::functions::FunctionId,
-            types::functions::Function<types::InstantiatedType>,
-        >,
+        structs: HashMap<types::structs::StructId, types::structs::Struct>,
+        functions: HashMap<types::functions::FunctionId, types::functions::Function>,
     ) -> Self {
         Self {
             structs,

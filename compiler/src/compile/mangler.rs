@@ -71,9 +71,7 @@ impl MangledIdentifier {
     }
 }
 
-fn mangle_type_argument_values(
-    tav: &types::generics::TypeArgumentValues<types::InstantiatedType>,
-) -> String {
+fn mangle_type_argument_values(tav: &types::generics::TypeArgumentValues) -> String {
     let mut result = String::new();
 
     for (id, value) in &tav.0 {
@@ -86,7 +84,7 @@ fn mangle_type_argument_values(
 fn mangle_item_name(
     module: types::modules::ModuleId,
     item: Identifier,
-    tav: &types::generics::TypeArgumentValues<types::InstantiatedType>,
+    tav: &types::generics::TypeArgumentValues,
     source: IdentifierKind,
 ) -> MangledIdentifier {
     MangledIdentifier {
@@ -102,7 +100,7 @@ fn mangle_item_name(
 fn mangle_struct_item_name(
     struct_id: types::structs::StructId,
     item: Identifier,
-    tav: &types::generics::TypeArgumentValues<types::InstantiatedType>,
+    tav: &types::generics::TypeArgumentValues,
 ) -> MangledIdentifier {
     MangledIdentifier {
         mangled: mangle_struct_id(struct_id, tav).mangled + "$$" + &item.raw() + "$$$",
@@ -112,7 +110,7 @@ fn mangle_struct_item_name(
 
 fn mangle_struct_id(
     struct_id: types::structs::StructId,
-    tav: &types::generics::TypeArgumentValues<types::InstantiatedType>,
+    tav: &types::generics::TypeArgumentValues,
 ) -> MangledIdentifier {
     match struct_id {
         types::structs::StructId::InModule(module_id, identifier) => mangle_item_name(

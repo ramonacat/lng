@@ -15,8 +15,7 @@ use super::{
 pub(super) struct DefinitionChecker {
     root_module_declaration: DeclaredRootModule,
     declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
-    functions:
-        HashMap<types::functions::FunctionId, types::functions::Function<types::InstantiatedType>>,
+    functions: HashMap<types::functions::FunctionId, types::functions::Function>,
     main: Option<types::functions::FunctionId>,
 }
 
@@ -84,19 +83,13 @@ impl DefinitionChecker {
     ) -> Result<
         HashMap<
             types::structs::StructId,
-            HashMap<
-                types::functions::FunctionId,
-                types::functions::Function<types::InstantiatedType>,
-            >,
+            HashMap<types::functions::FunctionId, types::functions::Function>,
         >,
         TypeCheckError,
     > {
         let mut impls: HashMap<
             types::structs::StructId,
-            HashMap<
-                types::functions::FunctionId,
-                types::functions::Function<types::InstantiatedType>,
-            >,
+            HashMap<types::functions::FunctionId, types::functions::Function>,
         > = HashMap::new();
         for (struct_id, declared_impls) in &self.declared_impls {
             for function_id in declared_impls {
@@ -117,10 +110,7 @@ impl DefinitionChecker {
 
     fn type_check_struct(
         &mut self,
-        impls: HashMap<
-            types::functions::FunctionId,
-            types::functions::Function<types::InstantiatedType>,
-        >,
+        impls: HashMap<types::functions::FunctionId, types::functions::Function>,
         struct_id: types::structs::StructId,
     ) {
         let all_structs = &mut self.root_module_declaration.structs;
@@ -140,7 +130,7 @@ impl DefinitionChecker {
     fn type_check_function(
         &self,
         declared_function: &DeclaredFunction,
-    ) -> Result<types::functions::Function<types::InstantiatedType>, TypeCheckError> {
+    ) -> Result<types::functions::Function, TypeCheckError> {
         let mut locals = Locals::new();
 
         locals.push_arguments(&declared_function.arguments);
@@ -202,7 +192,7 @@ impl DefinitionChecker {
         locals: &mut Locals,
         statement: &ast::Statement,
         expression_checker: &ExpressionChecker<'_>,
-    ) -> Result<types::Statement<types::InstantiatedType>, TypeCheckError> {
+    ) -> Result<types::Statement, TypeCheckError> {
         Ok(match statement {
             ast::Statement::Expression(expression, _) => {
                 types::Statement::Expression(expression_checker.type_check_expression(

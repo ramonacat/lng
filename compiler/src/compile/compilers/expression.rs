@@ -23,7 +23,7 @@ pub struct ExpressionCompiler<'compiler, 'ctx> {
 impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
     pub(crate) fn compile_expression(
         &mut self,
-        expression: &types::Expression<types::InstantiatedType>,
+        expression: &types::Expression,
         self_: Option<Value<'ctx>>,
         compiled_function: &mut CompiledFunction<'ctx>,
         module_path: types::modules::ModuleId,
@@ -195,8 +195,8 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
         compiled_function: &mut CompiledFunction<'ctx>,
         module_path: types::modules::ModuleId,
         position: ast::SourceSpan,
-        target: &types::Expression<types::InstantiatedType>,
-        arguments: &[types::Expression<types::InstantiatedType>],
+        target: &types::Expression,
+        arguments: &[types::Expression],
     ) -> Result<Value<'ctx>, CompileError> {
         let compiled_target =
             self.compile_expression(target, self_.cloned(), compiled_function, module_path)?;

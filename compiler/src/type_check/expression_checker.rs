@@ -21,10 +21,7 @@ impl Locals {
         }
     }
 
-    pub(super) fn push_arguments(
-        &mut self,
-        arguments: &[types::functions::Argument<types::InstantiatedType>],
-    ) {
+    pub(super) fn push_arguments(&mut self, arguments: &[types::functions::Argument]) {
         for argument in arguments {
             self.values.insert(argument.name, argument.type_.clone());
         }
@@ -49,7 +46,7 @@ impl<'root> ExpressionChecker<'root> {
         expression: &ast::Expression,
         locals: &Locals,
         module_path: types::modules::ModuleId,
-    ) -> Result<types::Expression<types::InstantiatedType>, TypeCheckError> {
+    ) -> Result<types::Expression, TypeCheckError> {
         let position = expression.position;
 
         match &expression.kind {
@@ -141,7 +138,7 @@ impl<'root> ExpressionChecker<'root> {
         locals: &Locals,
         module_path: types::modules::ModuleId,
         position: ast::SourceSpan,
-    ) -> Result<types::Expression<types::InstantiatedType>, TypeCheckError> {
+    ) -> Result<types::Expression, TypeCheckError> {
         let checked_target = self.type_check_expression(target, locals, module_path)?;
         let target_type_kind = checked_target.type_.kind();
 
@@ -228,12 +225,9 @@ impl<'root> ExpressionChecker<'root> {
 
     fn retrieve_callable_info(
         &self,
-        checked_target: &types::Expression<types::InstantiatedType>,
+        checked_target: &types::Expression,
         target_type_kind: &types::InstantiatedTypeKind,
-    ) -> (
-        Vec<types::functions::Argument<types::InstantiatedType>>,
-        types::InstantiatedType,
-    ) {
+    ) -> (Vec<types::functions::Argument>, types::InstantiatedType) {
         let (callable_arguments, return_type) = {
             if let types::InstantiatedTypeKind::Callable(function_id) = target_type_kind {
                 let root_module = &self.root_module_declaration.functions;
@@ -290,7 +284,7 @@ impl<'root> ExpressionChecker<'root> {
         locals: &Locals,
         module_path: types::modules::ModuleId,
         name: Identifier,
-    ) -> Result<types::Expression<types::InstantiatedType>, TypeCheckError> {
+    ) -> Result<types::Expression, TypeCheckError> {
         let value_type = locals.get(name);
 
         let (kind, type_) = if let Some(value_type) = value_type {

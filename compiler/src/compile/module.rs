@@ -13,7 +13,7 @@ use inkwell::{
     values::FunctionValue,
 };
 
-impl types::functions::Function<types::InstantiatedType> {
+impl types::functions::Function {
     const fn linkage(&self) -> Linkage {
         match self.body {
             types::functions::FunctionBody::Statements(_) => match self.visibility {
@@ -56,7 +56,7 @@ impl<'ctx> CompiledModule<'ctx> {
     fn declare_function_inner(
         &self,
         name: &MangledIdentifier,
-        arguments: &[types::functions::Argument<types::InstantiatedType>],
+        arguments: &[types::functions::Argument],
         return_type: &types::InstantiatedType,
         linkage: Linkage,
         context: &CompilerContext<'ctx>,
@@ -71,7 +71,7 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         linkage: Linkage,
         name: &MangledIdentifier,
-        arguments: &[types::functions::Argument<types::InstantiatedType>],
+        arguments: &[types::functions::Argument],
         return_type: &types::InstantiatedType,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
@@ -84,7 +84,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn begin_compile_function(
         &mut self,
-        function: &types::functions::Function<types::InstantiatedType>,
+        function: &types::functions::Function,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
@@ -177,7 +177,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
     pub(crate) fn get_or_create_function(
         &self,
-        handle: &types::functions::Function<types::InstantiatedType>,
+        handle: &types::functions::Function,
         context: &CompilerContext<'ctx>,
     ) -> FunctionValue<'ctx> {
         let mangled_name = match &handle.body {
