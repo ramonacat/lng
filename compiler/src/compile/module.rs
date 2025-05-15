@@ -118,7 +118,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
                     Value::Reference(rc)
                 }
-                types::InstantiatedTypeKind::Array { element_type: a } => Value::Reference(
+                types::InstantiatedTypeKind::Array(a) => Value::Reference(
                     builtins::array::ArrayValue::build_instance(a.as_ref(), context, structs),
                 ),
                 types::InstantiatedTypeKind::Callable { .. } => todo!(),

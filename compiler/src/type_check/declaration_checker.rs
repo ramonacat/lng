@@ -354,9 +354,8 @@ impl DeclarationChecker {
         if function_declaration.ast.name == *"main" && visibility == ast::Visibility::Export {
             if function_declaration.arguments.len() == 1 {
                 if let Some(argument) = function_declaration.arguments.first() {
-                    if let types::InstantiatedTypeKind::Array {
-                        element_type: array_item_type,
-                    } = argument.type_.kind()
+                    if let types::InstantiatedTypeKind::Array(array_item_type) =
+                        argument.type_.kind()
                     {
                         if let types::InstantiatedTypeKind::Object(instantiated_struct_id) =
                             array_item_type.kind()

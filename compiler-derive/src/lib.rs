@@ -50,7 +50,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
         let field_type_lng = if is_array {
             quote::quote! {
                 crate::types::InstantiatedType::new_generic(
-                    crate::types::InstantiatedTypeKind::Array { element_type: std::boxed::Box::new(#field_type_lng) },
+                    crate::types::InstantiatedTypeKind::Array(std::boxed::Box::new(#field_type_lng)),
                     crate::types::generics::TypeArguments::new_empty(),
                     crate::types::generics::TypeArgumentValues::new_empty(),
                 )

@@ -192,13 +192,11 @@ pub(super) fn resolve_type(
     // TODO handle generics here
     match r#type {
         ast::TypeDescription::Array(type_description) => Ok(types::InstantiatedType::new(
-            types::InstantiatedTypeKind::Array {
-                element_type: Box::new(resolve_type(
-                    root_module,
-                    current_module,
-                    type_description,
-                )?),
-            },
+            types::InstantiatedTypeKind::Array(Box::new(resolve_type(
+                root_module,
+                current_module,
+                type_description,
+            )?)),
         )),
         ast::TypeDescription::Named(name) if name == "()" => Ok(types::InstantiatedType::unit()),
         ast::TypeDescription::Named(name) if name == "u64" => Ok(types::InstantiatedType::u64()),

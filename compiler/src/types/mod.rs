@@ -45,7 +45,7 @@ impl Display for ItemId {
 pub enum InstantiatedTypeKind {
     Unit,
     Object(InstantiatedStructId),
-    Array { element_type: Box<InstantiatedType> },
+    Array(Box<InstantiatedType>),
     // TODO this should be an object with special properties
     Callable(FunctionId),
     // TODO add u128,u32,u16,u8 and signed counterparts
@@ -155,7 +155,7 @@ impl Display for InstantiatedType {
                 instantiated_struct_id.id(),
                 instantiated_struct_id.argument_values()
             ),
-            InstantiatedTypeKind::Array { element_type } => write!(f, "{element_type}[]"),
+            InstantiatedTypeKind::Array(element_type) => write!(f, "{element_type}[]"),
             InstantiatedTypeKind::Callable(function_id) => write!(f, "callable<{function_id}>"),
             InstantiatedTypeKind::U64 => write!(f, "u64"),
             InstantiatedTypeKind::U8 => write!(f, "u8"),
