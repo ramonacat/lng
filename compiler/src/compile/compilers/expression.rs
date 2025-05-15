@@ -300,6 +300,8 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             types::InstantiatedTypeKind::Function(_) => todo!(),
             types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
             types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
+            types::InstantiatedTypeKind::Generic(_) => todo!(),
+            types::InstantiatedTypeKind::Interface(_) => todo!(),
         };
         Ok(value)
     }

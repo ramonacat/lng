@@ -16,7 +16,7 @@ pub(super) struct DefinitionChecker {
     root_module_declaration: DeclaredRootModule,
     declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
     functions:
-        HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
+        HashMap<types::functions::FunctionId, types::functions::Function<types::InstantiatedType>>,
     main: Option<types::functions::FunctionId>,
 }
 
@@ -84,13 +84,19 @@ impl DefinitionChecker {
     ) -> Result<
         HashMap<
             types::structs::StructId,
-            HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
+            HashMap<
+                types::functions::FunctionId,
+                types::functions::Function<types::InstantiatedType>,
+            >,
         >,
         TypeCheckError,
     > {
         let mut impls: HashMap<
             types::structs::StructId,
-            HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
+            HashMap<
+                types::functions::FunctionId,
+                types::functions::Function<types::InstantiatedType>,
+            >,
         > = HashMap::new();
         for (struct_id, declared_impls) in &self.declared_impls {
             for function_id in declared_impls {
@@ -113,7 +119,7 @@ impl DefinitionChecker {
         &mut self,
         impls: HashMap<
             types::functions::FunctionId,
-            types::functions::Function<types::GenericType>,
+            types::functions::Function<types::InstantiatedType>,
         >,
         struct_id: types::structs::StructId,
     ) {
@@ -134,7 +140,7 @@ impl DefinitionChecker {
     fn type_check_function(
         &self,
         declared_function: &DeclaredFunction,
-    ) -> Result<types::functions::Function<types::GenericType>, TypeCheckError> {
+    ) -> Result<types::functions::Function<types::InstantiatedType>, TypeCheckError> {
         let mut locals = Locals::new();
 
         locals.push_arguments(&declared_function.arguments);
@@ -165,10 +171,12 @@ impl DefinitionChecker {
 
         Ok(types::functions::Function {
             id: declared_function.id,
-            type_: types::GenericType::new(
-                types::GenericTypeKind::Function(declared_function.id),
-                types::generics::TypeArguments::new_empty(),
-            ),
+            type_: types::InstantiatedType::new(types::InstantiatedTypeKind::Function(
+                types::functions::InstantiatedFunctionId::new(
+                    declared_function.id,
+                    types::generics::TypeArgumentValues::new_empty(),
+                ),
+            )),
             module_name: declared_function.module_name,
             visibility: declared_function.visibility,
             arguments: declared_function
@@ -194,7 +202,7 @@ impl DefinitionChecker {
         locals: &mut Locals,
         statement: &ast::Statement,
         expression_checker: &ExpressionChecker<'_>,
-    ) -> Result<types::Statement<types::GenericType>, TypeCheckError> {
+    ) -> Result<types::Statement<types::InstantiatedType>, TypeCheckError> {
         Ok(match statement {
             ast::Statement::Expression(expression, _) => {
                 types::Statement::Expression(expression_checker.type_check_expression(

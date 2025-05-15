@@ -160,8 +160,7 @@ pub fn build_cleanup<'ctx>(
             context
                 .builtins
                 .rc_handle
-                .instantiate(&types::generics::TypeArgumentValues::new(tav))
-                .unwrap(),
+                .with_type_arguments(&types::generics::TypeArgumentValues::new(tav)),
             HashMap::new(),
         );
         let old_refcount = rc_handle
@@ -263,8 +262,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             context
                 .builtins
                 .rc_handle
-                .instantiate(&types::generics::TypeArgumentValues(tav))
-                .unwrap(),
+                .with_type_arguments(&types::generics::TypeArgumentValues(tav)),
             HashMap::new(),
         );
 

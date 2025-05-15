@@ -31,6 +31,8 @@ pub(super) fn mangle_type(type_: &types::InstantiatedType) -> MangledIdentifier 
         }
         types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
         types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
+        types::InstantiatedTypeKind::Generic(_) => todo!(),
+        types::InstantiatedTypeKind::Interface(_) => todo!(),
     }
 }
 

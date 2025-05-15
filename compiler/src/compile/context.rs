@@ -13,16 +13,16 @@ use crate::{identifier::Identifier, types};
 use super::{unique_name, value::InstantiatedStructType};
 
 pub struct Builtins {
-    pub rc_handle: types::structs::Struct<types::GenericType>,
+    pub rc_handle: types::structs::Struct<types::InstantiatedType>,
 }
 
 pub struct AllItems<'ctx> {
-    structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
+    structs: HashMap<types::structs::StructId, types::structs::Struct<types::InstantiatedType>>,
     instantiated_structs:
         HashMap<types::structs::InstantiatedStructId, InstantiatedStructType<'ctx>>,
 
     functions:
-        HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
+        HashMap<types::functions::FunctionId, types::functions::Function<types::InstantiatedType>>,
     instantiated_functions: HashMap<
         types::functions::InstantiatedFunctionId,
         types::functions::Function<types::InstantiatedType>,
@@ -31,10 +31,10 @@ pub struct AllItems<'ctx> {
 
 impl<'ctx> AllItems<'ctx> {
     pub(crate) fn new(
-        structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
+        structs: HashMap<types::structs::StructId, types::structs::Struct<types::InstantiatedType>>,
         functions: HashMap<
             types::functions::FunctionId,
-            types::functions::Function<types::GenericType>,
+            types::functions::Function<types::InstantiatedType>,
         >,
     ) -> Self {
         Self {
@@ -70,8 +70,7 @@ impl<'ctx> AllItems<'ctx> {
                     .structs
                     .get(&id.id())
                     .unwrap()
-                    .instantiate(id.argument_values())
-                    .unwrap();
+                    .with_type_arguments(id.argument_values());
 
                 InstantiatedStructType::new(instantiated, HashMap::new())
             });
@@ -98,8 +97,7 @@ impl<'ctx> AllItems<'ctx> {
                     .functions
                     .get(&id.id())
                     .unwrap()
-                    .instantiate(id.argument_values())
-                    .unwrap();
+                    .with_type_arguments(id.argument_values());
 
                 instantiated
             });
@@ -153,6 +151,8 @@ impl<'ctx> CompilerContext<'ctx> {
             types::InstantiatedTypeKind::Function(_) => todo!(),
             types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
             types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
+            types::InstantiatedTypeKind::Generic(_) => todo!(),
+            types::InstantiatedTypeKind::Interface(_) => todo!(),
         }
     }
 

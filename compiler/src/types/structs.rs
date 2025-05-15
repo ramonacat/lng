@@ -4,8 +4,8 @@ use std::{
 };
 
 use super::{
-    AnyType, Expression, FunctionId, GenericType, Identifier, InstantiatedType, TypeArgumentValues,
-    TypeError, interfaces::InterfaceId, modules::ModuleId,
+    AnyType, Expression, FunctionId, Identifier, InstantiatedType, TypeArgumentValues,
+    interfaces::InterfaceId, modules::ModuleId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -20,17 +20,6 @@ pub struct FieldValue<T: AnyType> {
     pub name: Identifier,
     pub value: Expression<T>,
 }
-impl FieldValue<GenericType> {
-    pub(crate) fn instantiate(
-        &self,
-        type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Result<FieldValue<InstantiatedType>, TypeError> {
-        Ok(FieldValue {
-            name: self.name,
-            value: self.value.instantiate(type_argument_values)?,
-        })
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StructField<T: AnyType> {
@@ -38,20 +27,6 @@ pub struct StructField<T: AnyType> {
     pub name: Identifier,
     pub type_: T,
     pub static_: bool,
-}
-
-impl StructField<GenericType> {
-    pub(crate) fn instantiate(
-        &self,
-        type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Result<StructField<InstantiatedType>, TypeError> {
-        Ok(StructField {
-            struct_id: self.struct_id,
-            name: self.name,
-            type_: self.type_.instantiate(type_argument_values)?,
-            static_: self.static_,
-        })
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -101,8 +76,8 @@ pub struct Struct<T: AnyType> {
     pub implemented_interfaces: HashMap<InterfaceId, HashMap<Identifier, FunctionId>>,
 }
 
-impl<T: AnyType> Struct<T> {
-    pub(crate) fn field_type(&self, field_name: Identifier) -> T {
+impl Struct<InstantiatedType> {
+    pub(crate) fn field_type(&self, field_name: Identifier) -> InstantiatedType {
         self.fields
             .iter()
             .find(|x| x.name == field_name)
@@ -115,28 +90,21 @@ impl<T: AnyType> Struct<T> {
         self.implemented_interfaces.contains_key(&interface_id)
     }
 
-    pub(crate) fn instance_type(&self) -> T {
+    pub(crate) fn instance_type(&self) -> InstantiatedType {
         self.instance_type.clone()
     }
-}
 
-impl Struct<GenericType> {
-    pub(crate) fn instantiate(
+    pub(crate) fn with_type_arguments(
         &self,
-        type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Result<Struct<InstantiatedType>, TypeError> {
-        Ok(Struct {
+        argument_values: &TypeArgumentValues<InstantiatedType>,
+    ) -> Self {
+        Self {
             id: self.id,
-            fields: self
-                .fields
-                .iter()
-                .map(|x| x.instantiate(type_argument_values))
-                .collect::<Result<Vec<_>, _>>()?,
+            fields: self.fields.clone(),
             impls: self.impls.clone(),
-            type_: self.type_.instantiate(type_argument_values)?,
-            instance_type: self.instance_type.instantiate(type_argument_values)?,
-            // TODO these should be instantiated as well?
+            type_: self.type_.with_type_arguments(argument_values),
+            instance_type: self.instance_type.with_type_arguments(argument_values),
             implemented_interfaces: self.implemented_interfaces.clone(),
-        })
+        }
     }
 }

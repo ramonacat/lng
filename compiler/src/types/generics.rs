@@ -4,7 +4,7 @@ use itertools::Itertools as _;
 
 use crate::identifier::Identifier;
 
-use super::{AnyType, GenericType, InstantiatedType, TypeError};
+use super::AnyType;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeArguments(Vec<TypeArgument>);
@@ -61,10 +61,6 @@ impl<TType: AnyType> TypeArgumentValues<TType> {
         Self(HashMap::new())
     }
 
-    pub(super) fn get(&self, type_argument: TypeArgument) -> Option<&TType> {
-        self.0.get(&type_argument)
-    }
-
     pub(crate) const fn new(tav: HashMap<TypeArgument, TType>) -> Self {
         Self(tav)
     }
@@ -77,21 +73,6 @@ impl<TType: AnyType> TypeArgumentValues<TType> {
         }
 
         Self(values)
-    }
-}
-
-impl TypeArgumentValues<GenericType> {
-    pub(crate) fn instantiate(
-        &self,
-        type_argument_values: &TypeArgumentValues<InstantiatedType>,
-    ) -> Result<TypeArgumentValues<InstantiatedType>, TypeError> {
-        let instantiated_arguments = self
-            .0
-            .iter()
-            .map(|(arg, value)| Ok((*arg, value.instantiate(type_argument_values)?)))
-            .collect::<Result<HashMap<_, _>, _>>()?;
-
-        Ok(TypeArgumentValues(instantiated_arguments))
     }
 }
 

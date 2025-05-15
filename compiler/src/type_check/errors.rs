@@ -22,12 +22,12 @@ impl Display for TypeCheckError {
 #[derive(Debug)]
 pub enum TypeCheckErrorDescription {
     UnexpectedArgumentTypeInCall {
-        target: types::GenericType,
+        target: types::InstantiatedType,
         argument_name: Identifier,
-        expected_type: types::GenericType,
-        actual_type: types::GenericType,
+        expected_type: types::InstantiatedType,
+        actual_type: types::InstantiatedType,
     },
-    IncorrectNumberOfArgumentsPassed(types::GenericType),
+    IncorrectNumberOfArgumentsPassed(types::InstantiatedType),
     FunctionArgumentCannotBeVoid {
         argument_name: Identifier,
     },
@@ -38,13 +38,13 @@ pub enum TypeCheckErrorDescription {
     ImplNotOnStruct(FQName),
     MismatchedAssignmentType {
         target_variable: Identifier,
-        variable_type: types::GenericType,
-        assigned_type: types::GenericType,
+        variable_type: types::InstantiatedType,
+        assigned_type: types::InstantiatedType,
     },
-    CallingNotCallableItem(types::GenericType),
+    CallingNotCallableItem(types::InstantiatedType),
     MismatchedReturnType {
-        actual: types::GenericType,
-        expected: types::GenericType,
+        actual: types::InstantiatedType,
+        expected: types::InstantiatedType,
     },
 }
 

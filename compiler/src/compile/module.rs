@@ -103,7 +103,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
         for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
         {
-            let value = match &argument.type_.kind() {
+            let value = match argument.type_.kind() {
                 types::InstantiatedTypeKind::Unit => todo!(),
                 types::InstantiatedTypeKind::Object {
                     type_name: id,
@@ -141,6 +141,8 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::InstantiatedTypeKind::Function(_) => todo!(),
                 types::InstantiatedTypeKind::IndirectCallable(_, _) => todo!(),
                 types::InstantiatedTypeKind::InterfaceObject { .. } => todo!(),
+                types::InstantiatedTypeKind::Generic(_) => todo!(),
+                types::InstantiatedTypeKind::Interface(_) => todo!(),
             };
 
             scope.set_value(argument.name, value);

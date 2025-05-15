@@ -49,9 +49,10 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
 
         let field_type_lng = if is_array {
             quote::quote! {
-                crate::types::GenericType::new(
-                    crate::types::GenericTypeKind::Array { element_type: std::boxed::Box::new(#field_type_lng) },
-                    crate::types::generics::TypeArguments::new_empty()
+                crate::types::InstantiatedType::new_generic(
+                    crate::types::InstantiatedTypeKind::Array { element_type: std::boxed::Box::new(#field_type_lng) },
+                    crate::types::generics::TypeArguments::new_empty(),
+                    crate::types::generics::TypeArgumentValues::new_empty(),
                 )
             }
         } else {
@@ -72,9 +73,10 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
         quote::quote! {
             let type_argument_name = crate::types::generics::TypeArgument::new(crate::identifier::Identifier::parse(#generic_type_lit));
             let type_argument_names = crate::types::generics::TypeArguments::new(vec![type_argument_name]);
-            let generic_argument_type = crate::types::GenericType::new(
-                crate::types::GenericTypeKind::Generic(type_argument_name),
+            let generic_argument_type = crate::types::InstantiatedType::new_generic(
+                crate::types::InstantiatedTypeKind::Generic(type_argument_name),
                 type_argument_names.clone(),
+                crate::types::generics::TypeArgumentValues::new_empty()
             );
         }
     } else {
@@ -87,7 +89,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
     let struct_name_lit = Literal::string(&struct_name);
 
     quote::quote! {
-        pub fn describe_structure() -> crate::types::structs::Struct<crate::types::GenericType> {
+        pub fn describe_structure() -> crate::types::structs::Struct<crate::types::InstantiatedType> {
             #generics
 
             let module_id = crate::types::modules::ModuleId::parse(#module_id_lit);
@@ -96,8 +98,23 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
 
             crate::types::structs::Struct {
                 id: struct_id,
-                type_: crate::types::GenericType::new(crate::types::GenericTypeKind::Struct(struct_id), type_argument_names.clone()),
-                instance_type: crate::types::GenericType::new(crate::types::GenericTypeKind::StructObject{type_name: struct_id}, type_argument_names),
+                type_: crate::types::InstantiatedType::new_generic(
+                    crate::types::InstantiatedTypeKind::Struct(
+                        crate::types::structs::InstantiatedStructId::new(
+                            struct_id,
+                            crate::types::generics::TypeArgumentValues::new_empty()
+                        )
+                    ),
+                    type_argument_names.clone(),
+                    crate::types::generics::TypeArgumentValues::new_empty()
+                ),
+                instance_type: crate::types::InstantiatedType::new_generic(
+                    crate::types::InstantiatedTypeKind::Object{
+                        type_name: struct_id,
+                        type_argument_values: crate::types::generics::TypeArgumentValues::new_empty()
+                    },
+                    type_argument_names, types::generics::TypeArgumentValues::new_empty()
+                ),
                 fields: vec![#(#fields_gen),*],
                 impls: vec![],
                 implemented_interfaces: std::collections::HashMap::new(),
@@ -112,7 +129,7 @@ fn to_lng_type(type_: &syn::Type, generic_type: Option<&str>) -> impl ToTokens {
         syn::Type::Ptr(type_ptr) => {
             let inner_type = to_lng_type(&type_ptr.elem, generic_type);
 
-            quote::quote! {crate::types::GenericType::new(crate::types::GenericTypeKind::Pointer(std::boxed::Box::new(#inner_type)), crate::types::generics::TypeArguments::new_empty())}
+            quote::quote! {crate::types::InstantiatedType::new_generic(crate::types::InstantiatedTypeKind::Pointer(std::boxed::Box::new(#inner_type)), crate::types::generics::TypeArguments::new_empty(), crate::types::generics::TypeArgumentValues::new_empty())}
         }
         syn::Type::Path(path) => {
             if let Some(generic_type_) = generic_type {
@@ -122,9 +139,9 @@ fn to_lng_type(type_: &syn::Type, generic_type: Option<&str>) -> impl ToTokens {
             }
 
             if path.path.is_ident("u64") {
-                return quote::quote! {crate::types::GenericType::u64()};
+                return quote::quote! {crate::types::InstantiatedType::u64()};
             } else if path.path.is_ident("u8") {
-                return quote::quote! {crate::types::GenericType::u8()};
+                return quote::quote! {crate::types::InstantiatedType::u8()};
             }
 
             todo!(

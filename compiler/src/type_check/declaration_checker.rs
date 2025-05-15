@@ -106,9 +106,8 @@ impl DeclarationChecker {
                                 DeclaredStructField {
                                     // TODO we should here handle the case of the type actually
                                     // being generic
-                                    type_: types::GenericType::new(
-                                        types::GenericTypeKind::Callable(function.id),
-                                        types::generics::TypeArguments::new_empty(),
+                                    type_: types::InstantiatedType::new(
+                                        types::InstantiatedTypeKind::Callable(function.id),
                                     ),
                                     static_: true,
                                 },
@@ -292,10 +291,9 @@ impl DeclarationChecker {
             interface_id,
             types::interfaces::Interface {
                 id: interface_id,
-                type_: types::GenericType::new(
-                    types::GenericTypeKind::Interface(interface_id),
-                    types::generics::TypeArguments::new_empty(),
-                ),
+                type_: types::InstantiatedType::new(types::InstantiatedTypeKind::Interface(
+                    interface_id,
+                )),
                 functions,
             },
         );
@@ -310,10 +308,12 @@ impl DeclarationChecker {
     ) -> Result<(), TypeCheckError> {
         let mut fields = vec![];
         let struct_id = types::structs::StructId::InModule(module_path, struct_.name);
-        let struct_type = types::GenericType::new(
-            types::GenericTypeKind::Struct(struct_id),
-            types::generics::TypeArguments::new_empty(),
-        );
+        let struct_type = types::InstantiatedType::new(types::InstantiatedTypeKind::Struct(
+            types::structs::InstantiatedStructId::new(
+                struct_id,
+                types::generics::TypeArgumentValues::new_empty(),
+            ),
+        ));
 
         for field in &struct_.fields {
             fields.push(types::structs::StructField {
@@ -332,12 +332,10 @@ impl DeclarationChecker {
                 fields,
                 impls: vec![],
                 type_: struct_type,
-                instance_type: types::GenericType::new(
-                    types::GenericTypeKind::StructObject {
-                        type_name: struct_id,
-                    },
-                    types::generics::TypeArguments::new_empty(),
-                ),
+                instance_type: types::InstantiatedType::new(types::InstantiatedTypeKind::Object {
+                    type_name: struct_id,
+                    type_argument_values: types::generics::TypeArgumentValues::new_empty(),
+                }),
                 implemented_interfaces: HashMap::new(),
             },
         );
@@ -354,12 +352,14 @@ impl DeclarationChecker {
         if function_declaration.ast.name == *"main" && visibility == ast::Visibility::Export {
             if function_declaration.arguments.len() == 1 {
                 if let Some(argument) = function_declaration.arguments.first() {
-                    if let types::GenericTypeKind::Array {
+                    if let types::InstantiatedTypeKind::Array {
                         element_type: array_item_type,
                     } = argument.type_.kind()
                     {
-                        if let types::GenericTypeKind::StructObject { type_name: id } =
-                            array_item_type.kind()
+                        if let types::InstantiatedTypeKind::Object {
+                            type_name: id,
+                            type_argument_values: _,
+                        } = array_item_type.kind()
                         {
                             if *id == *TYPE_NAME_STRING {
                                 if self.main.is_some() {
@@ -388,7 +388,7 @@ impl DeclarationChecker {
         &self,
         argument: &ast::Argument,
         current_module: types::modules::ModuleId,
-    ) -> Result<types::functions::Argument<types::GenericType>, TypeCheckError> {
+    ) -> Result<types::functions::Argument<types::InstantiatedType>, TypeCheckError> {
         Ok(types::functions::Argument {
             name: argument.name,
             type_: resolve_type(

@@ -8,8 +8,8 @@ use super::errors::TypeCheckError;
 pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
     pub(super) module_name: types::modules::ModuleId,
-    pub(super) arguments: Vec<types::functions::Argument<types::GenericType>>,
-    pub(super) return_type: types::GenericType,
+    pub(super) arguments: Vec<types::functions::Argument<types::InstantiatedType>>,
+    pub(super) return_type: types::InstantiatedType,
     pub(super) ast: ast::Function,
     pub(super) position: ast::SourceSpan,
     pub(super) visibility: types::Visibility,
@@ -17,22 +17,24 @@ pub(super) struct DeclaredFunction {
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredStructField {
-    pub(super) type_: types::GenericType,
+    pub(super) type_: types::InstantiatedType,
     pub(super) static_: bool,
 }
 
 pub(super) struct DeclaredRootModule {
     // TODO make the fields private
     pub(super) structs:
-        HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
+        HashMap<types::structs::StructId, types::structs::Struct<types::InstantiatedType>>,
     pub(super) functions: HashMap<types::functions::FunctionId, DeclaredFunction>,
     pub(super) predeclared_functions:
-        HashMap<types::functions::FunctionId, types::functions::Function<types::GenericType>>,
+        HashMap<types::functions::FunctionId, types::functions::Function<types::InstantiatedType>>,
     pub(super) modules: HashMap<types::modules::ModuleId, types::modules::Module>,
     pub(super) imports:
         HashMap<(types::modules::ModuleId, Identifier), (types::modules::ModuleId, Identifier)>,
-    pub(super) interfaces:
-        HashMap<types::interfaces::InterfaceId, types::interfaces::Interface<types::GenericType>>,
+    pub(super) interfaces: HashMap<
+        types::interfaces::InterfaceId,
+        types::interfaces::Interface<types::InstantiatedType>,
+    >,
 }
 
 impl std::fmt::Debug for DeclaredRootModule {
@@ -60,33 +62,39 @@ impl std::fmt::Debug for DeclaredRootModule {
 }
 
 pub enum DeclaredItemKind<'item> {
-    Struct(&'item types::structs::Struct<types::GenericType>),
+    Struct(&'item types::structs::Struct<types::InstantiatedType>),
     Function(&'item DeclaredFunction),
-    PredeclaredFunction(&'item types::functions::Function<types::GenericType>),
-    Interface(&'item types::interfaces::Interface<types::GenericType>),
+    PredeclaredFunction(&'item types::functions::Function<types::InstantiatedType>),
+    Interface(&'item types::interfaces::Interface<types::InstantiatedType>),
 }
 
 impl DeclaredItemKind<'_> {
-    pub(crate) fn type_(&self) -> types::GenericType {
+    pub(crate) fn type_(&self) -> types::InstantiatedType {
         match self {
             // TODO handle generics
-            Self::Struct(struct_) => types::GenericType::new(
-                types::GenericTypeKind::StructObject {
+            Self::Struct(struct_) => types::InstantiatedType::new_generic(
+                types::InstantiatedTypeKind::Object {
                     type_name: struct_.id,
+                    type_argument_values: types::generics::TypeArgumentValues::new_empty(),
                 },
                 struct_.type_.arguments().clone(),
+                types::generics::TypeArgumentValues::new_empty(),
             ),
-            Self::Function(declared_function) => types::GenericType::new(
-                types::GenericTypeKind::Callable(declared_function.id),
-                types::generics::TypeArguments::new_empty(),
+            Self::Function(declared_function) => types::InstantiatedType::new(
+                types::InstantiatedTypeKind::Callable(declared_function.id),
             ),
-            Self::PredeclaredFunction(function) => types::GenericType::new(
-                types::GenericTypeKind::Callable(function.id),
+            Self::PredeclaredFunction(function) => types::InstantiatedType::new_generic(
+                types::InstantiatedTypeKind::Callable(function.id),
                 function.type_.arguments().clone(),
+                types::generics::TypeArgumentValues::new_empty(),
             ),
-            Self::Interface(interface) => types::GenericType::new(
-                types::GenericTypeKind::InterfaceObject(interface.id),
+            Self::Interface(interface) => types::InstantiatedType::new_generic(
+                types::InstantiatedTypeKind::InterfaceObject {
+                    interface_id: interface.id,
+                    type_argument_values: types::generics::TypeArgumentValues::new_empty(),
+                },
                 interface.type_.arguments().clone(),
+                types::generics::TypeArgumentValues::new_empty(),
             ),
         }
     }
@@ -107,10 +115,10 @@ impl DeclaredRootModule {
 
     pub(crate) fn from_predeclared(
         modules: &HashMap<types::modules::ModuleId, types::modules::Module>,
-        structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
+        structs: HashMap<types::structs::StructId, types::structs::Struct<types::InstantiatedType>>,
         functions: HashMap<
             types::functions::FunctionId,
-            types::functions::Function<types::GenericType>,
+            types::functions::Function<types::InstantiatedType>,
         >,
     ) -> Self {
         Self {
@@ -182,21 +190,20 @@ pub(super) fn resolve_type(
     root_module: &DeclaredRootModule,
     current_module: types::modules::ModuleId,
     r#type: &ast::TypeDescription,
-) -> Result<types::GenericType, TypeCheckError> {
+) -> Result<types::InstantiatedType, TypeCheckError> {
     // TODO handle generics here
     match r#type {
-        ast::TypeDescription::Array(type_description) => Ok(types::GenericType::new(
-            types::GenericTypeKind::Array {
+        ast::TypeDescription::Array(type_description) => Ok(types::InstantiatedType::new(
+            types::InstantiatedTypeKind::Array {
                 element_type: Box::new(resolve_type(
                     root_module,
                     current_module,
                     type_description,
                 )?),
             },
-            types::generics::TypeArguments::new_empty(),
         )),
-        ast::TypeDescription::Named(name) if name == "()" => Ok(types::GenericType::unit()),
-        ast::TypeDescription::Named(name) if name == "u64" => Ok(types::GenericType::u64()),
+        ast::TypeDescription::Named(name) if name == "()" => Ok(types::InstantiatedType::unit()),
+        ast::TypeDescription::Named(name) if name == "u64" => Ok(types::InstantiatedType::u64()),
         ast::TypeDescription::Named(name) => {
             let (current_module, name) = root_module.resolve_import(current_module, *name);
 
