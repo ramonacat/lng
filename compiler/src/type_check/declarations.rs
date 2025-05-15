@@ -213,14 +213,15 @@ pub(super) fn resolve_type(
     root_module: &DeclaredRootModule,
     current_module: types::modules::ModuleId,
     r#type: &ast::TypeDescription,
-    types: &dyn types::store::TypeStore,
+    types: &mut dyn types::store::TypeStore,
 ) -> Result<types::Type, TypeCheckError> {
     // TODO handle generics here
     match r#type {
         ast::TypeDescription::Array(type_description) => {
-            Ok(types::Type::new(types::TypeKind::Array(Box::new(
-                resolve_type(root_module, current_module, type_description, types)?,
-            ))))
+            let element_type = resolve_type(root_module, current_module, type_description, types)?;
+            let element_type_id = types.add(element_type);
+
+            Ok(types::Type::new(types::TypeKind::Array(element_type_id)))
         }
         ast::TypeDescription::Named(name) if name == "()" => Ok(types::Type::unit()),
         ast::TypeDescription::Named(name) if name == "u64" => Ok(types::Type::u64()),

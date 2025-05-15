@@ -252,7 +252,7 @@ impl DeclarationChecker {
                                 &self.root_module_declaration,
                                 module_path,
                                 &field.type_,
-                                &self.types,
+                                &mut self.types,
                             )?;
                         }
                     }
@@ -279,7 +279,7 @@ impl DeclarationChecker {
                 &self.root_module_declaration,
                 module_path,
                 &function.return_type,
-                &self.types,
+                &mut self.types,
             )?;
 
             // TODO actually support generics here
@@ -339,7 +339,7 @@ impl DeclarationChecker {
                 &self.root_module_declaration,
                 module_path,
                 &field.type_,
-                &self.types,
+                &mut self.types,
             )?;
             let field_type_id = self.types.add(field_type);
             fields.push(types::structs::StructField {
@@ -383,7 +383,7 @@ impl DeclarationChecker {
                         self.types.get(argument.type_id).kind()
                     {
                         if let types::TypeKind::Object(instantiated_struct_id) =
-                            array_item_type.kind()
+                            self.types.get(*array_item_type).kind()
                         {
                             if instantiated_struct_id.id() == *TYPE_NAME_STRING {
                                 if self.main.is_some() {
@@ -417,7 +417,7 @@ impl DeclarationChecker {
             &self.root_module_declaration,
             current_module,
             &argument.type_,
-            &self.types,
+            &mut self.types,
         )?;
         Ok(types::functions::Argument {
             name: argument.name,
@@ -443,7 +443,7 @@ impl DeclarationChecker {
             &self.root_module_declaration,
             current_module,
             &function.return_type,
-            &self.types,
+            &mut self.types,
         )?;
         let id = types::functions::FunctionId::InStruct(self_type, function.name);
         Ok(DeclaredFunction {
@@ -475,7 +475,7 @@ impl DeclarationChecker {
                 &self.root_module_declaration,
                 module_path,
                 &arg.type_,
-                &self.types,
+                &mut self.types,
             )
             .unwrap();
 
@@ -490,7 +490,7 @@ impl DeclarationChecker {
             &self.root_module_declaration,
             module_path,
             &function.return_type,
-            &self.types,
+            &mut self.types,
         )
         .unwrap();
         let id = types::functions::FunctionId::InModule(module_path, function.name);

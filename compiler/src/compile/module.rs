@@ -123,10 +123,9 @@ impl<'ctx> CompiledModule<'ctx> {
 
                     Value::Reference(rc)
                 }
-                types::TypeKind::Array(a) => {
-                    let element_type_id = types.add(*a.clone());
+                types::TypeKind::Array(element_type_id) => {
                     Value::Reference(builtins::array::ArrayValue::build_instance(
-                        element_type_id,
+                        *element_type_id,
                         context,
                         structs,
                         types,

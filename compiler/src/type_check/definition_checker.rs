@@ -218,7 +218,7 @@ impl DefinitionChecker {
                     &self.root_module_declaration,
                     declared_function.module_name,
                     type_,
-                    &*self.types.borrow(),
+                    &mut *self.types.borrow_mut(),
                 )?;
 
                 if !type_.can_assign_to(self.types.borrow().get(checked_expression.type_id), |id| {

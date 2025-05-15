@@ -29,7 +29,7 @@ pub enum TypeError {}
 pub enum TypeKind {
     Unit,
     Object(InstantiatedStructId),
-    Array(Box<Type>),
+    Array(TypeId),
     // TODO this should be an object with special properties
     // TODO should this be instantiatedfunctionid???
     Callable(FunctionId),

@@ -35,8 +35,9 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
     };
 
     let mut fields_gen = vec![];
+    let mut declarations = vec![];
 
-    for field in fields.named {
+    for (i, field) in fields.named.into_iter().enumerate() {
         let is_array = field
             .attrs
             .first()
@@ -48,20 +49,25 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
         let field_name_lit = Literal::string(&field_name);
 
         let field_type_lng = if is_array {
+            let field_type_name = quote::format_ident!("field_type__{}", i);
+            declarations.push(quote::quote! {
+                let #field_type_name = type_store.add(#field_type_lng);
+            });
+
             quote::quote! {
-                crate::types::Type::new_generic(
-                    crate::types::TypeKind::Array(std::boxed::Box::new(#field_type_lng)),
+                type_store.add(crate::types::Type::new_generic(
+                    crate::types::TypeKind::Array(#field_type_name),
                     crate::types::generics::TypeArguments::new_empty(),
-                )
+                ))
             }
         } else {
-            quote::quote! { #field_type_lng }
+            quote::quote! { type_store.add(#field_type_lng) }
         };
 
         fields_gen.push(quote::quote! { crate::types::structs::StructField {
             struct_id,
             name: crate::identifier::Identifier::parse(#field_name_lit),
-            type_: type_store.add(#field_type_lng),
+            type_: #field_type_lng,
             static_: false
         }});
     }
@@ -89,6 +95,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
     quote::quote! {
         pub fn describe_structure(type_store: &mut dyn crate::types::store::TypeStore) -> crate::types::structs::Struct {
             #generics
+            #(#declarations);*
 
             let module_id = crate::types::modules::ModuleId::parse(#module_id_lit);
             let struct_name = crate::identifier::Identifier::parse(#struct_name_lit);
