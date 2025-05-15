@@ -87,6 +87,7 @@ impl<'ctx> CompiledModule<'ctx> {
         function: &types::functions::Function,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
+        types: &mut dyn types::store::TypeStore,
     ) -> super::CompiledFunction<'ctx> {
         self.functions.insert(function.type_.clone());
 
@@ -106,21 +107,30 @@ impl<'ctx> CompiledModule<'ctx> {
             let value = match argument.type_.kind() {
                 types::TypeKind::Unit => todo!(),
                 types::TypeKind::Object(instantiated_struct_id) => {
+                    let struct_instance_type = structs
+                        .get_or_instantiate_struct(instantiated_struct_id)
+                        .unwrap()
+                        .definition
+                        .instance_type();
+
+                    let struct_instance_type_id = types.add(struct_instance_type);
+
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        structs
-                            .get_or_instantiate_struct(instantiated_struct_id)
-                            .unwrap()
-                            .definition
-                            .instance_type(),
+                        struct_instance_type_id,
                     );
                     rcs.push(rc.clone());
 
                     Value::Reference(rc)
                 }
-                types::TypeKind::Array(a) => Value::Reference(
-                    builtins::array::ArrayValue::build_instance(a.as_ref(), context, structs),
-                ),
+                types::TypeKind::Array(a) => {
+                    Value::Reference(builtins::array::ArrayValue::build_instance(
+                        a.as_ref(),
+                        context,
+                        structs,
+                        types,
+                    ))
+                }
                 types::TypeKind::Callable { .. } => todo!(),
                 types::TypeKind::U64 => Value::Primitive(
                     types::structs::InstantiatedStructId::new(
@@ -148,7 +158,7 @@ impl<'ctx> CompiledModule<'ctx> {
 
         context.builder.position_at_end(entry_block);
 
-        rc::build_prologue(&rcs, context);
+        rc::build_prologue(&rcs, context, types);
 
         CompiledFunction {
             scope,

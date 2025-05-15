@@ -44,6 +44,7 @@ impl ArrayValue {
         item_type: &types::Type,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
+        types: &mut dyn types::store::TypeStore,
     ) -> RcValue<'ctx> {
         let items_type = context.make_object_type(item_type);
         // TODO add freeing of this array once destructors are in place
@@ -62,17 +63,18 @@ impl ArrayValue {
         field_values.insert(*CAPACITY_FIELD, context.const_u64(1).as_basic_value_enum());
 
         let id = *TYPE_NAME_ARRAY;
+        let item_type_id = types.add(item_type.clone());
 
         let array_value = structs
             .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                 id,
                 types::generics::TypeArguments::new(vec![TypeArgument::new_value(
                     Identifier::parse("TPointee"),
-                    item_type.clone(),
+                    item_type_id,
                 )]),
             ))
             .unwrap()
-            .build_heap_instance(context, &unique_name(&["string"]), field_values);
+            .build_heap_instance(context, &unique_name(&["string"]), field_values, types);
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),
@@ -83,13 +85,14 @@ impl ArrayValue {
                         id,
                         types::generics::TypeArguments::new(vec![TypeArgument::new_value(
                             Identifier::parse("TPointee"),
-                            item_type.clone(),
+                            item_type_id,
                         )]),
                     ),
                 )),
             ),
             context,
             structs,
+            types,
         )
     }
 }

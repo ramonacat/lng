@@ -5,7 +5,7 @@ use std::{
 
 use super::{
     Expression, FunctionId, Identifier, Type, generics::TypeArguments, interfaces::InterfaceId,
-    modules::ModuleId,
+    modules::ModuleId, store::TypeId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -25,7 +25,7 @@ pub struct FieldValue {
 pub struct StructField {
     pub struct_id: StructId,
     pub name: Identifier,
-    pub type_: Type,
+    pub type_: TypeId,
     pub static_: bool,
 }
 
@@ -57,7 +57,7 @@ impl InstantiatedStructId {
         self.0
     }
 
-    pub(crate) fn argument_values(&self) -> Vec<Option<&Type>> {
+    pub(crate) fn argument_values(&self) -> Vec<Option<TypeId>> {
         self.1.values()
     }
 
@@ -81,13 +81,12 @@ pub struct Struct {
 }
 
 impl Struct {
-    pub(crate) fn field_type(&self, field_name: Identifier) -> Type {
+    pub(crate) fn field_type(&self, field_name: Identifier) -> TypeId {
         self.fields
             .iter()
             .find(|x| x.name == field_name)
             .unwrap()
             .type_
-            .clone()
     }
 
     pub(crate) fn implements(&self, interface_id: InterfaceId) -> bool {
@@ -98,7 +97,7 @@ impl Struct {
         self.instance_type.clone()
     }
 
-    pub(crate) fn with_type_arguments(&self, argument_values: Vec<Type>) -> Self {
+    pub(crate) fn with_type_arguments(&self, argument_values: Vec<TypeId>) -> Self {
         Self {
             id: self.id,
             fields: self.fields.clone(),

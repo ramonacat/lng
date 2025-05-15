@@ -51,8 +51,9 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         context: &CompilerContext<'ctx>,
         binding_name: &str,
         mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
+        types: &dyn types::store::TypeStore,
     ) -> PointerValue<'ctx> {
-        let llvm_type = context.make_struct_type(&self.definition.fields);
+        let llvm_type = context.make_struct_type(&self.definition.fields, types);
 
         let instance = context
             .builder
@@ -81,9 +82,10 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         instance: PointerValue<'ctx>,
         binding_name: &str,
         context: &CompilerContext<'ctx>,
+        types: &dyn types::store::TypeStore,
     ) -> BasicValueEnum<'ctx> {
         let (field_type, field_pointer) = context
-            .make_struct_type(&self.definition.fields)
+            .make_struct_type(&self.definition.fields, types)
             .field_pointer(field, instance, context);
 
         context
@@ -98,9 +100,10 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         instance: PointerValue<'ctx>,
         value: BasicValueEnum<'ctx>,
         context: &CompilerContext<'ctx>,
+        types: &dyn types::store::TypeStore,
     ) {
         let (_, field_pointer) = context
-            .make_struct_type(&self.definition.fields)
+            .make_struct_type(&self.definition.fields, types)
             .field_pointer(field_name, instance, context);
 
         context.builder.build_store(field_pointer, value).unwrap();
@@ -113,6 +116,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         name: Identifier,
         context: &CompilerContext<'ctx>,
         structs: &AllItems<'ctx>,
+        types: &dyn types::store::TypeStore,
     ) -> Option<Value<'ctx>> {
         let field = self.definition.fields.iter().find(|f| f.name == name)?;
 
@@ -123,7 +127,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         let instance_ptr = match instance {
             Value::Empty => todo!(),
             Value::Primitive(_, _) => todo!(),
-            Value::Reference(rc_value) => rc_value.pointee(context, structs),
+            Value::Reference(rc_value) => rc_value.pointee(context, structs, types),
             Value::Function(_) => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
         };
@@ -133,12 +137,14 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             instance_ptr,
             &unique_name(&["field_read", &field.name.raw()]),
             context,
+            types,
         );
-        let result = match field.type_.kind() {
+        let field_type = types.get(field.type_);
+        let result = match field_type.kind() {
             types::TypeKind::Unit => todo!(),
             types::TypeKind::Object { .. } => Value::Reference(RcValue::from_pointer(
                 raw_result.into_pointer_value(),
-                field.type_.clone(),
+                field.type_,
             )),
             types::TypeKind::Array { .. } => todo!(),
             types::TypeKind::Callable(_) => todo!(),
@@ -219,14 +225,15 @@ impl<'ctx> Value<'ctx> {
         field_path: Identifier,
         context: &CompilerContext<'ctx>,
         structs: &AllItems<'ctx>,
+        types: &dyn types::store::TypeStore,
     ) -> Option<Self> {
         match self {
             Value::Primitive(struct_id, _) => structs
                 .get_struct(struct_id)
                 .unwrap()
-                .read_field_value(self.clone(), field_path, context, structs),
+                .read_field_value(self.clone(), field_path, context, structs, types),
             Value::Reference(ref_) => {
-                let ref_type = ref_.type_();
+                let ref_type = types.get(ref_.type_());
                 let instantiated_struct_id = match ref_type.kind() {
                     types::TypeKind::Unit => todo!(),
                     types::TypeKind::Object(instantiated_struct_id) => instantiated_struct_id,
@@ -247,7 +254,7 @@ impl<'ctx> Value<'ctx> {
                 structs
                     .get_struct(instantiated_struct_id)
                     .unwrap()
-                    .read_field_value(self.clone(), field_path, context, structs)
+                    .read_field_value(self.clone(), field_path, context, structs, types)
             }
             Value::Function(_) => todo!(),
             Value::Empty => todo!(),

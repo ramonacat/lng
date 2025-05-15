@@ -61,7 +61,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
         fields_gen.push(quote::quote! { crate::types::structs::StructField {
             struct_id,
             name: crate::identifier::Identifier::parse(#field_name_lit),
-            type_: #field_type_lng,
+            type_: type_store.add(#field_type_lng),
             static_: false
         }});
     }
@@ -87,7 +87,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
     let struct_name_lit = Literal::string(&struct_name);
 
     quote::quote! {
-        pub fn describe_structure() -> crate::types::structs::Struct {
+        pub fn describe_structure(type_store: &mut dyn crate::types::store::TypeStore) -> crate::types::structs::Struct {
             #generics
 
             let module_id = crate::types::modules::ModuleId::parse(#module_id_lit);

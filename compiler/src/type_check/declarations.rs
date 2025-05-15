@@ -21,7 +21,7 @@ pub(super) struct DeclaredFunction {
 
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredStructField {
-    pub(super) type_: types::Type,
+    pub(super) type_: types::store::TypeId,
     pub(super) static_: bool,
 }
 

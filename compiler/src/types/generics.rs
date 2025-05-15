@@ -4,7 +4,7 @@ use itertools::Itertools as _;
 
 use crate::identifier::Identifier;
 
-use super::Type;
+use super::store::TypeId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypeArguments(Vec<TypeArgument>);
@@ -17,11 +17,11 @@ impl TypeArguments {
         Self(arguments)
     }
 
-    pub(crate) fn with_values(&self, argument_values: Vec<Type>) -> Self {
+    pub(crate) fn with_values(&self, argument_values: Vec<TypeId>) -> Self {
         let mut arguments = self.0.clone();
 
         for (i, value) in argument_values.into_iter().enumerate() {
-            arguments[i].1 = Some(Box::new(value));
+            arguments[i].1 = Some(value);
         }
 
         Self(arguments)
@@ -31,11 +31,8 @@ impl TypeArguments {
         &self.0[..]
     }
 
-    pub(crate) fn values(&self) -> Vec<Option<&Type>> {
-        self.0
-            .iter()
-            .map(|x| x.1.as_ref().map(AsRef::as_ref))
-            .collect()
+    pub(crate) fn values(&self) -> Vec<Option<TypeId>> {
+        self.0.iter().map(|x| x.1).collect()
     }
 }
 
@@ -50,23 +47,23 @@ impl std::fmt::Display for TypeArguments {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TypeArgument(Identifier, Option<Box<Type>>);
+pub struct TypeArgument(Identifier, Option<TypeId>);
 
 impl TypeArgument {
     pub const fn new(name: Identifier) -> Self {
         Self(name, None)
     }
 
-    pub fn new_value(name: Identifier, value: Type) -> Self {
-        Self(name, Some(Box::new(value)))
+    pub const fn new_value(name: Identifier, value: TypeId) -> Self {
+        Self(name, Some(value))
     }
 
     pub const fn name(&self) -> Identifier {
         self.0
     }
 
-    pub fn value(&self) -> Option<&Type> {
-        self.1.as_ref().map(AsRef::as_ref)
+    pub const fn value(&self) -> Option<TypeId> {
+        self.1
     }
 }
 

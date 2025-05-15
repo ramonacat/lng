@@ -3,7 +3,8 @@ use std::fmt::{Display, Formatter};
 use crate::{ast, identifier::Identifier};
 
 use super::{
-    Statement, Type, Visibility, generics::TypeArguments, modules::ModuleId, structs::StructId,
+    Statement, Type, Visibility, generics::TypeArguments, modules::ModuleId, store::TypeId,
+    structs::StructId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -20,7 +21,7 @@ impl InstantiatedFunctionId {
         self.0
     }
 
-    pub(crate) fn argument_values(&self) -> Vec<Option<&Type>> {
+    pub(crate) fn argument_values(&self) -> Vec<Option<TypeId>> {
         self.1.values()
     }
 
@@ -77,7 +78,7 @@ impl Function {
         self.type_.clone()
     }
 
-    pub(crate) fn with_type_arguments(&self, argument_values: Vec<Type>) -> Self {
+    pub(crate) fn with_type_arguments(&self, argument_values: Vec<TypeId>) -> Self {
         Self {
             id: self.id,
             module_name: self.module_name,

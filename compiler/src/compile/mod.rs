@@ -61,6 +61,7 @@ pub fn compile(
         scope: std_scope,
         modules: std_modules,
         items: std_items,
+        types: std_types,
     } = std
     else {
         todo!();
@@ -71,6 +72,7 @@ pub fn compile(
         Some(std_scope),
         Some(std_modules),
         Some(std_items),
+        Some(std_types),
     );
 
     let compiled_root_module = compiler.compile(program);
@@ -81,6 +83,7 @@ pub fn compile(
         main,
         modules,
         items: _,
+        types: _,
     } = compiled_root_module
     else {
         todo!();
@@ -172,6 +175,7 @@ pub(crate) struct Compiler<'ctx> {
     global_scope: GlobalScope<'ctx>,
     items: AllItems<'ctx>,
     modules: Modules<'ctx>,
+    types: types::store::MultiStore,
 }
 
 pub(crate) struct CompiledFunction<'ctx> {
@@ -195,11 +199,13 @@ pub enum CompiledRootModule<'ctx> {
         modules: Modules<'ctx>,
         items: AllItems<'ctx>,
         main: MangledIdentifier,
+        types: types::store::MultiStore,
     },
     Library {
         scope: GlobalScope<'ctx>,
         items: AllItems<'ctx>,
         modules: Modules<'ctx>,
+        types: types::store::MultiStore,
     },
 }
 
@@ -209,24 +215,28 @@ impl<'ctx> Compiler<'ctx> {
         std_scope: Option<GlobalScope<'ctx>>,
         std_modules: Option<Modules<'ctx>>,
         std_items: Option<AllItems<'ctx>>,
+        std_types: Option<types::store::MultiStore>,
     ) -> Self {
-        let builtins = Builtins {
-            rc_handle: rc::describe_structure(),
-        };
-
         let global_scope = std_scope.unwrap_or_else(GlobalScope::new);
         let modules = std_modules.unwrap_or_else(Modules::new);
+        let mut types = std_types
+            .unwrap_or_else(|| types::store::MultiStore::new(types::store::SingleStore::new()));
+
         let items = std_items.unwrap_or_else(|| {
             // If there is no std, then we want to get in early and create the builtins, so that
             // the rest of the compilation can just add methods, etc. to them
 
             let mut structs = HashMap::new();
 
-            structs.insert(*TYPE_NAME_STRING, string::describe_structure());
-            structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
+            structs.insert(*TYPE_NAME_STRING, string::describe_structure(&mut types));
+            structs.insert(*TYPE_NAME_ARRAY, array::describe_structure(&mut types));
 
             AllItems::new(structs, HashMap::new())
         });
+
+        let builtins = Builtins {
+            rc_handle: rc::describe_structure(&mut types),
+        };
 
         Self {
             context: CompilerContext {
@@ -237,6 +247,7 @@ impl<'ctx> Compiler<'ctx> {
             global_scope,
             modules,
             items,
+            types,
         }
     }
 
@@ -245,22 +256,24 @@ impl<'ctx> Compiler<'ctx> {
         let mut structs = program.structs().clone();
         let functions = program.functions().clone();
 
+        self.types.merge_with(program.types().clone());
+
         // TODO this is a bit hacky, we should have an attribute on the structs marking them as
         // predefined, so that the definitions are ignored, but the impls are not
         structs
             .get_mut(&*TYPE_NAME_STRING)
             .unwrap()
             .fields
-            .append(&mut string::describe_structure().fields);
+            .append(&mut string::describe_structure(&mut self.types).fields);
 
         // TODO should the array struct be declared in stdlib, like string?
-        structs.insert(*TYPE_NAME_ARRAY, array::describe_structure());
+        structs.insert(*TYPE_NAME_ARRAY, array::describe_structure(&mut self.types));
 
         let rc_struct_id = types::structs::StructId::InModule(
             types::modules::ModuleId::parse("std"),
             Identifier::parse("rc"),
         );
-        structs.insert(rc_struct_id, rc::describe_structure());
+        structs.insert(rc_struct_id, rc::describe_structure(&mut self.types));
 
         self.items = AllItems::new(structs, functions);
         self.items
@@ -290,12 +303,14 @@ impl<'ctx> Compiler<'ctx> {
                 modules: self.modules,
                 items: self.items,
                 main: mangled_main,
+                types: self.types,
             }
         } else {
             CompiledRootModule::Library {
                 modules: self.modules,
                 scope: self.global_scope,
                 items: self.items,
+                types: self.types,
             }
         }
     }
@@ -327,7 +342,7 @@ impl<'ctx> Compiler<'ctx> {
         let module = self.modules.get_mut(module_path).unwrap();
 
         let mut compiled_function =
-            module.begin_compile_function(handle, &self.context, &mut self.items);
+            module.begin_compile_function(handle, &self.context, &mut self.items, &mut self.types);
 
         self.compile_statements(statements, module_path, &mut compiled_function)?;
 
@@ -352,6 +367,7 @@ impl<'ctx> Compiler<'ctx> {
                 .cloned()
                 .collect::<Vec<_>>(),
             compiled_function.end,
+            &self.types,
         );
         self.context
             .builder

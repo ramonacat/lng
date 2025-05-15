@@ -5,6 +5,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
+use super::store::MultiStore;
 use super::{functions::Function, structs::StructId};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -39,12 +40,14 @@ pub struct AppModule {
     modules: HashMap<ModuleId, Module>,
     structs: HashMap<StructId, Struct>,
     functions: HashMap<FunctionId, Function>,
+    types: MultiStore,
 }
 
 pub struct LibraryModule {
     modules: HashMap<ModuleId, Module>,
     structs: HashMap<StructId, Struct>,
     functions: HashMap<FunctionId, Function>,
+    types: MultiStore,
 }
 
 pub enum RootModule {
@@ -81,17 +84,26 @@ impl RootModule {
         }
     }
 
+    pub(crate) const fn types(&self) -> &MultiStore {
+        match self {
+            Self::App(app_module) => &app_module.types,
+            Self::Library(library_module) => &library_module.types,
+        }
+    }
+
     pub(crate) const fn new_app(
         main: FunctionId,
         modules: HashMap<ModuleId, Module>,
         structs: HashMap<StructId, Struct>,
         functions: HashMap<FunctionId, Function>,
+        types: MultiStore,
     ) -> Self {
         Self::App(AppModule {
             main,
             modules,
             structs,
             functions,
+            types,
         })
     }
 
@@ -99,11 +111,13 @@ impl RootModule {
         modules: HashMap<ModuleId, Module>,
         structs: HashMap<StructId, Struct>,
         functions: HashMap<FunctionId, Function>,
+        types: MultiStore,
     ) -> Self {
         Self::Library(LibraryModule {
             modules,
             structs,
             functions,
+            types,
         })
     }
 }

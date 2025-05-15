@@ -1,8 +1,10 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::identifier::Identifier;
 use crate::std::TYPE_NAME_STRING;
 use crate::types;
+use crate::types::store::TypeStore as _;
 use crate::{ast, std::TYPE_NAME_U64};
 
 use super::{
@@ -38,6 +40,7 @@ impl Locals {
 
 pub(super) struct ExpressionChecker<'root> {
     root_module_declaration: &'root DeclaredRootModule,
+    types: &'root RefCell<types::store::MultiStore>,
 }
 
 impl<'root> ExpressionChecker<'root> {
@@ -141,7 +144,7 @@ impl<'root> ExpressionChecker<'root> {
         let (mut callable_arguments, return_type) =
             self.retrieve_callable_info(&checked_target, target_type_kind);
 
-        let self_argument = dbg!(&callable_arguments)
+        let self_argument = callable_arguments
             .first()
             .and_then(|a| {
                 if a.name == Identifier::parse("self") {
@@ -306,9 +309,13 @@ impl<'root> ExpressionChecker<'root> {
         })
     }
 
-    pub(crate) const fn new(root_module_declaration: &'root DeclaredRootModule) -> Self {
+    pub(crate) const fn new(
+        root_module_declaration: &'root DeclaredRootModule,
+        types: &'root RefCell<types::store::MultiStore>,
+    ) -> Self {
         Self {
             root_module_declaration,
+            types,
         }
     }
 
@@ -316,28 +323,39 @@ impl<'root> ExpressionChecker<'root> {
         match r#type.kind() {
             types::TypeKind::Generic(_) => todo!(),
             types::TypeKind::Unit => todo!(),
-            types::TypeKind::Object(instantiated_struct_id) => self
-                .root_module_declaration
-                .structs
-                .get(&instantiated_struct_id.id())
-                .map(|x| x.field_type(field_name))
-                .unwrap(),
+            types::TypeKind::Object(instantiated_struct_id) => {
+                let type_id = self
+                    .root_module_declaration
+                    .structs
+                    .get(&instantiated_struct_id.id())
+                    .map(|x| x.field_type(field_name))
+                    .unwrap();
+
+                self.types.borrow().get(type_id).clone()
+            }
             types::TypeKind::Array { .. } => todo!(),
             types::TypeKind::Callable(_) => todo!(),
-            types::TypeKind::U64 => self
-                .root_module_declaration
-                .structs
-                .get(&*TYPE_NAME_U64)
-                .map(|x| x.field_type(field_name))
-                .unwrap(),
+            types::TypeKind::U64 => {
+                let type_id = self
+                    .root_module_declaration
+                    .structs
+                    .get(&*TYPE_NAME_U64)
+                    .map(|x| x.field_type(field_name))
+                    .unwrap();
+                self.types.borrow().get(type_id).clone()
+            }
             types::TypeKind::U8 => todo!(),
             types::TypeKind::Pointer(_) => todo!(),
-            types::TypeKind::Struct(struct_id) => self
-                .root_module_declaration
-                .structs
-                .get(&struct_id.id())
-                .map(|x| x.field_type(field_name))
-                .unwrap(),
+            types::TypeKind::Struct(struct_id) => {
+                let type_id = self
+                    .root_module_declaration
+                    .structs
+                    .get(&struct_id.id())
+                    .map(|x| x.field_type(field_name))
+                    .unwrap();
+
+                self.types.borrow().get(type_id).clone()
+            }
             types::TypeKind::Function(_) => todo!(),
             types::TypeKind::Interface(_) => todo!(),
             types::TypeKind::InterfaceObject(instantiated_inteface_id) => self

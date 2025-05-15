@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
-use crate::type_check::declarations::DeclaredRootModule;
-use std::collections::HashMap;
+use crate::{type_check::declarations::DeclaredRootModule, types::store::TypeStore as _};
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::{ast, types};
 
@@ -17,6 +17,8 @@ pub(super) struct DefinitionChecker {
     declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
     functions: HashMap<types::functions::FunctionId, types::functions::Function>,
     main: Option<types::functions::FunctionId>,
+    // TODO get rid of the RefCell, once we use TypeId everywhere it should be possible
+    types: RefCell<types::store::MultiStore>,
 }
 
 impl DefinitionChecker {
@@ -28,6 +30,7 @@ impl DefinitionChecker {
             declared_impls: _,
             functions: _,
             main,
+            types,
         } = self;
 
         let DeclaredRootModule {
@@ -47,12 +50,19 @@ impl DefinitionChecker {
 
         if let Some(main) = main {
             return Ok(types::modules::RootModule::new_app(
-                main, modules, structs, functions,
+                main,
+                modules,
+                structs,
+                functions,
+                types.into_inner(),
             ));
         }
 
         Ok(types::modules::RootModule::new_library(
-            modules, structs, functions,
+            modules,
+            structs,
+            functions,
+            types.into_inner(),
         ))
     }
 
@@ -117,10 +127,11 @@ impl DefinitionChecker {
         let struct_ = all_structs.get_mut(&struct_id).unwrap();
 
         for (name, impl_) in impls {
+            let field_type_id = self.types.borrow_mut().add(impl_.type_());
             struct_.fields.push(types::structs::StructField {
                 struct_id: struct_.id,
                 name: name.local(),
-                type_: impl_.type_(),
+                type_: field_type_id,
                 static_: true,
             });
             struct_.impls.push(name);
@@ -135,7 +146,7 @@ impl DefinitionChecker {
 
         locals.push_arguments(&declared_function.arguments);
 
-        let expression_checker = ExpressionChecker::new(&self.root_module_declaration);
+        let expression_checker = ExpressionChecker::new(&self.root_module_declaration, &self.types);
 
         let body = match &declared_function.ast.body {
             ast::FunctionBody::Statements(body_statements, _) => {
@@ -258,12 +269,14 @@ impl DefinitionChecker {
         root_module_declaration: DeclaredRootModule,
         declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
         main: Option<types::functions::FunctionId>,
+        types: types::store::MultiStore,
     ) -> Self {
         Self {
             root_module_declaration,
             declared_impls,
             main,
             functions: HashMap::new(),
+            types: RefCell::new(types),
         }
     }
 }

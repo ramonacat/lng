@@ -2,7 +2,12 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{ast, identifier::FQName, std::TYPE_NAME_STRING, types};
+use crate::{
+    ast,
+    identifier::FQName,
+    std::TYPE_NAME_STRING,
+    types::{self, store::TypeStore as _},
+};
 
 use super::{
     DeclaredFunction, DeclaredStructField,
@@ -15,6 +20,7 @@ pub(super) struct DeclarationChecker {
     root_module_declaration: DeclaredRootModule,
     declared_impls: HashMap<types::structs::StructId, Vec<types::functions::FunctionId>>,
     main: Option<types::functions::FunctionId>,
+    types: types::store::MultiStore,
 }
 
 impl DeclarationChecker {
@@ -106,7 +112,9 @@ impl DeclarationChecker {
                                 DeclaredStructField {
                                     // TODO we should here handle the case of the type actually
                                     // being generic
-                                    type_: types::Type::new(types::TypeKind::Callable(function.id)),
+                                    type_: self.types.add(types::Type::new(
+                                        types::TypeKind::Callable(function.id),
+                                    )),
                                     static_: true,
                                 },
                             );
@@ -310,9 +318,11 @@ impl DeclarationChecker {
         ));
 
         for field in &struct_.fields {
+            let field_type =
+                resolve_type(&self.root_module_declaration, module_path, &field.type_)?;
+            let field_type_id = self.types.add(field_type);
             fields.push(types::structs::StructField {
-                type_: resolve_type(&self.root_module_declaration, module_path, &field.type_)?,
-
+                type_: field_type_id,
                 static_: false,
                 struct_id,
                 name: field.name,
@@ -453,11 +463,15 @@ impl DeclarationChecker {
         }
     }
 
-    pub(crate) fn new(root_module_declaration: DeclaredRootModule) -> Self {
+    pub(crate) fn new(
+        root_module_declaration: DeclaredRootModule,
+        types: types::store::MultiStore,
+    ) -> Self {
         Self {
             root_module_declaration,
             declared_impls: HashMap::new(),
             main: None,
+            types,
         }
     }
 
@@ -474,6 +488,7 @@ impl DeclarationChecker {
             self.root_module_declaration,
             self.declared_impls,
             self.main,
+            self.types,
         ))
     }
 }

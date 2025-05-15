@@ -2,6 +2,7 @@ pub mod functions;
 pub mod generics;
 pub mod interfaces;
 pub mod modules;
+pub mod store;
 pub mod structs;
 
 use crate::types::generics::TypeArgument;
@@ -15,6 +16,7 @@ use generics::TypeArguments;
 use interfaces::InstantiatedInterfaceId;
 use interfaces::InterfaceId;
 use modules::ModuleId;
+use store::TypeId;
 use structs::{FieldValue, InstantiatedStructId, Struct, StructId};
 use thiserror::Error;
 
@@ -83,7 +85,7 @@ impl Type {
         &self.kind
     }
 
-    fn with_type_arguments(&self, argument_values: Vec<Self>) -> Self {
+    fn with_type_arguments(&self, argument_values: Vec<TypeId>) -> Self {
         Self {
             kind: self.kind.clone(),
             arguments: self.arguments.with_values(argument_values),

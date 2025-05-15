@@ -41,6 +41,7 @@ impl StringValue {
         name: &str,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
+        types: &mut dyn types::store::TypeStore,
     ) -> RcValue<'ctx> {
         let characters_value = context
             .builder
@@ -67,7 +68,7 @@ impl StringValue {
                 types::generics::TypeArguments::new_empty(),
             ))
             .unwrap()
-            .build_heap_instance(context, &(name.to_string() + "_value"), field_values);
+            .build_heap_instance(context, &(name.to_string() + "_value"), field_values, types);
 
         RcValue::build_init(
             name,
@@ -80,6 +81,7 @@ impl StringValue {
             ),
             context,
             structs,
+            types,
         )
     }
 }

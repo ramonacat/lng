@@ -13,7 +13,7 @@ use crate::{
         value::{StructInstance, Value},
     },
     identifier::Identifier,
-    types,
+    types::{self, store::TypeStore as _},
 };
 
 pub struct ExpressionCompiler<'compiler, 'ctx> {
@@ -94,6 +94,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                         &self.compiler.context,
                         &unique_name(&[&name.to_string()]),
                         field_values,
+                        &self.compiler.types,
                     );
 
                 let rc = RcValue::build_init(
@@ -104,6 +105,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                     ),
                     &self.compiler.context,
                     &mut self.compiler.items,
+                    &mut self.compiler.types,
                 );
                 compiled_function.rcs.push(rc.clone());
 
@@ -117,7 +119,12 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                     self.compile_expression(target, self_, compiled_function, module_path)?;
 
                 let access_result = target_value
-                    .read_field_value(*field_name, &self.compiler.context, &self.compiler.items)
+                    .read_field_value(
+                        *field_name,
+                        &self.compiler.context,
+                        &self.compiler.items,
+                        &self.compiler.types,
+                    )
                     .unwrap();
 
                 Ok((Some(target_value), access_result))
@@ -269,15 +276,18 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
         let value = match definition.return_type.kind() {
             types::TypeKind::Unit => Value::Empty,
             types::TypeKind::Object(instantiated_struct_id) => {
+                let type_ = self
+                    .compiler
+                    .items
+                    .get_or_instantiate_struct(instantiated_struct_id)
+                    .unwrap()
+                    .definition
+                    .type_
+                    .clone();
+
                 Value::Reference(RcValue::from_pointer(
                     call_result.into_pointer_value(),
-                    self.compiler
-                        .items
-                        .get_or_instantiate_struct(instantiated_struct_id)
-                        .unwrap()
-                        .definition
-                        .type_
-                        .clone(),
+                    self.compiler.types.add(type_),
                 ))
             }
             types::TypeKind::Array { .. } => todo!(),
@@ -303,8 +313,12 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             types::Literal::String(s) => {
                 let value = StringValue::new_literal(s.clone());
                 let name = &unique_name(&["literal", "string"]);
-                let rc =
-                    value.build_instance(name, &self.compiler.context, &mut self.compiler.items);
+                let rc = value.build_instance(
+                    name,
+                    &self.compiler.context,
+                    &mut self.compiler.items,
+                    &mut self.compiler.types,
+                );
                 compiled_function.rcs.push(rc.clone());
 
                 (None, Value::Reference(rc))

@@ -29,7 +29,7 @@ pub struct BuiltinRc<TPointee> {
 #[derive(Debug, Clone)]
 pub struct RcValue<'ctx> {
     pointer: PointerValue<'ctx>,
-    value_type: types::Type,
+    value_type: types::store::TypeId,
     instantiated_struct_id: InstantiatedStructId,
 }
 
@@ -43,6 +43,7 @@ impl<'ctx> RcValue<'ctx> {
         struct_instance: &StructInstance<'ctx>,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
+        types: &mut dyn types::store::TypeStore,
     ) -> Self
     where
         'src: 'ctx,
@@ -54,6 +55,8 @@ impl<'ctx> RcValue<'ctx> {
             struct_instance.value().as_basic_value_enum(),
         );
 
+        let struct_instance_type_id = types.add(struct_instance.type_());
+
         let instantiated_struct_id = InstantiatedStructId::new(
             types::structs::StructId::InModule(
                 types::modules::ModuleId::parse("std"),
@@ -61,17 +64,17 @@ impl<'ctx> RcValue<'ctx> {
             ),
             types::generics::TypeArguments::new(vec![types::generics::TypeArgument::new_value(
                 Identifier::parse("TPointee"),
-                struct_instance.type_(),
+                struct_instance_type_id,
             )]),
         );
         let rc = structs
             .get_or_instantiate_struct(&instantiated_struct_id)
             .unwrap()
-            .build_heap_instance(context, name, field_values);
+            .build_heap_instance(context, name, field_values, types);
 
         Self {
             pointer: rc,
-            value_type: struct_instance.type_(),
+            value_type: struct_instance_type_id,
             instantiated_struct_id,
         }
     }
@@ -83,7 +86,7 @@ impl<'ctx> RcValue<'ctx> {
 
     #[must_use]
     // TODO we need a vtable for the object!
-    pub fn from_pointer(pointer: PointerValue<'ctx>, value_type: types::Type) -> Self {
+    pub fn from_pointer(pointer: PointerValue<'ctx>, value_type: types::store::TypeId) -> Self {
         let instantiated_struct_id = InstantiatedStructId::new(
             types::structs::StructId::InModule(
                 types::modules::ModuleId::parse("std"),
@@ -91,7 +94,7 @@ impl<'ctx> RcValue<'ctx> {
             ),
             types::generics::TypeArguments::new(vec![types::generics::TypeArgument::new_value(
                 Identifier::parse("TPointee"),
-                value_type.clone(),
+                value_type,
             )]),
         );
 
@@ -103,14 +106,15 @@ impl<'ctx> RcValue<'ctx> {
     }
 
     #[must_use]
-    pub(crate) fn type_(&self) -> types::Type {
-        self.value_type.clone()
+    pub(crate) const fn type_(&self) -> types::store::TypeId {
+        self.value_type
     }
 
     pub(crate) fn pointee(
         &self,
         context: &CompilerContext<'ctx>,
         structs: &AllItems<'ctx>,
+        types: &dyn types::store::TypeStore,
     ) -> PointerValue<'ctx> {
         structs
             .get_struct(&self.instantiated_struct_id)
@@ -120,6 +124,7 @@ impl<'ctx> RcValue<'ctx> {
                 self.pointer,
                 &unique_name(&["rc", "pointee"]),
                 context,
+                types,
             )
             .into_pointer_value()
     }
@@ -129,6 +134,7 @@ pub fn build_cleanup<'ctx>(
     context: &CompilerContext<'ctx>,
     rcs: &[RcValue<'ctx>],
     before: BasicBlock<'ctx>,
+    types: &dyn types::store::TypeStore,
 ) -> BasicBlock<'ctx> {
     let mut before = before;
     let mut first_block = before;
@@ -156,6 +162,7 @@ pub fn build_cleanup<'ctx>(
                 rc.pointer,
                 &unique_name(&["refcount_old"]),
                 context,
+                types,
             )
             .into_int_value();
         let new_refcount = context
@@ -200,6 +207,7 @@ pub fn build_cleanup<'ctx>(
                 rc.pointer,
                 &unique_name(&["free_rc_pointee_value"]),
                 context,
+                types,
             )
             .into_pointer_value();
         context.builder.build_free(rc_pointee_value).unwrap();
@@ -216,6 +224,7 @@ pub fn build_cleanup<'ctx>(
             rc.pointer,
             new_refcount.as_basic_value_enum(),
             context,
+            types,
         );
 
         context
@@ -236,7 +245,11 @@ pub fn build_cleanup<'ctx>(
     first_block
 }
 
-pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
+pub fn build_prologue<'ctx>(
+    rcs: &[RcValue<'ctx>],
+    context: &CompilerContext<'ctx>,
+    types: &dyn types::store::TypeStore,
+) {
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
 
@@ -253,6 +266,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             rc.pointer,
             &unique_name(&[&name, "init_refcount"]),
             context,
+            types,
         );
 
         let incremented_refcount = context
@@ -269,6 +283,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             rc.pointer,
             incremented_refcount.as_basic_value_enum(),
             context,
+            types,
         );
     }
 }

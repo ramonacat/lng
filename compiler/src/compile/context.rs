@@ -60,12 +60,10 @@ impl<'ctx> AllItems<'ctx> {
         self.instantiated_structs
             .entry(id.clone())
             .or_insert_with(|| {
-                let instantiated = self.structs.get(&id.id()).unwrap().with_type_arguments(
-                    id.argument_values()
-                        .iter()
-                        .map(|x| x.unwrap().clone())
-                        .collect(),
-                );
+                let instantiated =
+                    self.structs.get(&id.id()).unwrap().with_type_arguments(
+                        id.argument_values().iter().map(|x| x.unwrap()).collect(),
+                    );
 
                 InstantiatedStructType::new(instantiated, HashMap::new())
             });
@@ -88,13 +86,10 @@ impl<'ctx> AllItems<'ctx> {
         self.instantiated_functions
             .entry(id.clone())
             .or_insert_with(|| {
-                let instantiated = self.functions.get(&id.id()).unwrap().with_type_arguments(
-                    id.argument_values()
-                        .iter()
-                        .map(|x| x.unwrap())
-                        .map(Clone::clone)
-                        .collect(),
-                );
+                let instantiated =
+                    self.functions.get(&id.id()).unwrap().with_type_arguments(
+                        id.argument_values().iter().map(|x| x.unwrap()).collect(),
+                    );
 
                 instantiated
             });
@@ -169,12 +164,19 @@ impl<'ctx> CompilerContext<'ctx> {
         }
     }
 
-    pub fn make_struct_type(&self, fields: &[types::structs::StructField]) -> CompiledStruct<'ctx> {
+    pub fn make_struct_type(
+        &self,
+        fields: &[types::structs::StructField],
+        types: &dyn types::store::TypeStore,
+    ) -> CompiledStruct<'ctx> {
         let mut field_types = vec![];
         let mut field_indices = HashMap::new();
 
         for (index, field) in fields.iter().filter(|f| !f.static_).enumerate() {
-            field_types.push(self.type_to_llvm(&field.type_).as_basic_type_enum());
+            field_types.push(
+                self.type_to_llvm(types.get(field.type_))
+                    .as_basic_type_enum(),
+            );
             field_indices.insert(field.name, u32::try_from(index).unwrap());
         }
 
