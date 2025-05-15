@@ -10,7 +10,7 @@ use crate::{
         value::StructInstance,
     },
     identifier::Identifier,
-    types,
+    types::{self, generics::TypeArgument},
 };
 
 use super::rc::RcValue;
@@ -61,17 +61,15 @@ impl ArrayValue {
         field_values.insert(*LENGTH_FIELD, context.const_u64(0).as_basic_value_enum());
         field_values.insert(*CAPACITY_FIELD, context.const_u64(1).as_basic_value_enum());
 
-        let mut tav = HashMap::new();
-        tav.insert(
-            types::generics::TypeArgument::new(Identifier::parse("TItem")),
-            item_type.clone(),
-        );
         let id = *TYPE_NAME_ARRAY;
 
         let array_value = structs
             .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                 id,
-                types::generics::TypeArgumentValues::new(tav.clone()),
+                types::generics::TypeArguments::new(vec![TypeArgument::new_value(
+                    Identifier::parse("TPointee"),
+                    item_type.clone(),
+                )]),
             ))
             .unwrap()
             .build_heap_instance(context, &unique_name(&["string"]), field_values);
@@ -83,7 +81,10 @@ impl ArrayValue {
                 types::Type::new(types::TypeKind::Struct(
                     types::structs::InstantiatedStructId::new(
                         id,
-                        types::generics::TypeArgumentValues::new(tav.clone()),
+                        types::generics::TypeArguments::new(vec![TypeArgument::new_value(
+                            Identifier::parse("TPointee"),
+                            item_type.clone(),
+                        )]),
                     ),
                 )),
             ),

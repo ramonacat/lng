@@ -307,7 +307,7 @@ impl DeclarationChecker {
         let struct_type = types::Type::new(types::TypeKind::Struct(
             types::structs::InstantiatedStructId::new(
                 struct_id,
-                types::generics::TypeArgumentValues::new_empty(),
+                types::generics::TypeArguments::new_empty(),
             ),
         ));
 
@@ -331,7 +331,7 @@ impl DeclarationChecker {
                 instance_type: types::Type::new(types::TypeKind::Object(
                     types::structs::InstantiatedStructId::new(
                         struct_id,
-                        types::generics::TypeArgumentValues::new_empty(),
+                        types::generics::TypeArguments::new_empty(),
                     ),
                 )),
                 implemented_interfaces: HashMap::new(),

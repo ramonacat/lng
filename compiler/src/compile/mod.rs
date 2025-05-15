@@ -266,7 +266,7 @@ impl<'ctx> Compiler<'ctx> {
         self.items
             .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                 *TYPE_NAME_U64,
-                types::generics::TypeArgumentValues::new_empty(),
+                types::generics::TypeArguments::new_empty(),
             ));
 
         for module in program.modules().keys() {
@@ -278,7 +278,7 @@ impl<'ctx> Compiler<'ctx> {
                 .items
                 .get_or_instantiate_function(&types::functions::InstantiatedFunctionId::new(
                     main,
-                    types::generics::TypeArgumentValues::new_empty(),
+                    types::generics::TypeArguments::new_empty(),
                 ))
                 .unwrap()
                 .clone();

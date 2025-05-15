@@ -5,7 +5,6 @@ pub mod modules;
 pub mod structs;
 
 use crate::types::generics::TypeArgument;
-use crate::types::generics::TypeArgumentValues;
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::Hash,
@@ -57,6 +56,7 @@ pub enum TypeKind {
     Struct(InstantiatedStructId),
     Function(InstantiatedFunctionId),
     IndirectCallable(InstantiatedInterfaceId, Identifier),
+    // TODO this should be the same as object
     InterfaceObject(InstantiatedInterfaceId),
     // TODO make this TypeId
     Generic(TypeArgument),
@@ -66,41 +66,33 @@ pub enum TypeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Type {
     kind: TypeKind,
-    // TODO type_arguments and type_argument_values should be a single collection!
     arguments: TypeArguments,
-    argument_values: TypeArgumentValues,
 }
 
 impl Type {
-    pub(crate) fn new(kind: TypeKind) -> Self {
+    pub(crate) const fn new(kind: TypeKind) -> Self {
         Self {
             kind,
             arguments: TypeArguments::new_empty(),
-            argument_values: TypeArgumentValues::new_empty(),
         }
     }
 
-    pub(crate) fn unit() -> Self {
+    pub(crate) const fn unit() -> Self {
         Self::new(TypeKind::Unit)
     }
 
-    pub(crate) fn u8() -> Self {
+    pub(crate) const fn u8() -> Self {
         Self::new(TypeKind::U8)
     }
 
-    pub(crate) fn u64() -> Self {
+    pub(crate) const fn u64() -> Self {
         Self::new(TypeKind::U64)
     }
 
-    pub(crate) const fn new_generic(
-        kind: TypeKind,
-        type_arguments: TypeArguments,
-        type_argument_values: TypeArgumentValues,
-    ) -> Self {
+    pub(crate) const fn new_generic(kind: TypeKind, type_arguments: TypeArguments) -> Self {
         Self {
             kind,
             arguments: type_arguments,
-            argument_values: type_argument_values,
         }
     }
 
@@ -108,12 +100,10 @@ impl Type {
         &self.kind
     }
 
-    fn with_type_arguments(&self, argument_values: &TypeArgumentValues) -> Self {
-        let type_argument_values = self.argument_values.clone();
+    fn with_type_arguments(&self, argument_values: Vec<Self>) -> Self {
         Self {
             kind: self.kind.clone(),
-            arguments: self.arguments.clone(),
-            argument_values: type_argument_values.merge(argument_values.clone()),
+            arguments: self.arguments.with_values(argument_values),
         }
     }
 
@@ -148,7 +138,7 @@ impl Display for Type {
                 f,
                 "{}<{}>",
                 instantiated_struct_id.id(),
-                instantiated_struct_id.argument_values()
+                instantiated_struct_id.arguments()
             ),
             TypeKind::Array(element_type) => write!(f, "{element_type}[]"),
             TypeKind::Callable(function_id) => write!(f, "callable<{function_id}>"),

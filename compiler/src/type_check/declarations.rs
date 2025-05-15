@@ -75,10 +75,9 @@ impl DeclaredItemKind<'_> {
             Self::Struct(struct_) => types::Type::new_generic(
                 types::TypeKind::Object(InstantiatedStructId::new(
                     struct_.id,
-                    types::generics::TypeArgumentValues::new_empty(),
+                    types::generics::TypeArguments::new_empty(),
                 )),
                 struct_.type_.arguments().clone(),
-                types::generics::TypeArgumentValues::new_empty(),
             ),
             Self::Function(declared_function) => {
                 types::Type::new(types::TypeKind::Callable(declared_function.id))
@@ -86,16 +85,14 @@ impl DeclaredItemKind<'_> {
             Self::PredeclaredFunction(function) => types::Type::new_generic(
                 types::TypeKind::Callable(function.id),
                 function.type_.arguments().clone(),
-                types::generics::TypeArgumentValues::new_empty(),
             ),
             Self::Interface(interface) => types::Type::new_generic(
                 // TODO handle generic interfaces here
                 types::TypeKind::InterfaceObject(InstantiatedInterfaceId::new(
                     interface.id,
-                    types::generics::TypeArgumentValues::new_empty(),
+                    types::generics::TypeArguments::new_empty(),
                 )),
                 interface.type_.arguments().clone(),
-                types::generics::TypeArgumentValues::new_empty(),
             ),
         }
     }

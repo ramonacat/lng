@@ -60,11 +60,12 @@ impl<'ctx> AllItems<'ctx> {
         self.instantiated_structs
             .entry(id.clone())
             .or_insert_with(|| {
-                let instantiated = self
-                    .structs
-                    .get(&id.id())
-                    .unwrap()
-                    .with_type_arguments(id.argument_values());
+                let instantiated = self.structs.get(&id.id()).unwrap().with_type_arguments(
+                    id.argument_values()
+                        .iter()
+                        .map(|x| x.unwrap().clone())
+                        .collect(),
+                );
 
                 InstantiatedStructType::new(instantiated, HashMap::new())
             });
@@ -87,11 +88,13 @@ impl<'ctx> AllItems<'ctx> {
         self.instantiated_functions
             .entry(id.clone())
             .or_insert_with(|| {
-                let instantiated = self
-                    .functions
-                    .get(&id.id())
-                    .unwrap()
-                    .with_type_arguments(id.argument_values());
+                let instantiated = self.functions.get(&id.id()).unwrap().with_type_arguments(
+                    id.argument_values()
+                        .iter()
+                        .map(|x| x.unwrap())
+                        .map(Clone::clone)
+                        .collect(),
+                );
 
                 instantiated
             });

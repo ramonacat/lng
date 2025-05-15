@@ -3,11 +3,11 @@ use std::fmt::{Display, Formatter};
 use crate::{ast, identifier::Identifier};
 
 use super::{
-    Statement, Type, TypeArgumentValues, Visibility, modules::ModuleId, structs::StructId,
+    Statement, Type, Visibility, generics::TypeArguments, modules::ModuleId, structs::StructId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InstantiatedFunctionId(FunctionId, TypeArgumentValues);
+pub struct InstantiatedFunctionId(FunctionId, TypeArguments);
 
 impl Display for InstantiatedFunctionId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -20,12 +20,16 @@ impl InstantiatedFunctionId {
         self.0
     }
 
-    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues {
-        &self.1
+    pub(crate) fn argument_values(&self) -> Vec<Option<&Type>> {
+        self.1.values()
     }
 
-    pub(crate) const fn new(id: FunctionId, tav: TypeArgumentValues) -> Self {
+    pub(crate) const fn new(id: FunctionId, tav: TypeArguments) -> Self {
         Self(id, tav)
+    }
+
+    pub(crate) const fn arguments(&self) -> &TypeArguments {
+        &self.1
     }
 }
 
@@ -73,7 +77,7 @@ impl Function {
         self.type_.clone()
     }
 
-    pub(crate) fn with_type_arguments(&self, argument_values: &TypeArgumentValues) -> Self {
+    pub(crate) fn with_type_arguments(&self, argument_values: Vec<Type>) -> Self {
         Self {
             id: self.id,
             module_name: self.module_name,

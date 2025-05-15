@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{
-    Expression, FunctionId, Identifier, Type, TypeArgumentValues, interfaces::InterfaceId,
+    Expression, FunctionId, Identifier, Type, generics::TypeArguments, interfaces::InterfaceId,
     modules::ModuleId,
 };
 
@@ -44,7 +44,7 @@ impl Display for StructId {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct InstantiatedStructId(StructId, TypeArgumentValues);
+pub struct InstantiatedStructId(StructId, TypeArguments);
 
 impl Display for InstantiatedStructId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -57,11 +57,15 @@ impl InstantiatedStructId {
         self.0
     }
 
-    pub(crate) const fn argument_values(&self) -> &TypeArgumentValues {
+    pub(crate) fn argument_values(&self) -> Vec<Option<&Type>> {
+        self.1.values()
+    }
+
+    pub(crate) const fn arguments(&self) -> &TypeArguments {
         &self.1
     }
 
-    pub(crate) const fn new(id: StructId, tav: TypeArgumentValues) -> Self {
+    pub(crate) const fn new(id: StructId, tav: TypeArguments) -> Self {
         Self(id, tav)
     }
 }
@@ -94,12 +98,12 @@ impl Struct {
         self.instance_type.clone()
     }
 
-    pub(crate) fn with_type_arguments(&self, argument_values: &TypeArgumentValues) -> Self {
+    pub(crate) fn with_type_arguments(&self, argument_values: Vec<Type>) -> Self {
         Self {
             id: self.id,
             fields: self.fields.clone(),
             impls: self.impls.clone(),
-            type_: self.type_.with_type_arguments(argument_values),
+            type_: self.type_.with_type_arguments(argument_values.clone()),
             instance_type: self.instance_type.with_type_arguments(argument_values),
             implemented_interfaces: self.implemented_interfaces.clone(),
         }

@@ -64,7 +64,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                     Value::Reference(_) => todo!(),
                     Value::Function(_) => todo!(),
                     Value::InstantiatedStruct(struct_) => {
-                        (struct_.id(), struct_.argument_values().clone())
+                        (struct_.id(), struct_.arguments().clone())
                     }
                 };
                 // TODO ensure the struct is instantiated in the context
@@ -145,7 +145,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                 function_id,
                 // TODO we need to ensure during typecheck that we won't get
                 // here without the right TypeArgumentValues
-                types::generics::TypeArgumentValues::new_empty(),
+                types::generics::TypeArguments::new_empty(),
             );
             self.compiler
                 .items
@@ -167,16 +167,14 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                 .items
                 .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                     struct_id,
-                    types::generics::TypeArgumentValues::new_empty(),
+                    types::generics::TypeArguments::new_empty(),
                 ))
                 .map(|x| {
                     let types::TypeKind::Struct(x) = x.definition.type_.kind() else {
                         todo!();
                     };
-                    let instantiated_struct_id = types::structs::InstantiatedStructId::new(
-                        struct_id,
-                        x.argument_values().clone(),
-                    );
+                    let instantiated_struct_id =
+                        types::structs::InstantiatedStructId::new(struct_id, x.arguments().clone());
 
                     Value::InstantiatedStruct(instantiated_struct_id)
                 })
@@ -207,7 +205,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
 
         let instantiated_function_id = types::functions::InstantiatedFunctionId::new(
             *function_id,
-            types::generics::TypeArgumentValues::new_empty(),
+            types::generics::TypeArguments::new_empty(),
         );
         let definition = self
             .compiler
@@ -316,7 +314,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                 Value::Primitive(
                     types::structs::InstantiatedStructId::new(
                         CompilerContext::get_std_type("u64"),
-                        types::generics::TypeArgumentValues::new_empty(),
+                        types::generics::TypeArguments::new_empty(),
                     ),
                     self.compiler
                         .context

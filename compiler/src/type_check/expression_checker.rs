@@ -65,7 +65,7 @@ impl<'root> ExpressionChecker<'root> {
                     type_: types::Type::new(types::TypeKind::Object(
                         types::structs::InstantiatedStructId::new(
                             *TYPE_NAME_STRING,
-                            types::generics::TypeArgumentValues::new_empty(),
+                            types::generics::TypeArguments::new_empty(),
                         ),
                     )),
                     kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
@@ -352,7 +352,6 @@ impl<'root> ExpressionChecker<'root> {
                             field_name,
                         ),
                         r#type.arguments().clone(),
-                        types::generics::TypeArgumentValues::new_empty(),
                     )
                 })
                 .unwrap(),

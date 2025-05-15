@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Formatter};
+use std::fmt::Formatter;
 
 use itertools::Itertools as _;
 
@@ -16,6 +16,27 @@ impl TypeArguments {
     pub(crate) const fn new(arguments: Vec<TypeArgument>) -> Self {
         Self(arguments)
     }
+
+    pub(crate) fn with_values(&self, argument_values: Vec<Type>) -> Self {
+        let mut arguments = self.0.clone();
+
+        for (i, value) in argument_values.into_iter().enumerate() {
+            arguments[i].1 = Some(Box::new(value));
+        }
+
+        Self(arguments)
+    }
+
+    pub(crate) fn arguments(&self) -> &[TypeArgument] {
+        &self.0[..]
+    }
+
+    pub(crate) fn values(&self) -> Vec<Option<&Type>> {
+        self.0
+            .iter()
+            .map(|x| x.1.as_ref().map(AsRef::as_ref))
+            .collect()
+    }
 }
 
 impl std::fmt::Display for TypeArguments {
@@ -28,67 +49,29 @@ impl std::fmt::Display for TypeArguments {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TypeArgument(Identifier);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TypeArgument(Identifier, Option<Box<Type>>);
 
 impl TypeArgument {
     pub const fn new(name: Identifier) -> Self {
-        Self(name)
+        Self(name, None)
+    }
+
+    pub fn new_value(name: Identifier, value: Type) -> Self {
+        Self(name, Some(Box::new(value)))
+    }
+
+    pub const fn name(&self) -> Identifier {
+        self.0
+    }
+
+    pub fn value(&self) -> Option<&Type> {
+        self.1.as_ref().map(AsRef::as_ref)
     }
 }
 
 impl std::fmt::Display for TypeArgument {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeArgumentValues(pub(crate) HashMap<TypeArgument, Type>);
-
-impl std::hash::Hash for TypeArgumentValues {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0
-            .iter()
-            .sorted_by(|x, y| x.0.0.raw().cmp(&y.0.0.raw()))
-            .collect_vec()
-            .hash(state);
-    }
-}
-
-impl TypeArgumentValues {
-    pub(crate) fn new_empty() -> Self {
-        Self(HashMap::new())
-    }
-
-    pub(crate) const fn new(tav: HashMap<TypeArgument, Type>) -> Self {
-        Self(tav)
-    }
-
-    pub(super) fn merge(self, type_argument_values: Self) -> Self {
-        let Self(mut values) = self;
-
-        for (name, value) in type_argument_values.0 {
-            values.insert(name, value);
-        }
-
-        Self(values)
-    }
-}
-
-impl std::fmt::Display for TypeArgumentValues {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.0.is_empty() {
-            return Ok(());
-        }
-
-        write!(
-            f,
-            "<{}>",
-            self.0
-                .iter()
-                .map(|(name, value)| format!("{name}={value}"))
-                .join(", ")
-        )
     }
 }

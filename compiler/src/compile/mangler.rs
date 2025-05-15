@@ -17,14 +17,14 @@ pub(super) fn mangle_type(type_: &types::Type) -> MangledIdentifier {
                 types::functions::FunctionId::InModule(module_id, identifier) => mangle_item_name(
                     module_id,
                     identifier,
-                    instantiated_function_id.argument_values(),
+                    instantiated_function_id.arguments(),
                     IdentifierKind::Function(instantiated_function_id.id()),
                 ),
                 types::functions::FunctionId::InStruct(struct_id, identifier) => {
                     mangle_struct_item_name(
                         struct_id,
                         identifier,
-                        instantiated_function_id.argument_values(),
+                        instantiated_function_id.arguments(),
                     )
                 }
             }
@@ -71,11 +71,17 @@ impl MangledIdentifier {
     }
 }
 
-fn mangle_type_argument_values(tav: &types::generics::TypeArgumentValues) -> String {
+fn mangle_type_argument_values(tav: &types::generics::TypeArguments) -> String {
     let mut result = String::new();
 
-    for (id, value) in &tav.0 {
-        write!(result, "{id}$_${value}").unwrap();
+    for argument in tav.arguments() {
+        write!(
+            result,
+            "{}$_${}",
+            argument.name(),
+            argument.value().unwrap()
+        )
+        .unwrap();
     }
 
     result
@@ -84,7 +90,7 @@ fn mangle_type_argument_values(tav: &types::generics::TypeArgumentValues) -> Str
 fn mangle_item_name(
     module: types::modules::ModuleId,
     item: Identifier,
-    tav: &types::generics::TypeArgumentValues,
+    tav: &types::generics::TypeArguments,
     source: IdentifierKind,
 ) -> MangledIdentifier {
     MangledIdentifier {
@@ -100,7 +106,7 @@ fn mangle_item_name(
 fn mangle_struct_item_name(
     struct_id: types::structs::StructId,
     item: Identifier,
-    tav: &types::generics::TypeArgumentValues,
+    tav: &types::generics::TypeArguments,
 ) -> MangledIdentifier {
     MangledIdentifier {
         mangled: mangle_struct_id(struct_id, tav).mangled + "$$" + &item.raw() + "$$$",
@@ -110,7 +116,7 @@ fn mangle_struct_item_name(
 
 fn mangle_struct_id(
     struct_id: types::structs::StructId,
-    tav: &types::generics::TypeArgumentValues,
+    tav: &types::generics::TypeArguments,
 ) -> MangledIdentifier {
     match struct_id {
         types::structs::StructId::InModule(module_id, identifier) => mangle_item_name(

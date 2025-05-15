@@ -52,7 +52,6 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
                 crate::types::Type::new_generic(
                     crate::types::TypeKind::Array(std::boxed::Box::new(#field_type_lng)),
                     crate::types::generics::TypeArguments::new_empty(),
-                    crate::types::generics::TypeArgumentValues::new_empty(),
                 )
             }
         } else {
@@ -71,17 +70,16 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
         let generic_type_lit = Literal::string(&generic_type);
 
         quote::quote! {
-            let type_argument_name = crate::types::generics::TypeArgument::new(crate::identifier::Identifier::parse(#generic_type_lit));
-            let type_argument_names = crate::types::generics::TypeArguments::new(vec![type_argument_name]);
+            let type_argument = crate::types::generics::TypeArgument::new(crate::identifier::Identifier::parse(#generic_type_lit));
+            let type_arguments = crate::types::generics::TypeArguments::new(vec![type_argument.clone()]);
             let generic_argument_type = crate::types::Type::new_generic(
-                crate::types::TypeKind::Generic(type_argument_name),
-                type_argument_names.clone(),
-                crate::types::generics::TypeArgumentValues::new_empty()
+                crate::types::TypeKind::Generic(type_argument),
+                type_arguments.clone(),
             );
         }
     } else {
         quote::quote! {
-            let type_argument_names:crate::types::generics::TypeArguments = crate::types::generics::TypeArguments::new_empty();
+            let type_arguments:crate::types::generics::TypeArguments = crate::types::generics::TypeArguments::new_empty();
         }
     };
 
@@ -102,17 +100,16 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
                     crate::types::TypeKind::Struct(
                         crate::types::structs::InstantiatedStructId::new(
                             struct_id,
-                            crate::types::generics::TypeArgumentValues::new_empty()
+                            crate::types::generics::TypeArguments::new_empty()
                         )
                     ),
-                    type_argument_names.clone(),
-                    crate::types::generics::TypeArgumentValues::new_empty()
+                    type_arguments.clone(),
                 ),
                 instance_type: crate::types::Type::new_generic(
                     crate::types::TypeKind::Object(
-                        crate::types::structs::InstantiatedStructId::new(struct_id, types::generics::TypeArgumentValues::new_empty())
+                        crate::types::structs::InstantiatedStructId::new(struct_id, types::generics::TypeArguments::new_empty())
                     ),
-                    type_argument_names, types::generics::TypeArgumentValues::new_empty()
+                    type_arguments
                 ),
                 fields: vec![#(#fields_gen),*],
                 impls: vec![],
@@ -128,7 +125,7 @@ fn to_lng_type(type_: &syn::Type, generic_type: Option<&str>) -> impl ToTokens {
         syn::Type::Ptr(type_ptr) => {
             let inner_type = to_lng_type(&type_ptr.elem, generic_type);
 
-            quote::quote! {crate::types::Type::new_generic(crate::types::TypeKind::Pointer(std::boxed::Box::new(#inner_type)), crate::types::generics::TypeArguments::new_empty(), crate::types::generics::TypeArgumentValues::new_empty())}
+            quote::quote! {crate::types::Type::new(crate::types::TypeKind::Pointer(std::boxed::Box::new(#inner_type)))}
         }
         syn::Type::Path(path) => {
             if let Some(generic_type_) = generic_type {

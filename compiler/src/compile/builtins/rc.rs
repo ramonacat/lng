@@ -54,18 +54,15 @@ impl<'ctx> RcValue<'ctx> {
             struct_instance.value().as_basic_value_enum(),
         );
 
-        let mut tav = HashMap::new();
-        tav.insert(
-            types::generics::TypeArgument::new(Identifier::parse("TPointee")),
-            struct_instance.type_(),
-        );
-
         let instantiated_struct_id = InstantiatedStructId::new(
             types::structs::StructId::InModule(
                 types::modules::ModuleId::parse("std"),
                 Identifier::parse("rc"),
             ),
-            types::generics::TypeArgumentValues::new(tav),
+            types::generics::TypeArguments::new(vec![types::generics::TypeArgument::new_value(
+                Identifier::parse("TPointee"),
+                struct_instance.type_(),
+            )]),
         );
         let rc = structs
             .get_or_instantiate_struct(&instantiated_struct_id)
@@ -87,19 +84,15 @@ impl<'ctx> RcValue<'ctx> {
     #[must_use]
     // TODO we need a vtable for the object!
     pub fn from_pointer(pointer: PointerValue<'ctx>, value_type: types::Type) -> Self {
-        let mut tav = HashMap::new();
-
-        tav.insert(
-            types::generics::TypeArgument::new(Identifier::parse("TPointee")),
-            value_type.clone(),
-        );
-
         let instantiated_struct_id = InstantiatedStructId::new(
             types::structs::StructId::InModule(
                 types::modules::ModuleId::parse("std"),
                 Identifier::parse("rc"),
             ),
-            types::generics::TypeArgumentValues::new(tav),
+            types::generics::TypeArguments::new(vec![types::generics::TypeArgument::new_value(
+                Identifier::parse("TPointee"),
+                value_type.clone(),
+            )]),
         );
 
         RcValue {
@@ -150,17 +143,11 @@ pub fn build_cleanup<'ctx>(
         }
         context.builder.position_at_end(before);
 
-        let mut tav = HashMap::new();
-        tav.insert(
-            types::generics::TypeArgument::new(Identifier::parse("TPointee")),
-            rc.type_(),
-        );
-
         let rc_handle = InstantiatedStructType::new(
             context
                 .builtins
                 .rc_handle
-                .with_type_arguments(&types::generics::TypeArgumentValues::new(tav)),
+                .with_type_arguments(vec![rc.type_()]),
             HashMap::new(),
         );
         let old_refcount = rc_handle
@@ -252,17 +239,12 @@ pub fn build_cleanup<'ctx>(
 pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ctx>) {
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
-        let mut tav = HashMap::new();
-        tav.insert(
-            types::generics::TypeArgument::new(Identifier::parse("TPointee")),
-            rc.type_(),
-        );
 
         let rc_handle = InstantiatedStructType::new(
             context
                 .builtins
                 .rc_handle
-                .with_type_arguments(&types::generics::TypeArgumentValues(tav)),
+                .with_type_arguments(vec![rc.type_()]),
             HashMap::new(),
         );
 
