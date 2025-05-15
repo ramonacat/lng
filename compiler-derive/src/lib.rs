@@ -51,7 +51,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
             quote::quote! {
                 crate::types::GenericType::new(
                     crate::types::GenericTypeKind::Array { element_type: std::boxed::Box::new(#field_type_lng) },
-                    crate::types::TypeArguments::new_empty()
+                    crate::types::generics::TypeArguments::new_empty()
                 )
             }
         } else {
@@ -70,8 +70,8 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
         let generic_type_lit = Literal::string(&generic_type);
 
         quote::quote! {
-            let type_argument_name = crate::types::TypeArgument::new(crate::identifier::Identifier::parse(#generic_type_lit));
-            let type_argument_names = crate::types::TypeArguments::new(vec![type_argument_name]);
+            let type_argument_name = crate::types::generics::TypeArgument::new(crate::identifier::Identifier::parse(#generic_type_lit));
+            let type_argument_names = crate::types::generics::TypeArguments::new(vec![type_argument_name]);
             let generic_argument_type = crate::types::GenericType::new(
                 crate::types::GenericTypeKind::Generic(type_argument_name),
                 type_argument_names.clone(),
@@ -79,7 +79,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
         }
     } else {
         quote::quote! {
-            let type_argument_names:crate::types::TypeArguments = crate::types::TypeArguments::new_empty();
+            let type_argument_names:crate::types::generics::TypeArguments = crate::types::generics::TypeArguments::new_empty();
         }
     };
 
@@ -112,7 +112,7 @@ fn to_lng_type(type_: &syn::Type, generic_type: Option<&str>) -> impl ToTokens {
         syn::Type::Ptr(type_ptr) => {
             let inner_type = to_lng_type(&type_ptr.elem, generic_type);
 
-            quote::quote! {crate::types::GenericType::new(crate::types::GenericTypeKind::Pointer(std::boxed::Box::new(#inner_type)), crate::types::TypeArguments::new_empty())}
+            quote::quote! {crate::types::GenericType::new(crate::types::GenericTypeKind::Pointer(std::boxed::Box::new(#inner_type)), crate::types::generics::TypeArguments::new_empty())}
         }
         syn::Type::Path(path) => {
             if let Some(generic_type_) = generic_type {

@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    ast,
-    identifier::Identifier,
-    types::{self, GenericType},
-};
+use crate::{ast, identifier::Identifier, types};
 
 use super::errors::TypeCheckError;
 
@@ -12,7 +8,7 @@ use super::errors::TypeCheckError;
 pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
     pub(super) module_name: types::modules::ModuleId,
-    pub(super) arguments: Vec<types::functions::Argument<GenericType>>,
+    pub(super) arguments: Vec<types::functions::Argument<types::GenericType>>,
     pub(super) return_type: types::GenericType,
     pub(super) ast: ast::Function,
     pub(super) position: ast::SourceSpan,
@@ -64,10 +60,10 @@ impl std::fmt::Debug for DeclaredRootModule {
 }
 
 pub enum DeclaredItemKind<'item> {
-    Struct(&'item types::structs::Struct<GenericType>),
+    Struct(&'item types::structs::Struct<types::GenericType>),
     Function(&'item DeclaredFunction),
-    PredeclaredFunction(&'item types::functions::Function<GenericType>),
-    Interface(&'item types::interfaces::Interface<GenericType>),
+    PredeclaredFunction(&'item types::functions::Function<types::GenericType>),
+    Interface(&'item types::interfaces::Interface<types::GenericType>),
 }
 
 impl DeclaredItemKind<'_> {
@@ -82,7 +78,7 @@ impl DeclaredItemKind<'_> {
             ),
             Self::Function(declared_function) => types::GenericType::new(
                 types::GenericTypeKind::Callable(declared_function.id),
-                types::TypeArguments::new_empty(),
+                types::generics::TypeArguments::new_empty(),
             ),
             Self::PredeclaredFunction(function) => types::GenericType::new(
                 types::GenericTypeKind::Callable(function.id),
@@ -111,7 +107,7 @@ impl DeclaredRootModule {
 
     pub(crate) fn from_predeclared(
         modules: &HashMap<types::modules::ModuleId, types::modules::Module>,
-        structs: HashMap<types::structs::StructId, types::structs::Struct<GenericType>>,
+        structs: HashMap<types::structs::StructId, types::structs::Struct<types::GenericType>>,
         functions: HashMap<
             types::functions::FunctionId,
             types::functions::Function<types::GenericType>,
@@ -197,7 +193,7 @@ pub(super) fn resolve_type(
                     type_description,
                 )?),
             },
-            types::TypeArguments::new_empty(),
+            types::generics::TypeArguments::new_empty(),
         )),
         ast::TypeDescription::Named(name) if name == "()" => Ok(types::GenericType::unit()),
         ast::TypeDescription::Named(name) if name == "u64" => Ok(types::GenericType::u64()),

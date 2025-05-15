@@ -29,7 +29,7 @@ use value::Value;
 use crate::{
     identifier::Identifier,
     std::{TYPE_NAME_STRING, TYPE_NAME_U64, compile_std, runtime::register_mappings},
-    types::{self, structs::InstantiatedStructId},
+    types,
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -264,9 +264,9 @@ impl<'ctx> Compiler<'ctx> {
 
         self.items = AllItems::new(structs, functions);
         self.items
-            .get_or_instantiate_struct(&InstantiatedStructId::new(
+            .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                 *TYPE_NAME_U64,
-                types::TypeArgumentValues::new_empty(),
+                types::generics::TypeArgumentValues::new_empty(),
             ));
 
         for module in program.modules().keys() {
@@ -278,7 +278,7 @@ impl<'ctx> Compiler<'ctx> {
                 .items
                 .get_or_instantiate_function(&types::functions::InstantiatedFunctionId::new(
                     main,
-                    types::TypeArgumentValues::new_empty(),
+                    types::generics::TypeArgumentValues::new_empty(),
                 ))
                 .unwrap()
                 .clone();

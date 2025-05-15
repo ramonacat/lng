@@ -131,7 +131,7 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::InstantiatedTypeKind::U64 => Value::Primitive(
                     types::structs::InstantiatedStructId::new(
                         CompilerContext::get_std_type("u64"),
-                        types::TypeArgumentValues::new_empty(),
+                        types::generics::TypeArgumentValues::new_empty(),
                     ),
                     argument_value,
                 ),

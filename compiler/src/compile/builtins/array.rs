@@ -63,7 +63,7 @@ impl ArrayValue {
 
         let mut tav = HashMap::new();
         tav.insert(
-            types::TypeArgument::new(Identifier::parse("TItem")),
+            types::generics::TypeArgument::new(Identifier::parse("TItem")),
             item_type.clone(),
         );
         let id = *TYPE_NAME_ARRAY;
@@ -71,7 +71,7 @@ impl ArrayValue {
         let array_value = structs
             .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                 id,
-                types::TypeArgumentValues::new(tav.clone()),
+                types::generics::TypeArgumentValues::new(tav.clone()),
             ))
             .unwrap()
             .build_heap_instance(context, &unique_name(&["string"]), field_values);
@@ -83,7 +83,7 @@ impl ArrayValue {
                 types::InstantiatedType::new(types::InstantiatedTypeKind::Struct(
                     types::structs::InstantiatedStructId::new(
                         id,
-                        types::TypeArgumentValues::new(tav.clone()),
+                        types::generics::TypeArgumentValues::new(tav.clone()),
                     ),
                 )),
             ),

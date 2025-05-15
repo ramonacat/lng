@@ -150,7 +150,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                 function_id,
                 // TODO we need to ensure during typecheck that we won't get
                 // here without the right TypeArgumentValues
-                types::TypeArgumentValues::new_empty(),
+                types::generics::TypeArgumentValues::new_empty(),
             );
             self.compiler
                 .items
@@ -172,7 +172,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                 .items
                 .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                     struct_id,
-                    types::TypeArgumentValues::new_empty(),
+                    types::generics::TypeArgumentValues::new_empty(),
                 ))
                 .map(|x| {
                     let types::InstantiatedTypeKind::Struct(x) = x.definition.type_.kind() else {
@@ -212,7 +212,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
 
         let instantiated_function_id = types::functions::InstantiatedFunctionId::new(
             *function_id,
-            types::TypeArgumentValues::new_empty(),
+            types::generics::TypeArgumentValues::new_empty(),
         );
         let definition = self
             .compiler
@@ -323,7 +323,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                 Value::Primitive(
                     types::structs::InstantiatedStructId::new(
                         CompilerContext::get_std_type("u64"),
-                        types::TypeArgumentValues::new_empty(),
+                        types::generics::TypeArgumentValues::new_empty(),
                     ),
                     self.compiler
                         .context

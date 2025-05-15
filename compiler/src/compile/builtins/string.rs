@@ -64,7 +64,7 @@ impl StringValue {
         let literal_value = structs
             .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
                 id,
-                types::TypeArgumentValues::new_empty(),
+                types::generics::TypeArgumentValues::new_empty(),
             ))
             .unwrap()
             .build_heap_instance(context, &(name.to_string() + "_value"), field_values);
@@ -74,7 +74,7 @@ impl StringValue {
             &StructInstance::new(
                 literal_value,
                 types::InstantiatedType::new(types::InstantiatedTypeKind::Struct(
-                    InstantiatedStructId::new(id, types::TypeArgumentValues::new_empty()),
+                    InstantiatedStructId::new(id, types::generics::TypeArgumentValues::new_empty()),
                 )),
             ),
             context,

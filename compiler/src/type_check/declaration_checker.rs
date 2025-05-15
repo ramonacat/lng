@@ -2,12 +2,7 @@
 // imported)
 use std::collections::HashMap;
 
-use crate::{
-    ast,
-    identifier::FQName,
-    std::TYPE_NAME_STRING,
-    types::{self, TypeArguments, modules::ModuleId},
-};
+use crate::{ast, identifier::FQName, std::TYPE_NAME_STRING, types};
 
 use super::{
     DeclaredFunction, DeclaredStructField,
@@ -113,7 +108,7 @@ impl DeclarationChecker {
                                     // being generic
                                     type_: types::GenericType::new(
                                         types::GenericTypeKind::Callable(function.id),
-                                        TypeArguments::new_empty(),
+                                        types::generics::TypeArguments::new_empty(),
                                     ),
                                     static_: true,
                                 },
@@ -182,7 +177,7 @@ impl DeclarationChecker {
         program: &[ast::SourceFile],
     ) -> Result<(), TypeCheckError> {
         for file in program {
-            let module_path = ModuleId::parse(&file.name.to_string());
+            let module_path = types::modules::ModuleId::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -197,7 +192,7 @@ impl DeclarationChecker {
         }
 
         for file in program {
-            let module_path = ModuleId::parse(&file.name.to_string());
+            let module_path = types::modules::ModuleId::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -212,7 +207,7 @@ impl DeclarationChecker {
         }
 
         for file in program {
-            let module_path = ModuleId::parse(&file.name.to_string());
+            let module_path = types::modules::ModuleId::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -242,7 +237,7 @@ impl DeclarationChecker {
         }
 
         for file in program {
-            let module_path = ModuleId::parse(&file.name.to_string());
+            let module_path = types::modules::ModuleId::parse(&file.name.to_string());
 
             for declaration in &file.declarations {
                 match &declaration.kind {
@@ -269,7 +264,7 @@ impl DeclarationChecker {
 
     fn type_check_interface(
         &mut self,
-        module_path: ModuleId,
+        module_path: types::modules::ModuleId,
         interface: &ast::Interface,
     ) -> Result<(), TypeCheckError> {
         let interface_id = types::interfaces::InterfaceId::InModule(module_path, interface.name);
@@ -299,7 +294,7 @@ impl DeclarationChecker {
                 id: interface_id,
                 type_: types::GenericType::new(
                     types::GenericTypeKind::Interface(interface_id),
-                    types::TypeArguments::new_empty(),
+                    types::generics::TypeArguments::new_empty(),
                 ),
                 functions,
             },
@@ -317,7 +312,7 @@ impl DeclarationChecker {
         let struct_id = types::structs::StructId::InModule(module_path, struct_.name);
         let struct_type = types::GenericType::new(
             types::GenericTypeKind::Struct(struct_id),
-            types::TypeArguments::new_empty(),
+            types::generics::TypeArguments::new_empty(),
         );
 
         for field in &struct_.fields {
@@ -341,7 +336,7 @@ impl DeclarationChecker {
                     types::GenericTypeKind::StructObject {
                         type_name: struct_id,
                     },
-                    types::TypeArguments::new_empty(),
+                    types::generics::TypeArguments::new_empty(),
                 ),
                 implemented_interfaces: HashMap::new(),
             },

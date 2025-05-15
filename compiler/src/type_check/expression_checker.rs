@@ -69,7 +69,7 @@ impl<'root> ExpressionChecker<'root> {
                         types::GenericTypeKind::StructObject {
                             type_name: *TYPE_NAME_STRING,
                         },
-                        types::TypeArguments::new_empty(),
+                        types::generics::TypeArguments::new_empty(),
                     ),
                     kind: types::ExpressionKind::Literal(types::Literal::String(value.clone())),
                 }),
@@ -108,7 +108,7 @@ impl<'root> ExpressionChecker<'root> {
                             types::GenericTypeKind::StructObject {
                                 type_name: *instantiated_struct_id,
                             },
-                            types::TypeArguments::new_empty(),
+                            types::generics::TypeArguments::new_empty(),
                         ),
                         types::ExpressionKind::StructConstructor(Box::new(target), field_values),
                     )

@@ -1,8 +1,5 @@
+use crate::identifier::Identifier;
 use crate::types;
-use crate::{
-    identifier::Identifier,
-    types::{InstantiatedType, TypeArgumentValues, modules::ModuleId, structs::StructId},
-};
 use std::fmt::Write;
 
 pub(super) fn mangle_type(type_: &types::InstantiatedType) -> MangledIdentifier {
@@ -37,7 +34,7 @@ pub(super) fn mangle_type(type_: &types::InstantiatedType) -> MangledIdentifier 
     }
 }
 
-pub(super) fn mangle_module_id(id: ModuleId) -> MangledIdentifier {
+pub(super) fn mangle_module_id(id: types::modules::ModuleId) -> MangledIdentifier {
     MangledIdentifier {
         mangled: id.to_string().replace('.', "$"),
         source: IdentifierKind::ModuleId(id),
@@ -46,11 +43,11 @@ pub(super) fn mangle_module_id(id: ModuleId) -> MangledIdentifier {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IdentifierKind {
-    ModuleId(ModuleId),
+    ModuleId(types::modules::ModuleId),
     Identifier(Identifier),
     StructField(types::structs::StructId, Identifier),
     Function(types::functions::FunctionId),
-    Struct(StructId),
+    Struct(types::structs::StructId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,7 +69,9 @@ impl MangledIdentifier {
     }
 }
 
-fn mangle_type_argument_values(tav: &TypeArgumentValues<InstantiatedType>) -> String {
+fn mangle_type_argument_values(
+    tav: &types::generics::TypeArgumentValues<types::InstantiatedType>,
+) -> String {
     let mut result = String::new();
 
     for (id, value) in &tav.0 {
@@ -83,9 +82,9 @@ fn mangle_type_argument_values(tav: &TypeArgumentValues<InstantiatedType>) -> St
 }
 
 fn mangle_item_name(
-    module: ModuleId,
+    module: types::modules::ModuleId,
     item: Identifier,
-    tav: &TypeArgumentValues<InstantiatedType>,
+    tav: &types::generics::TypeArgumentValues<types::InstantiatedType>,
     source: IdentifierKind,
 ) -> MangledIdentifier {
     MangledIdentifier {
@@ -99,9 +98,9 @@ fn mangle_item_name(
 }
 
 fn mangle_struct_item_name(
-    struct_id: StructId,
+    struct_id: types::structs::StructId,
     item: Identifier,
-    tav: &TypeArgumentValues<InstantiatedType>,
+    tav: &types::generics::TypeArgumentValues<types::InstantiatedType>,
 ) -> MangledIdentifier {
     MangledIdentifier {
         mangled: mangle_struct_id(struct_id, tav).mangled + "$$" + &item.raw() + "$$$",
@@ -110,11 +109,11 @@ fn mangle_struct_item_name(
 }
 
 fn mangle_struct_id(
-    struct_id: StructId,
-    tav: &TypeArgumentValues<InstantiatedType>,
+    struct_id: types::structs::StructId,
+    tav: &types::generics::TypeArgumentValues<types::InstantiatedType>,
 ) -> MangledIdentifier {
     match struct_id {
-        StructId::InModule(module_id, identifier) => mangle_item_name(
+        types::structs::StructId::InModule(module_id, identifier) => mangle_item_name(
             module_id,
             identifier,
             tav,

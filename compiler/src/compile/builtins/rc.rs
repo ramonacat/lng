@@ -56,7 +56,7 @@ impl<'ctx> RcValue<'ctx> {
 
         let mut tav = HashMap::new();
         tav.insert(
-            types::TypeArgument::new(Identifier::parse("TPointee")),
+            types::generics::TypeArgument::new(Identifier::parse("TPointee")),
             struct_instance.type_(),
         );
 
@@ -65,7 +65,7 @@ impl<'ctx> RcValue<'ctx> {
                 types::modules::ModuleId::parse("std"),
                 Identifier::parse("rc"),
             ),
-            types::TypeArgumentValues::new(tav),
+            types::generics::TypeArgumentValues::new(tav),
         );
         let rc = structs
             .get_or_instantiate_struct(&instantiated_struct_id)
@@ -90,7 +90,7 @@ impl<'ctx> RcValue<'ctx> {
         let mut tav = HashMap::new();
 
         tav.insert(
-            types::TypeArgument::new(Identifier::parse("TPointee")),
+            types::generics::TypeArgument::new(Identifier::parse("TPointee")),
             value_type.clone(),
         );
 
@@ -99,7 +99,7 @@ impl<'ctx> RcValue<'ctx> {
                 types::modules::ModuleId::parse("std"),
                 Identifier::parse("rc"),
             ),
-            types::TypeArgumentValues::new(tav),
+            types::generics::TypeArgumentValues::new(tav),
         );
 
         RcValue {
@@ -152,7 +152,7 @@ pub fn build_cleanup<'ctx>(
 
         let mut tav = HashMap::new();
         tav.insert(
-            types::TypeArgument::new(Identifier::parse("TPointee")),
+            types::generics::TypeArgument::new(Identifier::parse("TPointee")),
             rc.type_(),
         );
 
@@ -160,7 +160,7 @@ pub fn build_cleanup<'ctx>(
             context
                 .builtins
                 .rc_handle
-                .instantiate(&types::TypeArgumentValues::new(tav))
+                .instantiate(&types::generics::TypeArgumentValues::new(tav))
                 .unwrap(),
             HashMap::new(),
         );
@@ -255,7 +255,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
         let name = format!("rc{i}");
         let mut tav = HashMap::new();
         tav.insert(
-            types::TypeArgument::new(Identifier::parse("TPointee")),
+            types::generics::TypeArgument::new(Identifier::parse("TPointee")),
             rc.type_(),
         );
 
@@ -263,7 +263,7 @@ pub fn build_prologue<'ctx>(rcs: &[RcValue<'ctx>], context: &CompilerContext<'ct
             context
                 .builtins
                 .rc_handle
-                .instantiate(&types::TypeArgumentValues(tav))
+                .instantiate(&types::generics::TypeArgumentValues(tav))
                 .unwrap(),
             HashMap::new(),
         );
