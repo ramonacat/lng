@@ -56,7 +56,7 @@ pub struct MangledIdentifier {
 }
 
 impl MangledIdentifier {
-    pub(crate) fn as_str(&self) -> &str {
+    pub(crate) const fn as_str(&self) -> &str {
         self.mangled.as_str()
     }
 

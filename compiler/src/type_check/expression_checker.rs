@@ -344,40 +344,28 @@ impl<'root> ExpressionChecker<'root> {
         match struct_type.kind() {
             types::TypeKind::Generic(_) => todo!(),
             types::TypeKind::Unit => todo!(),
-            types::TypeKind::Object(instantiated_struct_id) => {
-                let type_id = self
-                    .root_module_declaration
-                    .structs
-                    .get(&instantiated_struct_id.id())
-                    .map(|x| x.field_type(field_name))
-                    .unwrap();
-
-                type_id
-            }
+            types::TypeKind::Object(instantiated_struct_id) => self
+                .root_module_declaration
+                .structs
+                .get(&instantiated_struct_id.id())
+                .map(|x| x.field_type(field_name))
+                .unwrap(),
             types::TypeKind::Array { .. } => todo!(),
             types::TypeKind::Callable(_) => todo!(),
-            types::TypeKind::U64 => {
-                let type_id = self
-                    .root_module_declaration
-                    .structs
-                    .get(&*TYPE_NAME_U64)
-                    .map(|x| x.field_type(field_name))
-                    .unwrap();
-
-                type_id
-            }
+            types::TypeKind::U64 => self
+                .root_module_declaration
+                .structs
+                .get(&*TYPE_NAME_U64)
+                .map(|x| x.field_type(field_name))
+                .unwrap(),
             types::TypeKind::U8 => todo!(),
             types::TypeKind::Pointer(_) => todo!(),
-            types::TypeKind::Struct(struct_id) => {
-                let type_id = self
-                    .root_module_declaration
-                    .structs
-                    .get(&struct_id.id())
-                    .map(|x| x.field_type(field_name))
-                    .unwrap();
-
-                type_id
-            }
+            types::TypeKind::Struct(struct_id) => self
+                .root_module_declaration
+                .structs
+                .get(&struct_id.id())
+                .map(|x| x.field_type(field_name))
+                .unwrap(),
             types::TypeKind::Interface(_) => todo!(),
             types::TypeKind::InterfaceObject(instantiated_inteface_id) => self
                 .root_module_declaration

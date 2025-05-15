@@ -141,7 +141,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
         name: Identifier,
     ) -> Option<Value<'ctx>> {
         // TODO there should be something on the global_scope to receive a value by FQN
-        let value = {
+        {
             self.compiler
                 .modules
                 .get(module_id)
@@ -192,8 +192,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
 
                     Value::InstantiatedStruct(instantiated_struct_id)
                 })
-        });
-        value
+        })
     }
 
     fn compile_expression_call(

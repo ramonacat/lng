@@ -18,7 +18,8 @@ lalrpop_mod!(
         clippy::cloned_instead_of_copied,
         clippy::match_same_arms,
         clippy::too_many_lines,
-        clippy::cognitive_complexity
+        clippy::cognitive_complexity,
+        clippy::elidable_lifetime_names
     )]
     grammar
 );

@@ -96,12 +96,10 @@ impl<'ctx> AllItems<'ctx> {
         self.instantiated_functions
             .entry(id.clone())
             .or_insert_with(|| {
-                let instantiated = self.functions.get(&id.id()).unwrap().with_type_arguments(
+                self.functions.get(&id.id()).unwrap().with_type_arguments(
                     id.argument_values().iter().map(|x| x.unwrap()).collect(),
                     types,
-                );
-
-                instantiated
+                )
             });
     }
 }
