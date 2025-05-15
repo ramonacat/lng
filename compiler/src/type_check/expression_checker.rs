@@ -263,7 +263,7 @@ impl<'root> ExpressionChecker<'root> {
                 let interfaces = &self.root_module_declaration.interfaces;
 
                 let function = interfaces
-                    .get(interface_id)
+                    .get(&interface_id.id())
                     .unwrap()
                     .functions
                     .get(function_name)
@@ -349,17 +349,17 @@ impl<'root> ExpressionChecker<'root> {
                 .unwrap(),
             types::InstantiatedTypeKind::Function(_) => todo!(),
             types::InstantiatedTypeKind::Interface(_) => todo!(),
-            types::InstantiatedTypeKind::InterfaceObject {
-                interface_id,
-                type_argument_values: _,
-            } => self
+            types::InstantiatedTypeKind::InterfaceObject(instantiated_inteface_id) => self
                 .root_module_declaration
                 .interfaces
-                .get(interface_id)
+                .get(&instantiated_inteface_id.id())
                 .map(|i| i.functions.get(&field_name).unwrap())
                 .map(|_| {
                     types::InstantiatedType::new_generic(
-                        types::InstantiatedTypeKind::IndirectCallable(*interface_id, field_name),
+                        types::InstantiatedTypeKind::IndirectCallable(
+                            instantiated_inteface_id.clone(),
+                            field_name,
+                        ),
                         r#type.arguments().clone(),
                         types::generics::TypeArgumentValues::new_empty(),
                     )

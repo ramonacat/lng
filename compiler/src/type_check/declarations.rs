@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     ast,
     identifier::Identifier,
-    types::{self, structs::InstantiatedStructId},
+    types::{self, interfaces::InstantiatedInterfaceId, structs::InstantiatedStructId},
 };
 
 use super::errors::TypeCheckError;
@@ -89,10 +89,11 @@ impl DeclaredItemKind<'_> {
                 types::generics::TypeArgumentValues::new_empty(),
             ),
             Self::Interface(interface) => types::InstantiatedType::new_generic(
-                types::InstantiatedTypeKind::InterfaceObject {
-                    interface_id: interface.id,
-                    type_argument_values: types::generics::TypeArgumentValues::new_empty(),
-                },
+                // TODO handle generic interfaces here
+                types::InstantiatedTypeKind::InterfaceObject(InstantiatedInterfaceId::new(
+                    interface.id,
+                    types::generics::TypeArgumentValues::new_empty(),
+                )),
                 interface.type_.arguments().clone(),
                 types::generics::TypeArgumentValues::new_empty(),
             ),

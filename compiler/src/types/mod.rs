@@ -13,6 +13,7 @@ use std::{
 
 use functions::{FunctionId, InstantiatedFunctionId};
 use generics::TypeArguments;
+use interfaces::InstantiatedInterfaceId;
 use interfaces::InterfaceId;
 use modules::ModuleId;
 use structs::{FieldValue, InstantiatedStructId, Struct, StructId};
@@ -44,9 +45,7 @@ impl Display for ItemId {
 pub enum InstantiatedTypeKind {
     Unit,
     Object(InstantiatedStructId),
-    Array {
-        element_type: Box<InstantiatedType>,
-    },
+    Array { element_type: Box<InstantiatedType> },
     // TODO this should be an object with special properties
     Callable(FunctionId),
     // TODO add u128,u32,u16,u8 and signed counterparts
@@ -57,12 +56,8 @@ pub enum InstantiatedTypeKind {
     Pointer(Box<InstantiatedType>),
     Struct(InstantiatedStructId),
     Function(InstantiatedFunctionId),
-    IndirectCallable(InterfaceId, Identifier),
-    InterfaceObject {
-        // TODO should be InstantiatedInterfaceId
-        interface_id: InterfaceId,
-        type_argument_values: TypeArgumentValues,
-    },
+    IndirectCallable(InstantiatedInterfaceId, Identifier),
+    InterfaceObject(InstantiatedInterfaceId),
     // TODO make this TypeId
     Generic(TypeArgument),
     Interface(InterfaceId),
@@ -132,32 +127,18 @@ impl InstantiatedType {
         lookup_struct: impl Fn(StructId) -> Option<Struct>,
     ) -> bool {
         match (&self.kind, &type_.kind) {
-            (InstantiatedTypeKind::Object(l_name), InstantiatedTypeKind::Object(r_name)) =>
-            // TODO check if the generic types have the same values
-            {
+            (InstantiatedTypeKind::Object(l_name), InstantiatedTypeKind::Object(r_name)) => {
                 l_name == r_name
             }
             (
-                InstantiatedTypeKind::InterfaceObject {
-                    interface_id: l_id,
-                    type_argument_values: l_args,
-                },
-                InstantiatedTypeKind::InterfaceObject {
-                    interface_id: r_id,
-                    type_argument_values: r_args,
-                },
-            ) => l_id == r_id && l_args == r_args,
-            (
-                InstantiatedTypeKind::InterfaceObject {
-                    interface_id: l_id,
-                    type_argument_values: _,
-                },
-                InstantiatedTypeKind::Object(r_name),
-            ) => {
+                InstantiatedTypeKind::InterfaceObject(l_id),
+                InstantiatedTypeKind::InterfaceObject(r_id),
+            ) => l_id == r_id,
+            (InstantiatedTypeKind::InterfaceObject(l_id), InstantiatedTypeKind::Object(r_name)) => {
                 let struct_ = lookup_struct(r_name.id()).unwrap();
 
                 // TODO check if it implements the interface with the right type args
-                struct_.implements(*l_id)
+                struct_.implements(l_id.id())
             }
             _ => todo!("\n{:?}\n{:?}", &self.kind, &type_.kind),
         }
