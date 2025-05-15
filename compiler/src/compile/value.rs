@@ -152,7 +152,6 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             types::TypeKind::U8 => todo!(),
             types::TypeKind::Pointer(_) => todo!(),
             types::TypeKind::Struct(_) => todo!(),
-            types::TypeKind::Function(_) => todo!(),
             types::TypeKind::IndirectCallable(_, _) => todo!(),
             types::TypeKind::InterfaceObject { .. } => todo!(),
             types::TypeKind::Generic(_) => todo!(),
@@ -243,7 +242,6 @@ impl<'ctx> Value<'ctx> {
                     types::TypeKind::U8 => todo!(),
                     types::TypeKind::Pointer(_) => todo!(),
                     types::TypeKind::Struct(_) => todo!(),
-                    types::TypeKind::Function(_) => todo!(),
                     types::TypeKind::IndirectCallable(_, _) => {
                         todo!()
                     }

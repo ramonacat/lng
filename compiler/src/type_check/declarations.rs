@@ -11,9 +11,10 @@ use super::errors::TypeCheckError;
 #[derive(Debug, Clone)]
 pub(super) struct DeclaredFunction {
     pub(super) id: types::functions::FunctionId,
+    pub(super) type_id: types::store::TypeId,
     pub(super) module_name: types::modules::ModuleId,
     pub(super) arguments: Vec<types::functions::Argument>,
-    pub(super) return_type: types::Type,
+    pub(super) return_type: types::store::TypeId,
     pub(super) ast: ast::Function,
     pub(super) position: ast::SourceSpan,
     pub(super) visibility: types::Visibility,
@@ -69,7 +70,8 @@ pub enum DeclaredItemKind<'item> {
 }
 
 impl DeclaredItemKind<'_> {
-    pub(crate) fn type_(&self) -> types::Type {
+    // TODO can we get rid of this?
+    pub(crate) fn type_(&self, types: &dyn types::store::TypeStore) -> types::Type {
         match self {
             // TODO handle generics
             Self::Struct(struct_) => types::Type::new_generic(
@@ -77,14 +79,14 @@ impl DeclaredItemKind<'_> {
                     struct_.id,
                     types::generics::TypeArguments::new_empty(),
                 )),
-                struct_.type_.arguments().clone(),
+                types.get(struct_.type_id).arguments().clone(),
             ),
             Self::Function(declared_function) => {
                 types::Type::new(types::TypeKind::Callable(declared_function.id))
             }
             Self::PredeclaredFunction(function) => types::Type::new_generic(
                 types::TypeKind::Callable(function.id),
-                function.type_.arguments().clone(),
+                types.get(function.type_id).arguments().clone(),
             ),
             Self::Interface(interface) => types::Type::new_generic(
                 // TODO handle generic interfaces here
@@ -92,7 +94,7 @@ impl DeclaredItemKind<'_> {
                     interface.id,
                     types::generics::TypeArguments::new_empty(),
                 )),
-                interface.type_.arguments().clone(),
+                types.get(interface.type_id).arguments().clone(),
             ),
         }
     }
@@ -155,6 +157,31 @@ impl DeclaredRootModule {
             .unwrap_or((module_id, name))
     }
 
+    pub fn get_item_id(
+        &self,
+        module_id: types::modules::ModuleId,
+        name: Identifier,
+    ) -> Option<types::store::TypeId> {
+        self.functions
+            .get(&types::functions::FunctionId::InModule(module_id, name))
+            .map(|x| x.type_id)
+            .or_else(|| {
+                self.predeclared_functions
+                    .get(&types::functions::FunctionId::InModule(module_id, name))
+                    .map(|x| x.type_id)
+            })
+            .or_else(|| {
+                self.structs
+                    .get(&types::structs::StructId::InModule(module_id, name))
+                    .map(|x| x.type_id)
+            })
+            .or_else(|| {
+                self.interfaces
+                    .get(&types::interfaces::InterfaceId::InModule(module_id, name))
+                    .map(|x| x.type_id)
+            })
+    }
+
     pub fn get_item(
         &self,
         module_id: types::modules::ModuleId,
@@ -181,16 +208,18 @@ impl DeclaredRootModule {
     }
 }
 
+// TODO return TypeId instead of Type?
 pub(super) fn resolve_type(
     root_module: &DeclaredRootModule,
     current_module: types::modules::ModuleId,
     r#type: &ast::TypeDescription,
+    types: &dyn types::store::TypeStore,
 ) -> Result<types::Type, TypeCheckError> {
     // TODO handle generics here
     match r#type {
         ast::TypeDescription::Array(type_description) => {
             Ok(types::Type::new(types::TypeKind::Array(Box::new(
-                resolve_type(root_module, current_module, type_description)?,
+                resolve_type(root_module, current_module, type_description, types)?,
             ))))
         }
         ast::TypeDescription::Named(name) if name == "()" => Ok(types::Type::unit()),
@@ -200,7 +229,7 @@ pub(super) fn resolve_type(
 
             let item = root_module.get_item(current_module, name).unwrap();
 
-            Ok(item.type_())
+            Ok(item.type_(types))
         }
     }
 }

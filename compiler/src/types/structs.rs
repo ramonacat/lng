@@ -4,8 +4,11 @@ use std::{
 };
 
 use super::{
-    Expression, FunctionId, Identifier, Type, generics::TypeArguments, interfaces::InterfaceId,
-    modules::ModuleId, store::TypeId,
+    Expression, FunctionId, Identifier,
+    generics::TypeArguments,
+    interfaces::InterfaceId,
+    modules::ModuleId,
+    store::{TypeId, TypeStore},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -75,8 +78,8 @@ pub struct Struct {
     pub id: StructId,
     pub fields: Vec<StructField>,
     pub impls: Vec<FunctionId>,
-    pub type_: Type,
-    pub instance_type: Type,
+    pub type_id: TypeId,
+    pub instance_type: TypeId,
     pub implemented_interfaces: HashMap<InterfaceId, HashMap<Identifier, FunctionId>>,
 }
 
@@ -93,17 +96,29 @@ impl Struct {
         self.implemented_interfaces.contains_key(&interface_id)
     }
 
-    pub(crate) fn instance_type(&self) -> Type {
-        self.instance_type.clone()
+    pub(crate) const fn instance_type(&self) -> TypeId {
+        self.instance_type
     }
 
-    pub(crate) fn with_type_arguments(&self, argument_values: Vec<TypeId>) -> Self {
+    pub(crate) fn with_type_arguments(
+        &self,
+        argument_values: Vec<TypeId>,
+        types: &mut dyn TypeStore,
+    ) -> Self {
         Self {
             id: self.id,
             fields: self.fields.clone(),
             impls: self.impls.clone(),
-            type_: self.type_.with_type_arguments(argument_values.clone()),
-            instance_type: self.instance_type.with_type_arguments(argument_values),
+            type_id: types.add(
+                types
+                    .get(self.type_id)
+                    .with_type_arguments(argument_values.clone()),
+            ),
+            instance_type: types.add(
+                types
+                    .get(self.instance_type)
+                    .with_type_arguments(argument_values),
+            ),
             implemented_interfaces: self.implemented_interfaces.clone(),
         }
     }

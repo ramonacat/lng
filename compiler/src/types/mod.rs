@@ -11,7 +11,7 @@ use std::{
     hash::Hash,
 };
 
-use functions::{FunctionId, InstantiatedFunctionId};
+use functions::FunctionId;
 use generics::TypeArguments;
 use interfaces::InstantiatedInterfaceId;
 use interfaces::InterfaceId;
@@ -31,6 +31,7 @@ pub enum TypeKind {
     Object(InstantiatedStructId),
     Array(Box<Type>),
     // TODO this should be an object with special properties
+    // TODO should this be instantiatedfunctionid???
     Callable(FunctionId),
     // TODO add u128,u32,u16,u8 and signed counterparts
     // TODO add bool
@@ -39,7 +40,6 @@ pub enum TypeKind {
     U8,
     Pointer(Box<Type>),
     Struct(InstantiatedStructId),
-    Function(InstantiatedFunctionId),
     IndirectCallable(InstantiatedInterfaceId, Identifier),
     // TODO this should be the same as object
     InterfaceObject(InstantiatedInterfaceId),
@@ -84,7 +84,7 @@ impl Type {
         &self.kind
     }
 
-    fn with_type_arguments(&self, argument_values: Vec<TypeId>) -> Self {
+    pub(crate) fn with_type_arguments(&self, argument_values: Vec<TypeId>) -> Self {
         Self {
             kind: self.kind.clone(),
             arguments: self.arguments.with_values(argument_values),
@@ -130,7 +130,6 @@ impl Display for Type {
             TypeKind::U8 => write!(f, "u8"),
             TypeKind::Pointer(instantiated_type) => write!(f, "{instantiated_type}*"),
             TypeKind::Struct(struct_id) => write!(f, "{struct_id}"),
-            TypeKind::Function(function_id) => write!(f, "{function_id}"),
             TypeKind::IndirectCallable(_, _) => todo!(),
             TypeKind::InterfaceObject { .. } => todo!(),
             TypeKind::Generic(_) => todo!(),
@@ -172,7 +171,7 @@ pub enum ExpressionKind {
 #[derive(Debug, Clone)]
 pub struct Expression {
     pub position: ast::SourceSpan,
-    pub type_: Type,
+    pub type_id: TypeId,
     pub kind: ExpressionKind,
 }
 

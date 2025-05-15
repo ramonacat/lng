@@ -49,21 +49,26 @@ impl<'ctx> AllItems<'ctx> {
     pub(crate) fn get_or_instantiate_struct(
         &mut self,
         handle: &types::structs::InstantiatedStructId,
+        types: &mut dyn types::store::TypeStore,
     ) -> Option<&InstantiatedStructType<'ctx>> {
-        self.instantiate_struct(handle);
+        self.instantiate_struct(handle, types);
 
         self.instantiated_structs.get(handle)
     }
 
     // TODO deal with setting the static fields here
-    fn instantiate_struct(&mut self, id: &types::structs::InstantiatedStructId) {
+    fn instantiate_struct(
+        &mut self,
+        id: &types::structs::InstantiatedStructId,
+        types: &mut dyn types::store::TypeStore,
+    ) {
         self.instantiated_structs
             .entry(id.clone())
             .or_insert_with(|| {
-                let instantiated =
-                    self.structs.get(&id.id()).unwrap().with_type_arguments(
-                        id.argument_values().iter().map(|x| x.unwrap()).collect(),
-                    );
+                let instantiated = self.structs.get(&id.id()).unwrap().with_type_arguments(
+                    id.argument_values().iter().map(|x| x.unwrap()).collect(),
+                    types,
+                );
 
                 InstantiatedStructType::new(instantiated, HashMap::new())
             });
@@ -72,24 +77,29 @@ impl<'ctx> AllItems<'ctx> {
     pub(crate) fn get_or_instantiate_function(
         &mut self,
         id: &types::functions::InstantiatedFunctionId,
+        types: &mut dyn types::store::TypeStore,
     ) -> Option<&types::functions::Function> {
         if !self.functions.contains_key(&id.id()) {
             return None;
         }
 
-        self.instantiate_function(id);
+        self.instantiate_function(id, types);
 
         self.instantiated_functions.get(id)
     }
 
-    fn instantiate_function(&mut self, id: &types::functions::InstantiatedFunctionId) {
+    fn instantiate_function(
+        &mut self,
+        id: &types::functions::InstantiatedFunctionId,
+        types: &mut dyn types::store::TypeStore,
+    ) {
         self.instantiated_functions
             .entry(id.clone())
             .or_insert_with(|| {
-                let instantiated =
-                    self.functions.get(&id.id()).unwrap().with_type_arguments(
-                        id.argument_values().iter().map(|x| x.unwrap()).collect(),
-                    );
+                let instantiated = self.functions.get(&id.id()).unwrap().with_type_arguments(
+                    id.argument_values().iter().map(|x| x.unwrap()).collect(),
+                    types,
+                );
 
                 instantiated
             });
@@ -138,7 +148,6 @@ impl<'ctx> CompilerContext<'ctx> {
                 Box::new(self.llvm_context.ptr_type(AddressSpace::default()))
             }
             types::TypeKind::Struct(_) => todo!(),
-            types::TypeKind::Function(_) => todo!(),
             types::TypeKind::IndirectCallable(_, _) => todo!(),
             types::TypeKind::InterfaceObject { .. } => todo!(),
             types::TypeKind::Generic(_) => todo!(),
@@ -148,12 +157,17 @@ impl<'ctx> CompilerContext<'ctx> {
 
     pub fn make_function_type(
         &self,
-        arguments: &[types::functions::Argument],
+        arguments: &[types::store::TypeId],
         return_type: &types::Type,
+        types: &dyn types::store::TypeStore,
     ) -> FunctionType<'ctx> {
         let arguments = arguments
             .iter()
-            .map(|arg| self.type_to_llvm(&arg.type_).as_basic_type_enum().into())
+            .map(|arg| {
+                self.type_to_llvm(types.get(*arg))
+                    .as_basic_type_enum()
+                    .into()
+            })
             .collect::<Vec<_>>();
 
         match return_type.kind() {

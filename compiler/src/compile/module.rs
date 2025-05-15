@@ -28,7 +28,7 @@ impl types::functions::Function {
 pub struct CompiledModule<'ctx> {
     llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
-    functions: HashSet<types::Type>,
+    functions: HashSet<types::store::TypeId>,
 }
 
 impl std::fmt::Debug for CompiledModule<'_> {
@@ -56,12 +56,13 @@ impl<'ctx> CompiledModule<'ctx> {
     fn declare_function_inner(
         &self,
         name: &MangledIdentifier,
-        arguments: &[types::functions::Argument],
+        arguments: &[types::store::TypeId],
         return_type: &types::Type,
         linkage: Linkage,
         context: &CompilerContext<'ctx>,
+        types: &dyn types::store::TypeStore,
     ) -> FunctionValue<'ctx> {
-        let function_type = context.make_function_type(arguments, return_type);
+        let function_type = context.make_function_type(arguments, return_type, types);
 
         self.llvm_module
             .add_function(name.as_str(), function_type, Some(linkage))
@@ -71,11 +72,12 @@ impl<'ctx> CompiledModule<'ctx> {
         &self,
         linkage: Linkage,
         name: &MangledIdentifier,
-        arguments: &[types::functions::Argument],
+        arguments: &[types::store::TypeId],
         return_type: &types::Type,
         context: &CompilerContext<'ctx>,
+        types: &dyn types::store::TypeStore,
     ) -> FunctionValue<'ctx> {
-        self.declare_function_inner(name, arguments, return_type, linkage, context)
+        self.declare_function_inner(name, arguments, return_type, linkage, context, types)
     }
 
     pub(crate) fn get_variable(&self, name: Identifier) -> Option<Value<'ctx>> {
@@ -89,12 +91,12 @@ impl<'ctx> CompiledModule<'ctx> {
         structs: &mut AllItems<'ctx>,
         types: &mut dyn types::store::TypeStore,
     ) -> super::CompiledFunction<'ctx> {
-        self.functions.insert(function.type_.clone());
+        self.functions.insert(function.type_id);
 
         let mut rcs = vec![];
         let scope = self.scope.child();
 
-        let llvm_function = self.get_or_create_function(function, context);
+        let llvm_function = self.get_or_create_function(function, context, types);
 
         let entry_block = context
             .llvm_context
@@ -104,20 +106,18 @@ impl<'ctx> CompiledModule<'ctx> {
 
         for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
         {
-            let value = match argument.type_.kind() {
+            let value = match types.get(argument.type_id).kind() {
                 types::TypeKind::Unit => todo!(),
                 types::TypeKind::Object(instantiated_struct_id) => {
                     let struct_instance_type = structs
-                        .get_or_instantiate_struct(instantiated_struct_id)
+                        .get_or_instantiate_struct(&instantiated_struct_id.clone(), types)
                         .unwrap()
                         .definition
                         .instance_type();
 
-                    let struct_instance_type_id = types.add(struct_instance_type);
-
                     let rc = RcValue::from_pointer(
                         argument_value.into_pointer_value(),
-                        struct_instance_type_id,
+                        struct_instance_type,
                     );
                     rcs.push(rc.clone());
 
@@ -143,7 +143,6 @@ impl<'ctx> CompiledModule<'ctx> {
                 types::TypeKind::Pointer(_) => todo!(),
                 types::TypeKind::U8 => todo!(),
                 types::TypeKind::Struct(_) => todo!(),
-                types::TypeKind::Function(_) => todo!(),
                 types::TypeKind::IndirectCallable(_, _) => todo!(),
                 types::TypeKind::InterfaceObject { .. } => todo!(),
                 types::TypeKind::Generic(_) => todo!(),
@@ -176,20 +175,21 @@ impl<'ctx> CompiledModule<'ctx> {
         self.llvm_module
     }
 
-    pub(crate) fn has_function(&self, type_: &types::Type) -> bool {
-        self.functions.contains(type_)
+    pub(crate) fn has_function(&self, type_id: types::store::TypeId) -> bool {
+        self.functions.contains(&type_id)
     }
 
     pub(crate) fn get_or_create_function(
         &self,
         handle: &types::functions::Function,
         context: &CompilerContext<'ctx>,
+        types: &dyn types::store::TypeStore,
     ) -> FunctionValue<'ctx> {
         let mangled_name = match &handle.body {
             types::functions::FunctionBody::Extern(identifier) => {
                 MangledIdentifier::new_raw(*identifier)
             }
-            types::functions::FunctionBody::Statements(_) => mangle_type(&handle.type_),
+            types::functions::FunctionBody::Statements(_) => mangle_type(types.get(handle.type_id)),
         };
 
         self.llvm_module
@@ -198,9 +198,14 @@ impl<'ctx> CompiledModule<'ctx> {
                 self.declare_function(
                     handle.linkage(),
                     &mangled_name,
-                    &handle.arguments,
-                    &handle.return_type,
+                    &handle
+                        .arguments
+                        .iter()
+                        .map(|x| x.type_id)
+                        .collect::<Vec<_>>(),
+                    types.get(handle.return_type),
                     context,
+                    types,
                 )
             })
     }

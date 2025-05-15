@@ -65,13 +65,16 @@ impl ArrayValue {
         let id = *TYPE_NAME_ARRAY;
 
         let array_value = structs
-            .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
-                id,
-                types::generics::TypeArguments::new(vec![TypeArgument::new_value(
-                    Identifier::parse("TPointee"),
-                    item_type_id,
-                )]),
-            ))
+            .get_or_instantiate_struct(
+                &types::structs::InstantiatedStructId::new(
+                    id,
+                    types::generics::TypeArguments::new(vec![TypeArgument::new_value(
+                        Identifier::parse("TPointee"),
+                        item_type_id,
+                    )]),
+                ),
+                types,
+            )
             .unwrap()
             .build_heap_instance(context, &unique_name(&["string"]), field_values, types);
 

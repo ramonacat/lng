@@ -68,7 +68,7 @@ impl<'ctx> RcValue<'ctx> {
             )]),
         );
         let rc = structs
-            .get_or_instantiate_struct(&instantiated_struct_id)
+            .get_or_instantiate_struct(&instantiated_struct_id, types)
             .unwrap()
             .build_heap_instance(context, name, field_values, types);
 
@@ -134,7 +134,7 @@ pub fn build_cleanup<'ctx>(
     context: &CompilerContext<'ctx>,
     rcs: &[RcValue<'ctx>],
     before: BasicBlock<'ctx>,
-    types: &dyn types::store::TypeStore,
+    types: &mut dyn types::store::TypeStore,
 ) -> BasicBlock<'ctx> {
     let mut before = before;
     let mut first_block = before;
@@ -153,7 +153,7 @@ pub fn build_cleanup<'ctx>(
             context
                 .builtins
                 .rc_handle
-                .with_type_arguments(vec![rc.type_()]),
+                .with_type_arguments(vec![rc.type_()], types),
             HashMap::new(),
         );
         let old_refcount = rc_handle
@@ -248,7 +248,7 @@ pub fn build_cleanup<'ctx>(
 pub fn build_prologue<'ctx>(
     rcs: &[RcValue<'ctx>],
     context: &CompilerContext<'ctx>,
-    types: &dyn types::store::TypeStore,
+    types: &mut dyn types::store::TypeStore,
 ) {
     for (i, rc) in rcs.iter().enumerate() {
         let name = format!("rc{i}");
@@ -257,7 +257,7 @@ pub fn build_prologue<'ctx>(
             context
                 .builtins
                 .rc_handle
-                .with_type_arguments(vec![rc.type_()]),
+                .with_type_arguments(vec![rc.type_()], types),
             HashMap::new(),
         );
 

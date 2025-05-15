@@ -29,7 +29,7 @@ use value::Value;
 use crate::{
     identifier::Identifier,
     std::{TYPE_NAME_STRING, TYPE_NAME_U64, compile_std, runtime::register_mappings},
-    types,
+    types::{self, store::TypeStore as _},
 };
 
 use self::array::TYPE_NAME_ARRAY;
@@ -276,11 +276,13 @@ impl<'ctx> Compiler<'ctx> {
         structs.insert(rc_struct_id, rc::describe_structure(&mut self.types));
 
         self.items = AllItems::new(structs, functions);
-        self.items
-            .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
+        self.items.get_or_instantiate_struct(
+            &types::structs::InstantiatedStructId::new(
                 *TYPE_NAME_U64,
                 types::generics::TypeArguments::new_empty(),
-            ));
+            ),
+            &mut self.types,
+        );
 
         for module in program.modules().keys() {
             self.get_or_create_module(*module);
@@ -289,14 +291,17 @@ impl<'ctx> Compiler<'ctx> {
         if let Some(main) = main {
             let main = self
                 .items
-                .get_or_instantiate_function(&types::functions::InstantiatedFunctionId::new(
-                    main,
-                    types::generics::TypeArguments::new_empty(),
-                ))
+                .get_or_instantiate_function(
+                    &types::functions::InstantiatedFunctionId::new(
+                        main,
+                        types::generics::TypeArguments::new_empty(),
+                    ),
+                    &mut self.types,
+                )
                 .unwrap()
                 .clone();
             self.compile_function(&main).unwrap();
-            let mangled_main = mangle_type(&main.type_);
+            let mangled_main = mangle_type(self.types.get(main.type_id));
 
             CompiledRootModule::App {
                 scope: self.global_scope,
@@ -367,7 +372,7 @@ impl<'ctx> Compiler<'ctx> {
                 .cloned()
                 .collect::<Vec<_>>(),
             compiled_function.end,
-            &self.types,
+            &mut self.types,
         );
         self.context
             .builder

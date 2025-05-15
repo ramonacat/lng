@@ -101,7 +101,7 @@ impl DeclarationChecker {
                                 .map(|x| {
                                     Ok(types::functions::Argument {
                                         name: x.name,
-                                        type_: x.type_.clone(),
+                                        type_id: x.type_id,
                                         position,
                                     })
                                 })
@@ -252,6 +252,7 @@ impl DeclarationChecker {
                                 &self.root_module_declaration,
                                 module_path,
                                 &field.type_,
+                                &self.types,
                             )?;
                         }
                     }
@@ -274,14 +275,28 @@ impl DeclarationChecker {
         let mut functions = HashMap::new();
 
         for function in &interface.declarations {
+            let return_type = resolve_type(
+                &self.root_module_declaration,
+                module_path,
+                &function.return_type,
+                &self.types,
+            )?;
+
+            // TODO actually support generics here
+            let type_ = types::Type::new(types::TypeKind::IndirectCallable(
+                types::interfaces::InstantiatedInterfaceId::new(
+                    interface_id,
+                    types::generics::TypeArguments::new_empty(),
+                ),
+                function.name,
+            ));
+            let type_id = self.types.add(type_);
+
             functions.insert(
                 function.name,
                 types::interfaces::FunctionDeclaration {
-                    return_type: resolve_type(
-                        &self.root_module_declaration,
-                        module_path,
-                        &function.return_type,
-                    )?,
+                    type_id,
+                    return_type: self.types.add(return_type),
                     arguments: function
                         .arguments
                         .iter()
@@ -295,7 +310,9 @@ impl DeclarationChecker {
             interface_id,
             types::interfaces::Interface {
                 id: interface_id,
-                type_: types::Type::new(types::TypeKind::Interface(interface_id)),
+                type_id: self
+                    .types
+                    .add(types::Type::new(types::TypeKind::Interface(interface_id))),
                 functions,
             },
         );
@@ -318,8 +335,12 @@ impl DeclarationChecker {
         ));
 
         for field in &struct_.fields {
-            let field_type =
-                resolve_type(&self.root_module_declaration, module_path, &field.type_)?;
+            let field_type = resolve_type(
+                &self.root_module_declaration,
+                module_path,
+                &field.type_,
+                &self.types,
+            )?;
             let field_type_id = self.types.add(field_type);
             fields.push(types::structs::StructField {
                 type_: field_type_id,
@@ -335,13 +356,13 @@ impl DeclarationChecker {
                 id: struct_id,
                 fields,
                 impls: vec![],
-                type_: struct_type,
-                instance_type: types::Type::new(types::TypeKind::Object(
+                type_id: self.types.add(struct_type),
+                instance_type: self.types.add(types::Type::new(types::TypeKind::Object(
                     types::structs::InstantiatedStructId::new(
                         struct_id,
                         types::generics::TypeArguments::new_empty(),
                     ),
-                )),
+                ))),
                 implemented_interfaces: HashMap::new(),
             },
         );
@@ -358,7 +379,9 @@ impl DeclarationChecker {
         if function_declaration.ast.name == *"main" && visibility == ast::Visibility::Export {
             if function_declaration.arguments.len() == 1 {
                 if let Some(argument) = function_declaration.arguments.first() {
-                    if let types::TypeKind::Array(array_item_type) = argument.type_.kind() {
+                    if let types::TypeKind::Array(array_item_type) =
+                        self.types.get(argument.type_id).kind()
+                    {
                         if let types::TypeKind::Object(instantiated_struct_id) =
                             array_item_type.kind()
                         {
@@ -386,23 +409,25 @@ impl DeclarationChecker {
     }
 
     fn type_check_argument(
-        &self,
+        &mut self,
         argument: &ast::Argument,
         current_module: types::modules::ModuleId,
     ) -> Result<types::functions::Argument, TypeCheckError> {
+        let type_ = resolve_type(
+            &self.root_module_declaration,
+            current_module,
+            &argument.type_,
+            &self.types,
+        )?;
         Ok(types::functions::Argument {
             name: argument.name,
-            type_: resolve_type(
-                &self.root_module_declaration,
-                current_module,
-                &argument.type_,
-            )?,
+            type_id: self.types.add(type_),
             position: argument.position,
         })
     }
 
     fn type_check_associated_function_declaration(
-        &self,
+        &mut self,
         function: &ast::Function,
         current_module: types::modules::ModuleId,
         self_type: types::structs::StructId,
@@ -414,16 +439,23 @@ impl DeclarationChecker {
             arguments.push(self.type_check_argument(argument, current_module)?);
         }
 
+        let return_type = resolve_type(
+            &self.root_module_declaration,
+            current_module,
+            &function.return_type,
+            &self.types,
+        )?;
+        let id = types::functions::FunctionId::InStruct(self_type, function.name);
         Ok(DeclaredFunction {
-            id: types::functions::FunctionId::InStruct(self_type, function.name),
+            id,
+            // TODO support generic functions
+            type_id: self
+                .types
+                .add(types::Type::new(types::TypeKind::Callable(id))),
             module_name: current_module,
             arguments,
             // TODO figure out the correct error location here
-            return_type: resolve_type(
-                &self.root_module_declaration,
-                current_module,
-                &function.return_type,
-            )?,
+            return_type: self.types.add(return_type),
             ast: function.clone(),
             position,
             visibility: Self::convert_visibility(function.visibility),
@@ -431,7 +463,7 @@ impl DeclarationChecker {
     }
 
     fn type_check_function_declaration(
-        &self,
+        &mut self,
         function: &ast::Function,
         module_path: types::modules::ModuleId,
         position: ast::SourceSpan,
@@ -439,24 +471,38 @@ impl DeclarationChecker {
         let mut arguments = vec![];
 
         for arg in &function.arguments {
+            let type_ = resolve_type(
+                &self.root_module_declaration,
+                module_path,
+                &arg.type_,
+                &self.types,
+            )
+            .unwrap();
+
             arguments.push(types::functions::Argument {
                 name: arg.name,
-                type_: resolve_type(&self.root_module_declaration, module_path, &arg.type_)
-                    .unwrap(),
+                type_id: self.types.add(type_),
                 position: arg.position,
             });
         }
 
+        let return_type = resolve_type(
+            &self.root_module_declaration,
+            module_path,
+            &function.return_type,
+            &self.types,
+        )
+        .unwrap();
+        let id = types::functions::FunctionId::InModule(module_path, function.name);
         DeclaredFunction {
-            id: types::functions::FunctionId::InModule(module_path, function.name),
+            id,
+            // TODO support generic functions
+            type_id: self
+                .types
+                .add(types::Type::new(types::TypeKind::Callable(id))),
             module_name: module_path,
             arguments,
-            return_type: resolve_type(
-                &self.root_module_declaration,
-                module_path,
-                &function.return_type,
-            )
-            .unwrap(),
+            return_type: self.types.add(return_type),
             ast: function.clone(),
             position,
             visibility: Self::convert_visibility(function.visibility),

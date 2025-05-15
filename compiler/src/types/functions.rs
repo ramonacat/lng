@@ -3,7 +3,10 @@ use std::fmt::{Display, Formatter};
 use crate::{ast, identifier::Identifier};
 
 use super::{
-    Statement, Type, Visibility, generics::TypeArguments, modules::ModuleId, store::TypeId,
+    Statement, Visibility,
+    generics::TypeArguments,
+    modules::ModuleId,
+    store::{TypeId, TypeStore},
     structs::StructId,
 };
 
@@ -27,10 +30,6 @@ impl InstantiatedFunctionId {
 
     pub(crate) const fn new(id: FunctionId, tav: TypeArguments) -> Self {
         Self(id, tav)
-    }
-
-    pub(crate) const fn arguments(&self) -> &TypeArguments {
-        &self.1
     }
 }
 
@@ -66,28 +65,28 @@ pub struct Function {
     pub id: FunctionId,
     pub module_name: ModuleId,
     pub arguments: Vec<Argument>,
-    pub return_type: Type,
+    pub return_type: TypeId,
     pub body: FunctionBody,
     pub position: ast::SourceSpan,
     pub visibility: Visibility,
-    pub type_: Type,
+    pub type_id: TypeId,
 }
 
 impl Function {
-    pub(crate) fn type_(&self) -> Type {
-        self.type_.clone()
-    }
-
-    pub(crate) fn with_type_arguments(&self, argument_values: Vec<TypeId>) -> Self {
+    pub(crate) fn with_type_arguments(
+        &self,
+        argument_values: Vec<TypeId>,
+        types: &mut dyn TypeStore,
+    ) -> Self {
         Self {
             id: self.id,
             module_name: self.module_name,
             arguments: self.arguments.clone(),
-            return_type: self.return_type.clone(),
+            return_type: self.return_type,
             body: self.body.clone(),
             position: self.position,
             visibility: self.visibility,
-            type_: self.type_.with_type_arguments(argument_values),
+            type_id: types.add(types.get(self.type_id).with_type_arguments(argument_values)),
         }
     }
 }
@@ -101,12 +100,12 @@ pub enum FunctionBody {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Argument {
     pub name: Identifier,
-    pub type_: Type,
+    pub type_id: TypeId,
     pub position: ast::SourceSpan,
 }
 
 impl Display for Argument {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.name, self.type_)
+        write!(f, "{}: {}", self.name, self.type_id)
     }
 }

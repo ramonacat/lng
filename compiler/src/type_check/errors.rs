@@ -22,12 +22,12 @@ impl Display for TypeCheckError {
 #[derive(Debug)]
 pub enum TypeCheckErrorDescription {
     UnexpectedArgumentTypeInCall {
-        target: types::Type,
+        target: types::store::TypeId,
         argument_name: Identifier,
-        expected_type: types::Type,
-        actual_type: types::Type,
+        expected_type: types::store::TypeId,
+        actual_type: types::store::TypeId,
     },
-    IncorrectNumberOfArgumentsPassed(types::Type),
+    IncorrectNumberOfArgumentsPassed(types::store::TypeId),
     FunctionArgumentCannotBeVoid {
         argument_name: Identifier,
     },
@@ -39,12 +39,12 @@ pub enum TypeCheckErrorDescription {
     MismatchedAssignmentType {
         target_variable: Identifier,
         variable_type: types::Type,
-        assigned_type: types::Type,
+        assigned_type: types::store::TypeId,
     },
     CallingNotCallableItem(types::Type),
     MismatchedReturnType {
-        actual: types::Type,
-        expected: types::Type,
+        actual: types::store::TypeId,
+        expected: types::store::TypeId,
     },
 }
 

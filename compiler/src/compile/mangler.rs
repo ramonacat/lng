@@ -7,28 +7,25 @@ pub(super) fn mangle_type(type_: &types::Type) -> MangledIdentifier {
         types::TypeKind::Unit => todo!(),
         types::TypeKind::Object { .. } => todo!(),
         types::TypeKind::Array { .. } => todo!(),
-        types::TypeKind::Callable(_) => todo!(),
+        types::TypeKind::Callable(function_id) => match function_id {
+            types::functions::FunctionId::InModule(module_id, identifier) => mangle_item_name(
+                *module_id,
+                *identifier,
+                &types::generics::TypeArguments::new_empty(),
+                IdentifierKind::Function(*function_id),
+            ),
+            types::functions::FunctionId::InStruct(struct_id, identifier) => {
+                mangle_struct_item_name(
+                    *struct_id,
+                    *identifier,
+                    &types::generics::TypeArguments::new_empty(),
+                )
+            }
+        },
         types::TypeKind::U64 => todo!(),
         types::TypeKind::U8 => todo!(),
         types::TypeKind::Pointer(_) => todo!(),
         types::TypeKind::Struct(_) => todo!(),
-        types::TypeKind::Function(instantiated_function_id) => {
-            match instantiated_function_id.id() {
-                types::functions::FunctionId::InModule(module_id, identifier) => mangle_item_name(
-                    module_id,
-                    identifier,
-                    instantiated_function_id.arguments(),
-                    IdentifierKind::Function(instantiated_function_id.id()),
-                ),
-                types::functions::FunctionId::InStruct(struct_id, identifier) => {
-                    mangle_struct_item_name(
-                        struct_id,
-                        identifier,
-                        instantiated_function_id.arguments(),
-                    )
-                }
-            }
-        }
         types::TypeKind::IndirectCallable(_, _) => todo!(),
         types::TypeKind::InterfaceObject { .. } => todo!(),
         types::TypeKind::Generic(_) => todo!(),

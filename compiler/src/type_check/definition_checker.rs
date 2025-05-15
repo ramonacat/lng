@@ -127,11 +127,10 @@ impl DefinitionChecker {
         let struct_ = all_structs.get_mut(&struct_id).unwrap();
 
         for (name, impl_) in impls {
-            let field_type_id = self.types.borrow_mut().add(impl_.type_());
             struct_.fields.push(types::structs::StructField {
                 struct_id: struct_.id,
                 name: name.local(),
-                type_: field_type_id,
+                type_: impl_.type_id,
                 static_: true,
             });
             struct_.impls.push(name);
@@ -172,12 +171,7 @@ impl DefinitionChecker {
 
         Ok(types::functions::Function {
             id: declared_function.id,
-            type_: types::Type::new(types::TypeKind::Function(
-                types::functions::InstantiatedFunctionId::new(
-                    declared_function.id,
-                    types::generics::TypeArguments::new_empty(),
-                ),
-            )),
+            type_id: declared_function.type_id,
             module_name: declared_function.module_name,
             visibility: declared_function.visibility,
             arguments: declared_function
@@ -186,12 +180,12 @@ impl DefinitionChecker {
                 .map(|argument| {
                     Ok(types::functions::Argument {
                         name: argument.name,
-                        type_: argument.type_.clone(),
+                        type_id: argument.type_id,
                         position: argument.position,
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?,
-            return_type: declared_function.return_type.clone(),
+            return_type: declared_function.return_type,
             body,
             position: declared_function.position,
         })
@@ -224,20 +218,21 @@ impl DefinitionChecker {
                     &self.root_module_declaration,
                     declared_function.module_name,
                     type_,
+                    &*self.types.borrow(),
                 )?;
 
-                if !type_.can_assign_to(&checked_expression.type_, |id| {
+                if !type_.can_assign_to(self.types.borrow().get(checked_expression.type_id), |id| {
                     self.root_module_declaration.structs.get(&id).cloned()
                 }) {
                     return Err(TypeCheckErrorDescription::MismatchedAssignmentType {
                         target_variable: *name,
                         variable_type: type_,
-                        assigned_type: checked_expression.type_,
+                        assigned_type: checked_expression.type_id,
                     }
                     .at(expression.position));
                 }
 
-                locals.push_variable(*name, type_);
+                locals.push_variable(*name, self.types.borrow_mut().add(type_));
 
                 types::Statement::Let(types::LetStatement {
                     binding: *name,
@@ -252,10 +247,10 @@ impl DefinitionChecker {
                     declared_function.module_name,
                 )?;
 
-                if checked_expression.type_ != declared_function.return_type {
+                if checked_expression.type_id != declared_function.return_type {
                     return Err(TypeCheckErrorDescription::MismatchedReturnType {
-                        actual: checked_expression.type_,
-                        expected: declared_function.return_type.clone(),
+                        actual: checked_expression.type_id,
+                        expected: declared_function.return_type,
                     }
                     .at(expression.position));
                 }

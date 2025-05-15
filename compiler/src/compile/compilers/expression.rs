@@ -88,7 +88,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                 let value = self
                     .compiler
                     .items
-                    .get_or_instantiate_struct(&value_struct_id)
+                    .get_or_instantiate_struct(&value_struct_id, &mut self.compiler.types)
                     .unwrap()
                     .build_heap_instance(
                         &self.compiler.context,
@@ -156,13 +156,13 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             );
             self.compiler
                 .items
-                .get_or_instantiate_function(&instantiated_function_id)
+                .get_or_instantiate_function(&instantiated_function_id, &mut self.compiler.types)
                 .map(|x| {
                     self.compiler
                         .modules
                         .get_mut(module_id)
                         .unwrap()
-                        .get_or_create_function(x, &self.compiler.context);
+                        .get_or_create_function(x, &self.compiler.context, &self.compiler.types);
 
                     Value::Function(function_id)
                 })
@@ -172,12 +172,17 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
 
             self.compiler
                 .items
-                .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
-                    struct_id,
-                    types::generics::TypeArguments::new_empty(),
-                ))
+                .get_or_instantiate_struct(
+                    &types::structs::InstantiatedStructId::new(
+                        struct_id,
+                        types::generics::TypeArguments::new_empty(),
+                    ),
+                    &mut self.compiler.types,
+                )
                 .map(|x| {
-                    let types::TypeKind::Struct(x) = x.definition.type_.kind() else {
+                    let types::TypeKind::Struct(x) =
+                        self.compiler.types.get(x.definition.type_id).kind()
+                    else {
                         todo!();
                     };
                     let instantiated_struct_id =
@@ -217,7 +222,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
         let definition = self
             .compiler
             .items
-            .get_or_instantiate_function(&instantiated_function_id)
+            .get_or_instantiate_function(&instantiated_function_id, &mut self.compiler.types)
             .unwrap()
             .clone();
 
@@ -226,7 +231,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             .modules
             .get(definition.module_name)
             .unwrap()
-            .has_function(&definition.type_)
+            .has_function(definition.type_id)
         {
             self.compiler.compile_function(&definition).unwrap();
         }
@@ -236,7 +241,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             .modules
             .get_mut(module_path)
             .unwrap()
-            .get_or_create_function(&definition, &self.compiler.context);
+            .get_or_create_function(&definition, &self.compiler.context, &self.compiler.types);
 
         self.compiler
             .context
@@ -273,21 +278,23 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             )
             .map_err(|e| e.at(position))?;
         let call_result = call_result.as_any_value_enum();
-        let value = match definition.return_type.kind() {
+        let value = match self.compiler.types.get(definition.return_type).kind() {
             types::TypeKind::Unit => Value::Empty,
             types::TypeKind::Object(instantiated_struct_id) => {
                 let type_ = self
                     .compiler
                     .items
-                    .get_or_instantiate_struct(instantiated_struct_id)
+                    .get_or_instantiate_struct(
+                        &instantiated_struct_id.clone(),
+                        &mut self.compiler.types,
+                    )
                     .unwrap()
                     .definition
-                    .type_
-                    .clone();
+                    .type_id;
 
                 Value::Reference(RcValue::from_pointer(
                     call_result.into_pointer_value(),
-                    self.compiler.types.add(type_),
+                    type_,
                 ))
             }
             types::TypeKind::Array { .. } => todo!(),
@@ -296,7 +303,6 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             types::TypeKind::U8 => todo!(),
             types::TypeKind::Pointer(_) => todo!(),
             types::TypeKind::Struct(_) => todo!(),
-            types::TypeKind::Function(_) => todo!(),
             types::TypeKind::IndirectCallable(_, _) => todo!(),
             types::TypeKind::InterfaceObject { .. } => todo!(),
             types::TypeKind::Generic(_) => todo!(),

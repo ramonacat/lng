@@ -63,10 +63,13 @@ impl StringValue {
         let id = *TYPE_NAME_STRING;
 
         let literal_value = structs
-            .get_or_instantiate_struct(&types::structs::InstantiatedStructId::new(
-                id,
-                types::generics::TypeArguments::new_empty(),
-            ))
+            .get_or_instantiate_struct(
+                &types::structs::InstantiatedStructId::new(
+                    id,
+                    types::generics::TypeArguments::new_empty(),
+                ),
+                types,
+            )
             .unwrap()
             .build_heap_instance(context, &(name.to_string() + "_value"), field_values, types);
 

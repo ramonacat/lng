@@ -96,7 +96,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
 
             crate::types::structs::Struct {
                 id: struct_id,
-                type_: crate::types::Type::new_generic(
+                type_id: type_store.add(crate::types::Type::new_generic(
                     crate::types::TypeKind::Struct(
                         crate::types::structs::InstantiatedStructId::new(
                             struct_id,
@@ -104,13 +104,13 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
                         )
                     ),
                     type_arguments.clone(),
-                ),
-                instance_type: crate::types::Type::new_generic(
+                )),
+                instance_type: type_store.add(crate::types::Type::new_generic(
                     crate::types::TypeKind::Object(
                         crate::types::structs::InstantiatedStructId::new(struct_id, types::generics::TypeArguments::new_empty())
                     ),
                     type_arguments
-                ),
+                )),
                 fields: vec![#(#fields_gen),*],
                 impls: vec![],
                 implemented_interfaces: std::collections::HashMap::new(),
