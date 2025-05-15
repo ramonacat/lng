@@ -16,19 +16,19 @@ pub struct InstantiatedStructType<'ctx> {
     static_field_values: HashMap<Identifier, Value<'ctx>>,
 }
 
-pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::Type);
+pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::store::TypeId);
 
 impl<'ctx> StructInstance<'ctx> {
     pub(crate) const fn value(&self) -> PointerValue<'ctx> {
         self.0
     }
 
-    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: types::Type) -> Self {
+    pub(crate) const fn new(pointer: PointerValue<'ctx>, type_: types::store::TypeId) -> Self {
         Self(pointer, type_)
     }
 
-    pub(crate) fn type_(&self) -> types::Type {
-        self.1.clone()
+    pub(crate) const fn type_id(&self) -> types::store::TypeId {
+        self.1
     }
 }
 

@@ -82,7 +82,7 @@ impl ArrayValue {
             &unique_name(&["rc_array"]),
             &StructInstance::new(
                 array_value,
-                types::Type::new(types::TypeKind::Struct(
+                types.add(types::Type::new(types::TypeKind::Struct(
                     types::structs::InstantiatedStructId::new(
                         id,
                         types::generics::TypeArguments::new(vec![TypeArgument::new_value(
@@ -90,7 +90,7 @@ impl ArrayValue {
                             item_type_id,
                         )]),
                     ),
-                )),
+                ))),
             ),
             context,
             structs,

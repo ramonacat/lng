@@ -77,9 +77,8 @@ impl StringValue {
             name,
             &StructInstance::new(
                 literal_value,
-                types::Type::new(types::TypeKind::Struct(InstantiatedStructId::new(
-                    id,
-                    types::generics::TypeArguments::new_empty(),
+                types.add(types::Type::new(types::TypeKind::Struct(
+                    InstantiatedStructId::new(id, types::generics::TypeArguments::new_empty()),
                 ))),
             ),
             context,

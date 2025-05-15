@@ -55,7 +55,7 @@ impl<'ctx> RcValue<'ctx> {
             struct_instance.value().as_basic_value_enum(),
         );
 
-        let struct_instance_type_id = types.add(struct_instance.type_());
+        let struct_instance_type_id = struct_instance.type_id();
 
         let instantiated_struct_id = InstantiatedStructId::new(
             types::structs::StructId::InModule(

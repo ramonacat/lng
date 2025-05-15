@@ -101,7 +101,9 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                     &unique_name(&[&name.to_string(), "rc"]),
                     &StructInstance::new(
                         value,
-                        types::Type::new(types::TypeKind::Object(value_struct_id)),
+                        self.compiler
+                            .types
+                            .add(types::Type::new(types::TypeKind::Object(value_struct_id))),
                     ),
                     &self.compiler.context,
                     &mut self.compiler.items,
