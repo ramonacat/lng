@@ -38,6 +38,8 @@ extern "C" fn u64_to_string(arg: u64) -> *const BuiltinRc<BuiltinString> {
     let lng_rc = BuiltinRc {
         refcount: 1,
         pointee: Box::leak(Box::new(lng_string)),
+        // TODO we should point at the actual descriptor!
+        type_descriptor: std::ptr::null(),
     };
 
     Box::leak(Box::new(lng_rc))

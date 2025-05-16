@@ -92,7 +92,18 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
     let module_id_lit = Literal::string(&module_id);
     let struct_name_lit = Literal::string(&struct_name);
 
+    let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
+
+    let name = input.ident;
     quote::quote! {
+        impl #impl_generics #name #type_generics #where_clause {
+            pub(crate) fn struct_id() -> crate::types::structs::StructId {
+                let module_id = crate::types::modules::ModuleId::parse(#module_id_lit);
+                let struct_name = crate::identifier::Identifier::parse(#struct_name_lit);
+                crate::types::structs::StructId::InModule(module_id, struct_name)
+            }
+        }
+
         pub fn describe_structure(type_store: &mut dyn crate::types::store::TypeStore) -> crate::types::structs::Struct {
             #generics
             #(#declarations);*
@@ -114,7 +125,7 @@ pub fn builtin_struct(item: TokenStream) -> TokenStream {
                 )),
                 instance_type: type_store.add(crate::types::Type::new_generic(
                     crate::types::TypeKind::Object(
-                        crate::types::structs::InstantiatedStructId::new(struct_id, types::generics::TypeArguments::new_empty())
+                        crate::types::structs::InstantiatedStructId::new(struct_id, crate::types::generics::TypeArguments::new_empty())
                     ),
                     type_arguments
                 )),
@@ -147,14 +158,21 @@ fn to_lng_type(type_: &syn::Type, generic_type: Option<&str>) -> impl ToTokens {
                 return quote::quote! {crate::types::Type::u8()};
             }
 
-            todo!(
-                "{:?}",
-                path.path
-                    .segments
-                    .iter()
-                    .map(|x| x.ident.to_string())
-                    .collect::<Vec<_>>()
-            )
+            quote::quote! {
+                crate::types::Type::new(
+                    crate::types::TypeKind::Object(
+                        crate::types::structs::InstantiatedStructId::new(
+                            #path::struct_id(),
+                            crate::types::generics::TypeArguments::new_empty(),
+                        )
+                    )
+                )
+            }
+        }
+        syn::Type::BareFn(_fn_) => {
+            // TODO this is a hack, replace this with a callable type perhaps, once the language
+            // actually does support callables
+            quote::quote! {crate::types::Type::u8()}
         }
         _ => todo!(),
     }

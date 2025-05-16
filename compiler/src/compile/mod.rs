@@ -12,14 +12,19 @@ use std::{collections::HashMap, rc::Rc};
 use builtins::{
     array,
     rc::{self, RcValue},
-    string,
+    string, type_descriptor, vtable_entry,
 };
 use compilers::expression::ExpressionCompiler;
 use context::{AllItems, Builtins, CompilerContext};
 use errors::CompileError;
 use inkwell::{
-    basic_block::BasicBlock, context::Context, execution_engine::ExecutionEngine, module::Module,
+    basic_block::BasicBlock,
+    context::Context,
+    execution_engine::ExecutionEngine,
+    module::Module,
+    values::{BasicValue as _, FunctionValue, GlobalValue, PointerValue},
 };
+use itertools::Itertools as _;
 use mangler::{MangledIdentifier, mangle_module_id, mangle_type};
 use module::CompiledModule;
 use rand::Rng;
@@ -176,9 +181,11 @@ pub(crate) struct Compiler<'ctx> {
     items: AllItems<'ctx>,
     modules: Modules<'ctx>,
     types: types::store::MultiStore,
+    type_descriptors: HashMap<(types::store::TypeId, types::modules::ModuleId), GlobalValue<'ctx>>,
 }
 
 pub(crate) struct CompiledFunction<'ctx> {
+    llvm_function: FunctionValue<'ctx>,
     entry: BasicBlock<'ctx>,
     end: BasicBlock<'ctx>,
     scope: Rc<Scope<'ctx>>,
@@ -230,6 +237,14 @@ impl<'ctx> Compiler<'ctx> {
 
             structs.insert(*TYPE_NAME_STRING, string::describe_structure(&mut types));
             structs.insert(*TYPE_NAME_ARRAY, array::describe_structure(&mut types));
+            structs.insert(
+                vtable_entry::VTableEntry::struct_id(),
+                vtable_entry::describe_structure(&mut types),
+            );
+            structs.insert(
+                type_descriptor::BuiltinTypeDescriptor::struct_id(),
+                vtable_entry::describe_structure(&mut types),
+            );
 
             AllItems::new(structs, HashMap::new())
         });
@@ -248,6 +263,7 @@ impl<'ctx> Compiler<'ctx> {
             modules,
             items,
             types,
+            type_descriptors: HashMap::new(),
         }
     }
 
@@ -268,6 +284,14 @@ impl<'ctx> Compiler<'ctx> {
 
         // TODO should the array struct be declared in stdlib, like string?
         structs.insert(*TYPE_NAME_ARRAY, array::describe_structure(&mut self.types));
+        structs.insert(
+            vtable_entry::VTableEntry::struct_id(),
+            vtable_entry::describe_structure(&mut self.types),
+        );
+        structs.insert(
+            type_descriptor::BuiltinTypeDescriptor::struct_id(),
+            type_descriptor::describe_structure(&mut self.types),
+        );
 
         let rc_struct_id = types::structs::StructId::InModule(
             types::modules::ModuleId::parse("std"),
@@ -299,6 +323,7 @@ impl<'ctx> Compiler<'ctx> {
                     &mut self.types,
                 )
                 .unwrap()
+                // TODO can we get rid of the clone here?
                 .clone();
             self.compile_function(&main).unwrap();
             let mangled_main = mangle_type(self.types.get(main.type_id));
@@ -335,10 +360,15 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_function(
         &mut self,
         handle: &types::functions::Function,
-    ) -> Result<(), CompileError> {
+    ) -> Result<Option<PointerValue<'ctx>>, CompileError> {
         let types::functions::FunctionBody::Statements(statements) = &handle.body else {
-            return Ok(());
+            return Ok(None);
         };
+
+        let mut old_builder = self.context.llvm_context.create_builder();
+        // TODO this is a hack to avoid problems when compiling a function while another one is
+        // being compiled. We should have a builder per CompiledFunction instead
+        std::mem::swap(&mut self.context.builder, &mut old_builder);
 
         let module_path = handle.module_name;
 
@@ -347,8 +377,11 @@ impl<'ctx> Compiler<'ctx> {
         let module = self.modules.get_mut(module_path).unwrap();
 
         let mut compiled_function =
-            module.begin_compile_function(handle, &self.context, &mut self.items, &mut self.types);
+            module.begin_compile_function(handle, &self.context, &mut self.types, &mut self.items);
 
+        self.context
+            .builder
+            .position_at_end(compiled_function.entry);
         self.compile_statements(statements, module_path, &mut compiled_function)?;
 
         let cleanup_label = rc::build_cleanup(
@@ -381,22 +414,26 @@ impl<'ctx> Compiler<'ctx> {
             .builder
             .build_unconditional_branch(cleanup_label)
             .unwrap();
+
         self.context.builder.position_at_end(compiled_function.end);
 
-        if let Some(return_value) = compiled_function
-            .return_value
-            .as_ref()
-            .map(Value::as_basic_value)
-        {
+        if let Some(return_value) = compiled_function.return_value.as_ref() {
             self.context
                 .builder
-                .build_return(Some(&return_value))
+                .build_return(Some(&return_value.as_basic_value()))
                 .unwrap();
         } else {
             self.context.builder.build_return(None).unwrap();
         }
 
-        Ok(())
+        std::mem::swap(&mut self.context.builder, &mut old_builder);
+
+        Ok(Some(
+            compiled_function
+                .llvm_function
+                .as_global_value()
+                .as_pointer_value(),
+        ))
     }
 
     fn compile_statements(
@@ -443,5 +480,147 @@ impl<'ctx> Compiler<'ctx> {
         }
 
         Ok(())
+    }
+
+    // TODO this needs to be refactored, but things have to be moved around a bit so the borrows
+    // can be made sensilby
+    #[allow(clippy::too_many_lines)]
+    pub fn build_vtable(
+        &mut self,
+        struct_: &types::structs::InstantiatedStructId,
+        module_id: types::modules::ModuleId,
+    ) -> GlobalValue<'ctx> {
+        let struct_ = self
+            .items
+            .get_or_instantiate_struct(struct_, &mut self.types)
+            .unwrap();
+        let struct_type_id = struct_.definition.type_id;
+
+        let functions = struct_
+            .static_field_values
+            .iter()
+            .filter_map(|x| match x.1 {
+                Value::Empty
+                | Value::Primitive(_, _)
+                | Value::Reference(_)
+                | Value::InstantiatedStruct(_) => None,
+                Value::Function(function_id) => Some(*function_id),
+            })
+            .collect_vec();
+
+        let mut callables = vec![];
+
+        for function_id in functions {
+            let function = self
+                .items
+                .get_or_instantiate_function(
+                    &types::functions::InstantiatedFunctionId::new(
+                        function_id,
+                        types::generics::TypeArguments::new_empty(),
+                    ),
+                    &mut self.types,
+                )
+                // TODO can we get rid of this clone?
+                .unwrap()
+                .clone();
+
+            let compiled_function = self.compile_function(&function).unwrap().unwrap();
+            callables.push((function.type_id, compiled_function));
+        }
+
+        let vtable_entry_struct = vtable_entry::describe_structure(&mut self.types);
+        let vtable_entry_llvm_type = self
+            .context
+            .make_struct_type(&vtable_entry_struct.fields, &self.types);
+        let vtable_entry_istruct_id = types::structs::InstantiatedStructId::new_no_generics(
+            vtable_entry::VTableEntry::struct_id(),
+        );
+
+        let vtable_array_type = vtable_entry_llvm_type
+            .as_llvm_type()
+            .array_type(u32::try_from(callables.len()).unwrap());
+
+        if let Some(descriptor) = self.type_descriptors.get(&(struct_type_id, module_id)) {
+            return *descriptor;
+        }
+        let instantiated_vtable_entry = self
+            .items
+            .get_or_instantiate_struct(&vtable_entry_istruct_id, &mut self.types)
+            .unwrap();
+        let llvm_module = &self.modules.get(module_id).unwrap().llvm_module;
+        let vtable = llvm_module.add_global(
+            vtable_array_type,
+            None,
+            &unique_name(&["vtable", &format!("{struct_type_id}")]),
+        );
+
+        vtable.set_initializer(
+            &vtable_entry_llvm_type.as_llvm_type().const_array(
+                &callables
+                    .iter()
+                    .map(|x| {
+                        let mut field_values = HashMap::new();
+
+                        field_values.insert(
+                            Identifier::parse("type_store_id"),
+                            self.context.const_u64(x.0.store_id()).as_basic_value_enum(),
+                        );
+                        field_values.insert(
+                            Identifier::parse("type_id"),
+                            self.context.const_u64(x.0.type_id()).as_basic_value_enum(),
+                        );
+                        field_values
+                            .insert(Identifier::parse("callback"), x.1.as_basic_value_enum());
+
+                        instantiated_vtable_entry.build_value(
+                            field_values,
+                            &self.types,
+                            &self.context,
+                        )
+                    })
+                    .collect_vec(),
+            ),
+        );
+
+        let type_descriptor_struct = type_descriptor::describe_structure(&mut self.types);
+
+        let type_descriptor_istruct_id = types::structs::InstantiatedStructId::new_no_generics(
+            type_descriptor::BuiltinTypeDescriptor::struct_id(),
+        );
+
+        let instantitated_type_descriptor = self
+            .items
+            .get_or_instantiate_struct(&type_descriptor_istruct_id, &mut self.types)
+            .unwrap();
+
+        let type_descriptor_llvm_type = self
+            .context
+            .make_struct_type(&type_descriptor_struct.fields, &self.types);
+
+        let global = llvm_module.add_global(
+            type_descriptor_llvm_type.as_llvm_type(),
+            None,
+            &unique_name(&["type_descriptor", &format!("{struct_type_id}")]),
+        );
+
+        let mut field_values = HashMap::new();
+
+        field_values.insert(Identifier::parse("vtable"), vtable.as_basic_value_enum());
+        field_values.insert(
+            Identifier::parse("vtable_size"),
+            self.context
+                .const_u64(callables.len() as u64)
+                .as_basic_value_enum(),
+        );
+
+        global.set_initializer(&instantitated_type_descriptor.build_value(
+            field_values,
+            &self.types,
+            &self.context,
+        ));
+
+        self.type_descriptors
+            .insert((struct_type_id, module_id), global);
+        global
     }
 }

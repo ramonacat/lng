@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug};
 
-use inkwell::values::{BasicValue as _, BasicValueEnum, PointerValue};
+use inkwell::values::{BasicValue as _, BasicValueEnum, PointerValue, StructValue};
 use itertools::Itertools;
 
 use crate::{identifier::Identifier, types};
@@ -13,7 +13,7 @@ use super::{
 
 pub struct InstantiatedStructType<'ctx> {
     pub(crate) definition: types::structs::Struct,
-    static_field_values: HashMap<Identifier, Value<'ctx>>,
+    pub(crate) static_field_values: HashMap<Identifier, Value<'ctx>>,
 }
 
 pub struct StructInstance<'ctx>(PointerValue<'ctx>, types::store::TypeId);
@@ -46,6 +46,27 @@ impl Debug for InstantiatedStructType<'_> {
 }
 
 impl<'ctx> InstantiatedStructType<'ctx> {
+    pub fn build_value(
+        &self,
+        mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
+        types: &dyn types::store::TypeStore,
+        context: &CompilerContext<'ctx>,
+    ) -> StructValue<'ctx> {
+        let llvm_type = context.make_struct_type(&self.definition.fields, types);
+
+        dbg!(&field_values, self.definition.id);
+
+        let mut ordered_field_values = vec![];
+        for field in self.definition.fields.iter().filter(|x| !x.static_) {
+            ordered_field_values.push(field_values.remove(&field.name).unwrap());
+        }
+        assert!(field_values.is_empty());
+
+        llvm_type
+            .as_llvm_type()
+            .const_named_struct(&ordered_field_values)
+    }
+
     pub fn build_heap_instance(
         &self,
         context: &CompilerContext<'ctx>,
@@ -63,6 +84,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
             )
             .unwrap();
 
+        dbg!(self.definition.id, &field_values);
         for field in self.definition.fields.iter().filter(|x| !x.static_) {
             let field_value = field_values.remove(&field.name).unwrap();
             let (_, field_pointer) = llvm_type.field_pointer(field.name, instance, context);
@@ -72,6 +94,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
                 .build_store(field_pointer, field_value)
                 .unwrap();
         }
+        assert!(field_values.is_empty());
 
         instance
     }
@@ -188,6 +211,7 @@ pub enum Value<'ctx> {
     Empty,
     Primitive(types::structs::InstantiatedStructId, BasicValueEnum<'ctx>),
     Reference(RcValue<'ctx>),
+    // TODO this must be InstantiatedFunctionId!
     Function(types::functions::FunctionId),
     InstantiatedStruct(types::structs::InstantiatedStructId),
 }

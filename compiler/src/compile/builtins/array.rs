@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use compiler_derive::BuiltinStruct;
-use inkwell::values::BasicValue;
+use inkwell::values::{BasicValue, PointerValue};
 
 use crate::{
     compile::{
@@ -40,11 +40,27 @@ pub struct BuiltinArray<TItem> {
 pub struct ArrayValue {}
 
 impl ArrayValue {
-    pub fn build_instance<'ctx>(
+    pub(crate) fn instantiated_struct_id_for(
+        item_type_id: types::store::TypeId,
+    ) -> types::structs::InstantiatedStructId {
+        let id = *TYPE_NAME_ARRAY;
+
+        types::structs::InstantiatedStructId::new(
+            id,
+            types::generics::TypeArguments::new(vec![TypeArgument::new_value(
+                Identifier::parse("TPointee"),
+                item_type_id,
+            )]),
+        )
+    }
+
+    pub(crate) fn build_instance<'ctx>(
         item_type_id: types::store::TypeId,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
         types: &mut dyn types::store::TypeStore,
+        // TODO ideally the vtable should be created here, instead of being passed as an argument
+        vtable: PointerValue<'ctx>,
     ) -> RcValue<'ctx> {
         let items_type = context.make_object_type(types.get(item_type_id));
         // TODO add freeing of this array once destructors are in place
@@ -62,19 +78,8 @@ impl ArrayValue {
         field_values.insert(*LENGTH_FIELD, context.const_u64(0).as_basic_value_enum());
         field_values.insert(*CAPACITY_FIELD, context.const_u64(1).as_basic_value_enum());
 
-        let id = *TYPE_NAME_ARRAY;
-
         let array_value = structs
-            .get_or_instantiate_struct(
-                &types::structs::InstantiatedStructId::new(
-                    id,
-                    types::generics::TypeArguments::new(vec![TypeArgument::new_value(
-                        Identifier::parse("TPointee"),
-                        item_type_id,
-                    )]),
-                ),
-                types,
-            )
+            .get_or_instantiate_struct(&Self::instantiated_struct_id_for(item_type_id), types)
             .unwrap()
             .build_heap_instance(context, &unique_name(&["string"]), field_values, types);
 
@@ -84,7 +89,7 @@ impl ArrayValue {
                 array_value,
                 types.add(types::Type::new(types::TypeKind::Struct(
                     types::structs::InstantiatedStructId::new(
-                        id,
+                        *TYPE_NAME_ARRAY,
                         types::generics::TypeArguments::new(vec![TypeArgument::new_value(
                             Identifier::parse("TPointee"),
                             item_type_id,
@@ -92,6 +97,7 @@ impl ArrayValue {
                     ),
                 ))),
             ),
+            vtable,
             context,
             structs,
             types,

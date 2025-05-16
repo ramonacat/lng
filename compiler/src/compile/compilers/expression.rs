@@ -85,17 +85,19 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                     })
                     .collect::<Result<HashMap<_, _>, _>>()?;
                 let value_struct_id = types::structs::InstantiatedStructId::new(name, target_tav);
-                let value = self
+                let value_struct = self
                     .compiler
                     .items
-                    .get_or_instantiate_struct(&value_struct_id, &mut self.compiler.types)
-                    .unwrap()
-                    .build_heap_instance(
-                        &self.compiler.context,
-                        &unique_name(&[&name.to_string()]),
-                        field_values,
-                        &self.compiler.types,
-                    );
+                    .get_or_instantiate_struct(&value_struct_id.clone(), &mut self.compiler.types)
+                    .unwrap();
+                let value = value_struct.build_heap_instance(
+                    &self.compiler.context,
+                    &unique_name(&[&name.to_string()]),
+                    field_values,
+                    &self.compiler.types,
+                );
+
+                let vtable = self.compiler.build_vtable(&value_struct_id, module_path);
 
                 let rc = RcValue::build_init(
                     &unique_name(&[&name.to_string(), "rc"]),
@@ -105,6 +107,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                             .types
                             .add(types::Type::new(types::TypeKind::Object(value_struct_id))),
                     ),
+                    vtable.as_pointer_value(),
                     &self.compiler.context,
                     &mut self.compiler.items,
                     &mut self.compiler.types,

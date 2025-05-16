@@ -16,6 +16,8 @@ use crate::{
     types::{self, structs::InstantiatedStructId},
 };
 
+use super::type_descriptor::BuiltinTypeDescriptor;
+
 #[derive(BuiltinStruct)]
 #[module_id("std")]
 #[struct_name("rc")]
@@ -24,6 +26,7 @@ use crate::{
 pub struct BuiltinRc<TPointee> {
     pub refcount: u64,
     pub pointee: *const TPointee,
+    pub type_descriptor: *const BuiltinTypeDescriptor,
 }
 
 #[derive(Debug, Clone)]
@@ -35,12 +38,15 @@ pub struct RcValue<'ctx> {
 
 static REFCOUNT_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("refcount"));
 static POINTEE_FIELD: LazyLock<Identifier> = LazyLock::new(|| Identifier::parse("pointee"));
+static TYPE_DESCRIPTOR_FIELD: LazyLock<Identifier> =
+    LazyLock::new(|| Identifier::parse("type_descriptor"));
 
 impl<'ctx> RcValue<'ctx> {
     #[must_use]
     pub fn build_init<'src>(
         name: &str,
         struct_instance: &StructInstance<'ctx>,
+        vtable: PointerValue<'ctx>,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
         types: &mut dyn types::store::TypeStore,
@@ -54,6 +60,7 @@ impl<'ctx> RcValue<'ctx> {
             *POINTEE_FIELD,
             struct_instance.value().as_basic_value_enum(),
         );
+        field_values.insert(*TYPE_DESCRIPTOR_FIELD, vtable.as_basic_value_enum());
 
         let struct_instance_type_id = struct_instance.type_id();
 
@@ -116,6 +123,7 @@ impl<'ctx> RcValue<'ctx> {
         structs: &AllItems<'ctx>,
         types: &dyn types::store::TypeStore,
     ) -> PointerValue<'ctx> {
+        dbg!(&self.instantiated_struct_id);
         structs
             .get_struct(&self.instantiated_struct_id)
             .unwrap()

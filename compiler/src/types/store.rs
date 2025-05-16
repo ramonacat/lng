@@ -6,6 +6,15 @@ static STORE_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TypeId(u64, u64);
+impl TypeId {
+    pub(crate) const fn store_id(&self) -> u64 {
+        self.0
+    }
+
+    pub(crate) const fn type_id(&self) -> u64 {
+        self.1
+    }
+}
 
 impl Display for TypeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -98,8 +107,6 @@ impl TypeStore for MultiStore {
     }
 
     fn get(&self, id: TypeId) -> &Type {
-        dbg!(id, self.default.store_id, self.secondary.keys());
-
         if id.0 == self.default.store_id {
             return self.default.get(id);
         }

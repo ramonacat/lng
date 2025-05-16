@@ -71,6 +71,10 @@ impl InstantiatedStructId {
     pub(crate) const fn new(id: StructId, tav: TypeArguments) -> Self {
         Self(id, tav)
     }
+
+    pub(crate) const fn new_no_generics(struct_id: StructId) -> Self {
+        Self(struct_id, TypeArguments::new_empty())
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -1,4 +1,4 @@
-use std::{collections::HashSet, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use super::{
     CompiledFunction, Scope, Value, builtins,
@@ -9,6 +9,7 @@ use super::{
 };
 use crate::{identifier::Identifier, types};
 use inkwell::{
+    AddressSpace,
     module::{Linkage, Module},
     values::FunctionValue,
 };
@@ -26,9 +27,10 @@ impl types::functions::Function {
 }
 
 pub struct CompiledModule<'ctx> {
-    llvm_module: Module<'ctx>,
+    pub(super) llvm_module: Module<'ctx>,
     scope: Rc<Scope<'ctx>>,
-    functions: HashSet<types::store::TypeId>,
+    // TODO get rid of the refcell
+    functions: RefCell<HashSet<types::store::TypeId>>,
 }
 
 impl std::fmt::Debug for CompiledModule<'_> {
@@ -42,7 +44,7 @@ impl<'ctx> CompiledModule<'ctx> {
         Self {
             llvm_module,
             scope,
-            functions: HashSet::new(),
+            functions: RefCell::new(HashSet::new()),
         }
     }
 
@@ -85,13 +87,13 @@ impl<'ctx> CompiledModule<'ctx> {
     }
 
     pub(crate) fn begin_compile_function(
-        &mut self,
+        &self,
         function: &types::functions::Function,
         context: &CompilerContext<'ctx>,
-        structs: &mut AllItems<'ctx>,
         types: &mut dyn types::store::TypeStore,
+        items: &mut AllItems<'ctx>,
     ) -> super::CompiledFunction<'ctx> {
-        self.functions.insert(function.type_id);
+        self.functions.borrow_mut().insert(function.type_id);
 
         let mut rcs = vec![];
         let scope = self.scope.child();
@@ -106,10 +108,11 @@ impl<'ctx> CompiledModule<'ctx> {
 
         for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
         {
-            let value = match types.get(argument.type_id).kind() {
+            // TODO get rid of the clone here!
+            let value = match types.get(argument.type_id).kind().clone() {
                 types::TypeKind::Unit => todo!(),
                 types::TypeKind::Object(instantiated_struct_id) => {
-                    let struct_instance_type = structs
+                    let struct_instance_type = items
                         .get_or_instantiate_struct(&instantiated_struct_id.clone(), types)
                         .unwrap()
                         .definition
@@ -125,10 +128,15 @@ impl<'ctx> CompiledModule<'ctx> {
                 }
                 types::TypeKind::Array(element_type_id) => {
                     Value::Reference(builtins::array::ArrayValue::build_instance(
-                        *element_type_id,
+                        element_type_id,
                         context,
-                        structs,
+                        items,
                         types,
+                        // TODO we need the actual vtable here!
+                        context
+                            .llvm_context
+                            .ptr_type(AddressSpace::default())
+                            .const_null(),
                     ))
                 }
                 types::TypeKind::Callable { .. } => todo!(),
@@ -160,6 +168,7 @@ impl<'ctx> CompiledModule<'ctx> {
         rc::build_prologue(&rcs, context, types);
 
         CompiledFunction {
+            llvm_function,
             scope,
             entry: entry_block,
             end: end_block,
@@ -175,7 +184,7 @@ impl<'ctx> CompiledModule<'ctx> {
     }
 
     pub(crate) fn has_function(&self, type_id: types::store::TypeId) -> bool {
-        self.functions.contains(&type_id)
+        self.functions.borrow().contains(&type_id)
     }
 
     pub(crate) fn get_or_create_function(

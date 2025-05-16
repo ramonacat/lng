@@ -62,7 +62,13 @@ impl<'ctx> AllItems<'ctx> {
         id: &types::structs::InstantiatedStructId,
         types: &mut dyn types::store::TypeStore,
     ) {
-        self.instantiated_structs
+        let rc_id = types::structs::StructId::InModule(
+            types::modules::ModuleId::parse("std"),
+            Identifier::parse("rc"),
+        );
+
+        let item_id = self
+            .instantiated_structs
             .entry(id.clone())
             .or_insert_with(|| {
                 let instantiated = self.structs.get(&id.id()).unwrap().with_type_arguments(
@@ -71,7 +77,29 @@ impl<'ctx> AllItems<'ctx> {
                 );
 
                 InstantiatedStructType::new(instantiated, HashMap::new())
-            });
+            })
+            .definition
+            .instance_type;
+
+        if id.id() != rc_id {
+            let tav = vec![types::generics::TypeArgument::new_value(
+                Identifier::parse("TPointee"),
+                item_id,
+            )];
+            self.instantiated_structs
+                .entry(types::structs::InstantiatedStructId::new(
+                    rc_id,
+                    types::generics::TypeArguments::new(tav),
+                ))
+                .or_insert_with(|| {
+                    let instantiated = self.structs.get(&rc_id).unwrap().with_type_arguments(
+                        id.argument_values().iter().map(|x| x.unwrap()).collect(),
+                        types,
+                    );
+
+                    InstantiatedStructType::new(instantiated, HashMap::new())
+                });
+        }
     }
 
     pub(crate) fn get_or_instantiate_function(

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use compiler_derive::BuiltinStruct;
-use inkwell::values::BasicValue as _;
+use inkwell::{AddressSpace, values::BasicValue as _};
 
 use crate::{
     compile::{
@@ -81,6 +81,11 @@ impl StringValue {
                     InstantiatedStructId::new(id, types::generics::TypeArguments::new_empty()),
                 ))),
             ),
+            // TODO we need to get the actual vtable here!
+            context
+                .llvm_context
+                .ptr_type(AddressSpace::default())
+                .const_null(),
             context,
             structs,
             types,
