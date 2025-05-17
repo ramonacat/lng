@@ -19,6 +19,7 @@ use context::{AllItems, Builtins, CompilerContext};
 use errors::CompileError;
 use inkwell::{
     basic_block::BasicBlock,
+    builder::Builder,
     context::Context,
     execution_engine::ExecutionEngine,
     module::Module,
@@ -186,6 +187,7 @@ pub(crate) struct Compiler<'ctx> {
 
 pub(crate) struct CompiledFunction<'ctx> {
     llvm_function: FunctionValue<'ctx>,
+    builder: Builder<'ctx>,
     entry: BasicBlock<'ctx>,
     end: BasicBlock<'ctx>,
     scope: Rc<Scope<'ctx>>,
@@ -256,7 +258,6 @@ impl<'ctx> Compiler<'ctx> {
         Self {
             context: CompilerContext {
                 llvm_context: context,
-                builder: context.create_builder(),
                 builtins,
             },
             global_scope,
@@ -365,11 +366,6 @@ impl<'ctx> Compiler<'ctx> {
             return Ok(None);
         };
 
-        let mut old_builder = self.context.llvm_context.create_builder();
-        // TODO this is a hack to avoid problems when compiling a function while another one is
-        // being compiled. We should have a builder per CompiledFunction instead
-        std::mem::swap(&mut self.context.builder, &mut old_builder);
-
         let module_path = handle.module_name;
 
         self.get_or_create_module(module_path);
@@ -379,13 +375,14 @@ impl<'ctx> Compiler<'ctx> {
         let mut compiled_function =
             module.begin_compile_function(handle, &self.context, &mut self.types, &mut self.items);
 
-        self.context
+        compiled_function
             .builder
             .position_at_end(compiled_function.entry);
         self.compile_statements(statements, module_path, &mut compiled_function)?;
 
         let cleanup_label = rc::build_cleanup(
             &self.context,
+            &compiled_function,
             &compiled_function
                 .rcs
                 .iter()
@@ -407,26 +404,26 @@ impl<'ctx> Compiler<'ctx> {
             compiled_function.end,
             &mut self.types,
         );
-        self.context
+        compiled_function
             .builder
             .position_at_end(compiled_function.entry);
-        self.context
+        compiled_function
             .builder
             .build_unconditional_branch(cleanup_label)
             .unwrap();
 
-        self.context.builder.position_at_end(compiled_function.end);
+        compiled_function
+            .builder
+            .position_at_end(compiled_function.end);
 
         if let Some(return_value) = compiled_function.return_value.as_ref() {
-            self.context
+            compiled_function
                 .builder
                 .build_return(Some(&return_value.as_basic_value()))
                 .unwrap();
         } else {
-            self.context.builder.build_return(None).unwrap();
+            compiled_function.builder.build_return(None).unwrap();
         }
-
-        std::mem::swap(&mut self.context.builder, &mut old_builder);
 
         Ok(Some(
             compiled_function

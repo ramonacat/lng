@@ -95,7 +95,6 @@ impl<'ctx> CompiledModule<'ctx> {
     ) -> super::CompiledFunction<'ctx> {
         self.functions.borrow_mut().insert(function.type_id);
 
-        let mut rcs = vec![];
         let scope = self.scope.child();
 
         let llvm_function = self.get_or_create_function(function, context, types);
@@ -104,7 +103,22 @@ impl<'ctx> CompiledModule<'ctx> {
             .llvm_context
             .append_basic_block(llvm_function, "entry");
 
-        context.builder.position_at_end(entry_block);
+        let end_block = context
+            .llvm_context
+            .append_basic_block(llvm_function, "end");
+
+        let builder = context.llvm_context.create_builder();
+
+        builder.position_at_end(entry_block);
+        let mut compiled_function = CompiledFunction {
+            llvm_function,
+            scope: scope.clone(),
+            entry: entry_block,
+            end: end_block,
+            rcs: vec![],
+            return_value: None,
+            builder,
+        };
 
         for (argument, argument_value) in function.arguments.iter().zip(llvm_function.get_params())
         {
@@ -122,7 +136,7 @@ impl<'ctx> CompiledModule<'ctx> {
                         argument_value.into_pointer_value(),
                         struct_instance_type,
                     );
-                    rcs.push(rc.clone());
+                    compiled_function.rcs.push(rc.clone());
 
                     Value::Reference(rc)
                 }
@@ -130,6 +144,7 @@ impl<'ctx> CompiledModule<'ctx> {
                     Value::Reference(builtins::array::ArrayValue::build_instance(
                         element_type_id,
                         context,
+                        &compiled_function,
                         items,
                         types,
                         // TODO we need the actual vtable here!
@@ -159,22 +174,11 @@ impl<'ctx> CompiledModule<'ctx> {
             scope.set_value(argument.name, value);
         }
 
-        let end_block = context
-            .llvm_context
-            .append_basic_block(llvm_function, "end");
+        compiled_function.builder.position_at_end(entry_block);
 
-        context.builder.position_at_end(entry_block);
+        rc::build_prologue(&compiled_function, &compiled_function.rcs, context, types);
 
-        rc::build_prologue(&rcs, context, types);
-
-        CompiledFunction {
-            llvm_function,
-            scope,
-            entry: entry_block,
-            end: end_block,
-            rcs,
-            return_value: None,
-        }
+        compiled_function
     }
 
     pub(crate) fn finalize(self) -> Module<'ctx> {

@@ -5,6 +5,7 @@ use inkwell::{AddressSpace, values::BasicValue as _};
 
 use crate::{
     compile::{
+        CompiledFunction,
         context::{AllItems, CompilerContext},
         value::StructInstance,
     },
@@ -31,19 +32,20 @@ pub struct StringValue {
 
 impl StringValue {
     #[must_use]
-    pub const fn new_literal(value: String) -> Self {
+    pub(crate) const fn new_literal(value: String) -> Self {
         Self { value }
     }
 
     #[must_use]
-    pub fn build_instance<'ctx>(
+    pub(crate) fn build_instance<'ctx>(
         &self,
         name: &str,
+        compiled_function: &CompiledFunction<'ctx>,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
         types: &mut dyn types::store::TypeStore,
     ) -> RcValue<'ctx> {
-        let characters_value = context
+        let characters_value = compiled_function
             .builder
             .build_global_string_ptr(&self.value, &(name.to_string() + "_global"))
             .unwrap();
@@ -71,7 +73,13 @@ impl StringValue {
                 types,
             )
             .unwrap()
-            .build_heap_instance(context, &(name.to_string() + "_value"), field_values, types);
+            .build_heap_instance(
+                compiled_function,
+                context,
+                &(name.to_string() + "_value"),
+                field_values,
+                types,
+            );
 
         RcValue::build_init(
             name,
@@ -86,6 +94,7 @@ impl StringValue {
                 .llvm_context
                 .ptr_type(AddressSpace::default())
                 .const_null(),
+            compiled_function,
             context,
             structs,
             types,

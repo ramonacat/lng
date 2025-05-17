@@ -8,6 +8,7 @@ use inkwell::{
 
 use crate::{
     compile::{
+        CompiledFunction,
         context::{AllItems, CompilerContext},
         unique_name,
         value::{InstantiatedStructType, StructInstance},
@@ -43,10 +44,11 @@ static TYPE_DESCRIPTOR_FIELD: LazyLock<Identifier> =
 
 impl<'ctx> RcValue<'ctx> {
     #[must_use]
-    pub fn build_init<'src>(
+    pub(crate) fn build_init<'src>(
         name: &str,
         struct_instance: &StructInstance<'ctx>,
         vtable: PointerValue<'ctx>,
+        compiled_function: &CompiledFunction<'ctx>,
         context: &CompilerContext<'ctx>,
         structs: &mut AllItems<'ctx>,
         types: &mut dyn types::store::TypeStore,
@@ -77,7 +79,7 @@ impl<'ctx> RcValue<'ctx> {
         let rc = structs
             .get_or_instantiate_struct(&instantiated_struct_id, types)
             .unwrap()
-            .build_heap_instance(context, name, field_values, types);
+            .build_heap_instance(compiled_function, context, name, field_values, types);
 
         Self {
             pointer: rc,
@@ -119,6 +121,7 @@ impl<'ctx> RcValue<'ctx> {
 
     pub(crate) fn pointee(
         &self,
+        compiled_function: &CompiledFunction<'ctx>,
         context: &CompilerContext<'ctx>,
         structs: &AllItems<'ctx>,
         types: &dyn types::store::TypeStore,
@@ -130,6 +133,7 @@ impl<'ctx> RcValue<'ctx> {
             .build_field_load(
                 *POINTEE_FIELD,
                 self.pointer,
+                compiled_function,
                 &unique_name(&["rc", "pointee"]),
                 context,
                 types,
@@ -138,8 +142,11 @@ impl<'ctx> RcValue<'ctx> {
     }
 }
 
-pub fn build_cleanup<'ctx>(
+// TODO this needs to be cleaned up, so that this code is less unhinged and shorter
+#[allow(clippy::too_many_lines)]
+pub(crate) fn build_cleanup<'ctx>(
     context: &CompilerContext<'ctx>,
+    compiled_function: &CompiledFunction<'ctx>,
     rcs: &[RcValue<'ctx>],
     before: BasicBlock<'ctx>,
     types: &mut dyn types::store::TypeStore,
@@ -155,7 +162,7 @@ pub fn build_cleanup<'ctx>(
         if i == 0 {
             first_block = before;
         }
-        context.builder.position_at_end(before);
+        compiled_function.builder.position_at_end(before);
 
         let rc_handle = InstantiatedStructType::new(
             context
@@ -168,12 +175,13 @@ pub fn build_cleanup<'ctx>(
             .build_field_load(
                 *REFCOUNT_FIELD,
                 rc.pointer,
+                compiled_function,
                 &unique_name(&["refcount_old"]),
                 context,
                 types,
             )
             .into_int_value();
-        let new_refcount = context
+        let new_refcount = compiled_function
             .builder
             .build_int_sub(
                 old_refcount,
@@ -182,7 +190,7 @@ pub fn build_cleanup<'ctx>(
             )
             .unwrap();
 
-        let compare = context
+        let compare = compiled_function
             .builder
             .build_int_compare(
                 inkwell::IntPredicate::EQ,
@@ -202,58 +210,69 @@ pub fn build_cleanup<'ctx>(
             .llvm_context
             .prepend_basic_block(before, &unique_name(&["continuation"]));
 
-        context
+        compiled_function
             .builder
             .build_conditional_branch(compare, free_rc_block, do_not_free_rc_block)
             .unwrap();
 
-        context.builder.position_at_end(free_rc_block);
+        compiled_function.builder.position_at_end(free_rc_block);
 
         let rc_pointee_value = rc_handle
             .build_field_load(
                 *POINTEE_FIELD,
                 rc.pointer,
+                compiled_function,
                 &unique_name(&["free_rc_pointee_value"]),
                 context,
                 types,
             )
             .into_pointer_value();
-        context.builder.build_free(rc_pointee_value).unwrap();
-        context.builder.build_free(rc.pointer).unwrap();
+        compiled_function
+            .builder
+            .build_free(rc_pointee_value)
+            .unwrap();
+        compiled_function.builder.build_free(rc.pointer).unwrap();
 
-        context
+        compiled_function
             .builder
             .build_unconditional_branch(continuation_block)
             .unwrap();
 
-        context.builder.position_at_end(do_not_free_rc_block);
+        compiled_function
+            .builder
+            .position_at_end(do_not_free_rc_block);
         rc_handle.build_field_store(
             *REFCOUNT_FIELD,
             rc.pointer,
             new_refcount.as_basic_value_enum(),
+            compiled_function,
             context,
             types,
         );
 
-        context
+        compiled_function
             .builder
             .build_unconditional_branch(continuation_block)
             .unwrap();
 
-        context.builder.position_at_end(continuation_block);
+        compiled_function
+            .builder
+            .position_at_end(continuation_block);
 
-        context
+        compiled_function
             .builder
             .build_unconditional_branch(previous_before)
             .unwrap();
 
-        context.builder.position_at_end(previous_before);
+        compiled_function.builder.position_at_end(previous_before);
     }
 
     first_block
 }
 
-pub fn build_prologue<'ctx>(
+pub(crate) fn build_prologue<'ctx>(
+    compiled_function: &CompiledFunction<'ctx>,
+    // TODO we should take the rcs from the function here
     rcs: &[RcValue<'ctx>],
     context: &CompilerContext<'ctx>,
     types: &mut dyn types::store::TypeStore,
@@ -272,12 +291,13 @@ pub fn build_prologue<'ctx>(
         let init_refcount = rc_handle.build_field_load(
             *REFCOUNT_FIELD,
             rc.pointer,
+            compiled_function,
             &unique_name(&[&name, "init_refcount"]),
             context,
             types,
         );
 
-        let incremented_refcount = context
+        let incremented_refcount = compiled_function
             .builder
             .build_int_add(
                 init_refcount.into_int_value(),
@@ -290,6 +310,7 @@ pub fn build_prologue<'ctx>(
             *REFCOUNT_FIELD,
             rc.pointer,
             incremented_refcount.as_basic_value_enum(),
+            compiled_function,
             context,
             types,
         );

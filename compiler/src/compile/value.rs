@@ -6,6 +6,7 @@ use itertools::Itertools;
 use crate::{identifier::Identifier, types};
 
 use super::{
+    CompiledFunction,
     builtins::rc::RcValue,
     context::{AllItems, CompilerContext},
     unique_name,
@@ -69,6 +70,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
 
     pub fn build_heap_instance(
         &self,
+        compiled_function: &CompiledFunction<'ctx>,
         context: &CompilerContext<'ctx>,
         binding_name: &str,
         mut field_values: HashMap<Identifier, BasicValueEnum<'ctx>>,
@@ -76,7 +78,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
     ) -> PointerValue<'ctx> {
         let llvm_type = context.make_struct_type(&self.definition.fields, types);
 
-        let instance = context
+        let instance = compiled_function
             .builder
             .build_malloc(
                 llvm_type.as_llvm_type(),
@@ -87,9 +89,10 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         dbg!(self.definition.id, &field_values);
         for field in self.definition.fields.iter().filter(|x| !x.static_) {
             let field_value = field_values.remove(&field.name).unwrap();
-            let (_, field_pointer) = llvm_type.field_pointer(field.name, instance, context);
+            let (_, field_pointer) =
+                llvm_type.field_pointer(field.name, instance, compiled_function, context);
 
-            context
+            compiled_function
                 .builder
                 .build_store(field_pointer, field_value)
                 .unwrap();
@@ -103,15 +106,16 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         &self,
         field: Identifier,
         instance: PointerValue<'ctx>,
+        compiled_function: &CompiledFunction<'ctx>,
         binding_name: &str,
         context: &CompilerContext<'ctx>,
         types: &dyn types::store::TypeStore,
     ) -> BasicValueEnum<'ctx> {
         let (field_type, field_pointer) = context
             .make_struct_type(&self.definition.fields, types)
-            .field_pointer(field, instance, context);
+            .field_pointer(field, instance, compiled_function, context);
 
-        context
+        compiled_function
             .builder
             .build_load(field_type, field_pointer, binding_name)
             .unwrap()
@@ -122,14 +126,18 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         field_name: Identifier,
         instance: PointerValue<'ctx>,
         value: BasicValueEnum<'ctx>,
+        compiled_function: &CompiledFunction<'ctx>,
         context: &CompilerContext<'ctx>,
         types: &dyn types::store::TypeStore,
     ) {
         let (_, field_pointer) = context
             .make_struct_type(&self.definition.fields, types)
-            .field_pointer(field_name, instance, context);
+            .field_pointer(field_name, instance, compiled_function, context);
 
-        context.builder.build_store(field_pointer, value).unwrap();
+        compiled_function
+            .builder
+            .build_store(field_pointer, value)
+            .unwrap();
     }
 
     // TODO this should be integrated with build_field_load perhaps?
@@ -137,6 +145,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         &self,
         instance: Value<'ctx>,
         name: Identifier,
+        compiled_function: &CompiledFunction<'ctx>,
         context: &CompilerContext<'ctx>,
         structs: &AllItems<'ctx>,
         types: &dyn types::store::TypeStore,
@@ -150,7 +159,9 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         let instance_ptr = match instance {
             Value::Empty => todo!(),
             Value::Primitive(_, _) => todo!(),
-            Value::Reference(rc_value) => rc_value.pointee(context, structs, types),
+            Value::Reference(rc_value) => {
+                rc_value.pointee(compiled_function, context, structs, types)
+            }
             Value::Function(_) => todo!(),
             Value::InstantiatedStruct(_) => todo!(),
         };
@@ -158,6 +169,7 @@ impl<'ctx> InstantiatedStructType<'ctx> {
         let raw_result = self.build_field_load(
             field.name,
             instance_ptr,
+            compiled_function,
             &unique_name(&["field_read", &field.name.raw()]),
             context,
             types,
@@ -246,15 +258,22 @@ impl<'ctx> Value<'ctx> {
     pub fn read_field_value(
         &self,
         field_path: Identifier,
+        compiled_function: &CompiledFunction<'ctx>,
         context: &CompilerContext<'ctx>,
         structs: &AllItems<'ctx>,
         types: &dyn types::store::TypeStore,
     ) -> Option<Self> {
         match self {
-            Value::Primitive(struct_id, _) => structs
-                .get_struct(struct_id)
-                .unwrap()
-                .read_field_value(self.clone(), field_path, context, structs, types),
+            Value::Primitive(struct_id, _) => {
+                structs.get_struct(struct_id).unwrap().read_field_value(
+                    self.clone(),
+                    field_path,
+                    compiled_function,
+                    context,
+                    structs,
+                    types,
+                )
+            }
             Value::Reference(ref_) => {
                 let ref_type = types.get(ref_.type_());
                 let instantiated_struct_id = match ref_type.kind() {
@@ -276,7 +295,14 @@ impl<'ctx> Value<'ctx> {
                 structs
                     .get_struct(instantiated_struct_id)
                     .unwrap()
-                    .read_field_value(self.clone(), field_path, context, structs, types)
+                    .read_field_value(
+                        self.clone(),
+                        field_path,
+                        compiled_function,
+                        context,
+                        structs,
+                        types,
+                    )
             }
             Value::Function(_) => todo!(),
             Value::Empty => todo!(),

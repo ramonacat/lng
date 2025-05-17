@@ -91,6 +91,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                     .get_or_instantiate_struct(&value_struct_id.clone(), &mut self.compiler.types)
                     .unwrap();
                 let value = value_struct.build_heap_instance(
+                    compiled_function,
                     &self.compiler.context,
                     &unique_name(&[&name.to_string()]),
                     field_values,
@@ -108,6 +109,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                             .add(types::Type::new(types::TypeKind::Object(value_struct_id))),
                     ),
                     vtable.as_pointer_value(),
+                    compiled_function,
                     &self.compiler.context,
                     &mut self.compiler.items,
                     &mut self.compiler.types,
@@ -126,6 +128,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                 let access_result = target_value
                     .read_field_value(
                         *field_name,
+                        compiled_function,
                         &self.compiler.context,
                         &self.compiler.items,
                         &self.compiler.types,
@@ -247,8 +250,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             .unwrap()
             .get_or_create_function(&definition, &self.compiler.context, &self.compiler.types);
 
-        self.compiler
-            .context
+        compiled_function
             .builder
             .position_at_end(compiled_function.entry);
 
@@ -271,9 +273,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
             })
             .collect::<Vec<BasicMetadataValueEnum>>();
 
-        let call_result = self
-            .compiler
-            .context
+        let call_result = compiled_function
             .builder
             .build_call(
                 function_value,
@@ -325,6 +325,7 @@ impl<'compiler, 'ctx> ExpressionCompiler<'compiler, 'ctx> {
                 let name = &unique_name(&["literal", "string"]);
                 let rc = value.build_instance(
                     name,
+                    compiled_function,
                     &self.compiler.context,
                     &mut self.compiler.items,
                     &mut self.compiler.types,

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use inkwell::{
     AddressSpace,
-    builder::Builder,
     context::Context,
     types::{BasicType, BasicTypeEnum, FunctionType, StructType},
     values::{IntValue, PointerValue},
@@ -10,7 +9,7 @@ use inkwell::{
 
 use crate::{identifier::Identifier, types};
 
-use super::{unique_name, value::InstantiatedStructType};
+use super::{CompiledFunction, unique_name, value::InstantiatedStructType};
 
 pub struct Builtins {
     pub rc_handle: types::structs::Struct,
@@ -141,7 +140,6 @@ impl std::fmt::Debug for AllItems<'_> {
 
 pub struct CompilerContext<'ctx> {
     pub llvm_context: &'ctx Context,
-    pub builder: Builder<'ctx>,
     pub builtins: Builtins,
 }
 
@@ -241,12 +239,13 @@ impl<'ctx> CompiledStruct<'ctx> {
         &self,
         field: Identifier,
         instance: PointerValue<'ctx>,
+        compiled_function: &CompiledFunction<'ctx>,
         context: &CompilerContext<'ctx>,
     ) -> (BasicTypeEnum<'ctx>, PointerValue<'ctx>) {
         let index = self.field_indices.get(&field).expect("field should exist");
 
         let pointer = unsafe {
-            context.builder.build_gep(
+            compiled_function.builder.build_gep(
                 self.llvm_type,
                 instance,
                 &[context.const_u32(0), context.const_u32(*index)],

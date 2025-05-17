@@ -5,6 +5,7 @@ use inkwell::values::{BasicValue, PointerValue};
 
 use crate::{
     compile::{
+        CompiledFunction,
         context::{AllItems, CompilerContext},
         unique_name,
         value::StructInstance,
@@ -57,6 +58,7 @@ impl ArrayValue {
     pub(crate) fn build_instance<'ctx>(
         item_type_id: types::store::TypeId,
         context: &CompilerContext<'ctx>,
+        compiled_function: &CompiledFunction<'ctx>,
         structs: &mut AllItems<'ctx>,
         types: &mut dyn types::store::TypeStore,
         // TODO ideally the vtable should be created here, instead of being passed as an argument
@@ -64,7 +66,7 @@ impl ArrayValue {
     ) -> RcValue<'ctx> {
         let items_type = context.make_object_type(types.get(item_type_id));
         // TODO add freeing of this array once destructors are in place
-        let items = context
+        let items = compiled_function
             .builder
             .build_array_malloc(
                 items_type,
@@ -81,7 +83,13 @@ impl ArrayValue {
         let array_value = structs
             .get_or_instantiate_struct(&Self::instantiated_struct_id_for(item_type_id), types)
             .unwrap()
-            .build_heap_instance(context, &unique_name(&["string"]), field_values, types);
+            .build_heap_instance(
+                compiled_function,
+                context,
+                &unique_name(&["string"]),
+                field_values,
+                types,
+            );
 
         RcValue::build_init(
             &unique_name(&["rc_array"]),
@@ -98,6 +106,7 @@ impl ArrayValue {
                 ))),
             ),
             vtable,
+            compiled_function,
             context,
             structs,
             types,
